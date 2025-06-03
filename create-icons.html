@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>UTM Randomizer Icons</title>
+</head>
+<body>
+    <h2>UTM Randomizer Icons</h2>
+    <p>To create the required PNG icons, you can:</p>
+    <ol>
+        <li>Take screenshots of the SVG icons below</li>
+        <li>Or use an online SVG to PNG converter</li>
+        <li>Save as icon16.png (16x16), icon48.png (48x48), and icon128.png (128x128)</li>
+    </ol>
+    
+    <h3>16x16 Icon</h3>
+    <svg width="16" height="16" viewBox="0 0 16 16" style="border: 1px solid #ccc;">
+        <rect width="16" height="16" fill="#4CAF50"/>
+        <text x="8" y="12" text-anchor="middle" fill="white" font-family="Arial" font-size="10" font-weight="bold">🎲</text>
+    </svg>
+    
+    <h3>48x48 Icon</h3>
+    <svg width="48" height="48" viewBox="0 0 48 48" style="border: 1px solid #ccc;">
+        <rect width="48" height="48" fill="#4CAF50" rx="8"/>
+        <text x="24" y="32" text-anchor="middle" fill="white" font-family="Arial" font-size="24" font-weight="bold">🎲</text>
+    </svg>
+    
+    <h3>128x128 Icon</h3>
+    <svg width="128" height="128" viewBox="0 0 128 128" style="border: 1px solid #ccc;">
+        <rect width="128" height="128" fill="#4CAF50" rx="16"/>
+        <text x="64" y="85" text-anchor="middle" fill="white" font-family="Arial" font-size="64" font-weight="bold">🎲</text>
+    </svg>
+    
+    <script>
+        // Simple way to save SVGs as images programmatically
+        function downloadSVGAsPNG(svgElement, filename, width, height) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = width;
+            canvas.height = height;
+            
+            const data = new XMLSerializer().serializeToString(svgElement);
+            const img = new Image();
+            const svg = new Blob([data], {type: 'image/svg+xml;charset=utf-8'});
+            const url = URL.createObjectURL(svg);
+            
+            img.onload = function() {
+                ctx.drawImage(img, 0, 0);
+                URL.revokeObjectURL(url);
+                
+                canvas.toBlob(function(blob) {
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filename;
+                    link.click();
+                });
+            };
+            img.src = url;
+        }
+        
+        // Add download buttons
+        setTimeout(() => {
+            const svgs = document.querySelectorAll('svg');
+            const sizes = [16, 48, 128];
+            const filenames = ['icon16.png', 'icon48.png', 'icon128.png'];
+            
+            svgs.forEach((svg, index) => {
+                const button = document.createElement('button');
+                button.textContent = `Download ${filenames[index]}`;
+                button.onclick = () => downloadSVGAsPNG(svg, filenames[index], sizes[index], sizes[index]);
+                svg.parentNode.insertBefore(button, svg.nextSibling);
+            });
+        }, 100);
+    </script>
+</body>
+</html>
