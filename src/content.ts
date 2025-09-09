@@ -154,4 +154,24 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// Detect user activity and notify background to check clipboard
+let lastActivityNotification = 0;
+const ACTIVITY_DEBOUNCE = 1000; // Only notify once per second
+
+function notifyUserActivity() {
+  if (!isExtensionEnabled) return;
+  
+  const now = Date.now();
+  if (now - lastActivityNotification < ACTIVITY_DEBOUNCE) return;
+  
+  lastActivityNotification = now;
+  chrome.runtime.sendMessage({ action: 'userActivity' });
+}
+
+// Monitor user interactions that might follow copying from address bar
+document.addEventListener('click', notifyUserActivity, true);
+document.addEventListener('mousedown', notifyUserActivity, true);
+document.addEventListener('keypress', notifyUserActivity, true);
+document.addEventListener('scroll', notifyUserActivity, true);
+
 console.log('UTM Randomizer: Content script loaded and monitoring clipboard events');

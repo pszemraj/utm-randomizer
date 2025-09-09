@@ -80,6 +80,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'showNotification') {
     showNotification(request.message || 'UTM parameters randomized! 🎲');
     sendResponse({ success: true });
+  } else if (request.action === 'userActivity' && isEnabled) {
+    // User interacted with page - check clipboard
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      if (tabs[0]?.id) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tabs[0].id },
+            func: checkClipboardInPage
+          });
+        } catch {
+          // Ignore errors
+        }
+      }
+    });
+    sendResponse({ success: true });
   }
   
   return true; // Keep channel open for async response
@@ -87,19 +102,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Monitor tab focus changes to check clipboard
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  console.log('Tab activated, checking clipboard...');
-  if (!isEnabled) {
-    console.log('Extension disabled, skipping');
-    return;
-  }
+  if (!isEnabled) return;
   
   try {
-    // Inject content script to check clipboard
-    const result = await chrome.scripting.executeScript({
+    // Immediately check clipboard on tab switch
+    await chrome.scripting.executeScript({
       target: { tabId: activeInfo.tabId },
       func: checkClipboardInPage
     });
-    console.log('Clipboard check injected:', result);
   } catch (error) {
     // Tab might not be ready or is a chrome:// page
     console.debug('Cannot inject script:', error);
@@ -127,7 +137,6 @@ chrome.commands.onCommand.addListener(async (command) => {
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE || !isEnabled) return;
   
-  console.log('Window focus changed, checking clipboard...');
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab?.id) {
     try {
@@ -158,19 +167,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 // Function to inject for clipboard checking
 function checkClipboardInPage() {
-  console.log('Checking clipboard in page...');
   navigator.clipboard.readText()
     .then(text => {
-      console.log('Clipboard text:', text);
       chrome.runtime.sendMessage({ 
         action: 'checkAndRandomize', 
         text: text 
       }, response => {
-        console.log('Background response:', response);
         if (response?.processed) {
           navigator.clipboard.writeText(response.randomizedUrl)
             .then(() => {
-              console.log('Clipboard updated with:', response.randomizedUrl);
               // Show notification using Chrome notifications API via message
               chrome.runtime.sendMessage({ 
                 action: 'showNotification',
@@ -180,8 +185,9 @@ function checkClipboardInPage() {
         }
       });
     })
-    .catch(err => console.error('Clipboard read failed:', err));
+    .catch(() => {}); // Silently fail - this is called frequently
 }
+
 
 function copyToClipboard(text: string, tabId?: number) {
   if (tabId) {
