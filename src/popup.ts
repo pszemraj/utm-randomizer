@@ -37,18 +37,14 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Manual check button
   manualCheck?.addEventListener('click', async () => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
-    if (tab.id) {
-      chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-          navigator.clipboard.readText().then(text => {
-            chrome.runtime.sendMessage({ action: 'checkAndRandomize', text });
-          });
-        }
-      });
-    }
+    // Trigger keyboard shortcut command
+    chrome.commands.getAll((commands) => {
+      const randomizeCommand = commands.find(cmd => cmd.name === 'randomize-clipboard');
+      if (randomizeCommand) {
+        // Send message to background to trigger manual check
+        chrome.runtime.sendMessage({ action: 'manualCheck' });
+      }
+    });
     
     window.close();
   });

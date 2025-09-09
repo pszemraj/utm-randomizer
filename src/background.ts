@@ -276,6 +276,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       enabled: isEnabled,
       stats: stats
     });
+  } else if (message.action === 'manualCheck') {
+    // Manual trigger from popup
+    checkClipboardForAddressBarCopy();
+    sendResponse({ triggered: true });
   }
   
   return true;
