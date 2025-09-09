@@ -130,27 +130,34 @@ async function handleClipboardContent(text: string) {
       text: randomized
     });
     
-    // Update stats
-    stats.countTotal++;
-    stats.lastRandomized = Date.now();
-    chrome.storage.local.set({
-      countTotal: stats.countTotal,
-      lastRandomized: stats.lastRandomized
-    });
-    
-    // Show notification
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'icon48.png',
-      title: 'UTM Randomizer',
-      message: 'UTM parameters randomized!',
-      priority: 1
-    });
-    
     console.log('Successfully randomized to:', randomized);
   } catch (error) {
     console.error('Failed to write clipboard:', error);
   }
+  
+  // Update stats (outside try-catch to ensure it runs)
+  stats.countTotal++;
+  stats.lastRandomized = Date.now();
+  chrome.storage.local.set({
+    countTotal: stats.countTotal,
+    lastRandomized: stats.lastRandomized
+  });
+  
+  // Show notification (outside try-catch to ensure it runs)
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icon48.png'),
+    title: 'UTM Randomizer',
+    message: 'UTM parameters randomized!',
+    priority: 1,
+    silent: true
+  }, (notificationId) => {
+    if (chrome.runtime.lastError) {
+      console.error('Notification error:', chrome.runtime.lastError);
+    } else {
+      console.log('Notification shown:', notificationId);
+    }
+  });
 }
 
 // Also check clipboard on tab/window focus changes
@@ -186,10 +193,11 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
       // Show notification
       chrome.notifications.create({
         type: 'basic',
-        iconUrl: 'icon48.png',
+        iconUrl: chrome.runtime.getURL('icon48.png'),
         title: 'UTM Randomizer',
         message: 'UTM parameters randomized!',
-        priority: 1
+        priority: 1,
+        silent: true
       });
     }
   }
