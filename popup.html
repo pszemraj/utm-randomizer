@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .container {
+      padding: 20px;
+      background: white;
+      margin: 10px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    }
+    
+    h1 {
+      font-size: 18px;
+      margin: 0 0 15px 0;
+      color: #333;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: #f5f5f5;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    
+    .status-text {
+      font-size: 14px;
+      color: #666;
+      font-weight: 500;
+    }
+    
+    .toggle {
+      position: relative;
+      width: 50px;
+      height: 26px;
+      background: #ccc;
+      border-radius: 13px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    
+    .toggle.active {
+      background: #4CAF50;
+    }
+    
+    .toggle-slider {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .toggle.active .toggle-slider {
+      transform: translateX(24px);
+    }
+    
+    .stats {
+      padding: 12px;
+      background: #f9f9f9;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    
+    .stat-row:last-child {
+      margin-bottom: 0;
+    }
+    
+    .stat-label {
+      color: #666;
+    }
+    
+    .stat-value {
+      font-weight: 600;
+      color: #333;
+    }
+    
+    .button {
+      width: 100%;
+      padding: 10px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    
+    .button:active {
+      transform: translateY(0);
+    }
+    
+    .shortcut-hint {
+      margin-top: 12px;
+      padding: 10px;
+      background: #e8f5e9;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #2e7d32;
+      text-align: center;
+    }
+    
+    .shortcut-key {
+      font-family: monospace;
+      background: #c8e6c9;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>
+      <span>🎲</span>
+      UTM Randomizer
+    </h1>
+    
+    <div class="status">
+      <span class="status-text">Extension Active</span>
+      <div class="toggle active" id="toggle">
+        <div class="toggle-slider"></div>
+      </div>
+    </div>
+    
+    <div class="stats">
+      <div class="stat-row">
+        <span class="stat-label">URLs Randomized Today:</span>
+        <span class="stat-value" id="count-today">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Total URLs Randomized:</span>
+        <span class="stat-value" id="count-total">0</span>
+      </div>
+    </div>
+    
+    <button class="button" id="manual-check">
+      Check Clipboard Now
+    </button>
+    
+    <div class="shortcut-hint">
+      Keyboard shortcut: <span class="shortcut-key" id="shortcut">Ctrl+Shift+U</span>
+    </div>
+  </div>
+  
+  <script src="dist/popup.js"></script>
+</body>
+</html>

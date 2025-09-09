@@ -1,105 +1,142 @@
-import { randomizeUTMParameters } from './utm-randomizer';
+// content.ts - Improved content script with better clipboard handling
 
 let isProcessing = false;
+let lastProcessedUrl: string | null = null;
+let lastProcessedTime = 0;
+const DEBOUNCE_TIME = 500; // Prevent rapid re-processing
 
-function isValidURL(str: string): boolean {
-  try {
-    new URL(str);
-    return true;
-  } catch {
-    return false;
-  }
+// Debounced clipboard check
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
 }
 
-function hasUTMParameters(url: string): boolean {
-  try {
-    const urlObj = new URL(url);
-    const params = urlObj.searchParams;
-    const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
-    return utmKeys.some(key => params.has(key));
-  } catch {
-    return false;
-  }
-}
-
-async function interceptClipboard() {
+async function checkClipboard() {
   if (isProcessing) return;
+  
+  const now = Date.now();
+  if (now - lastProcessedTime < DEBOUNCE_TIME) return;
   
   try {
     isProcessing = true;
+    const text = await navigator.clipboard.readText();
     
-    // Read clipboard content
-    const clipboardText = await navigator.clipboard.readText();
+    // Skip if same URL was just processed
+    if (text === lastProcessedUrl) return;
     
-    if (isValidURL(clipboardText) && hasUTMParameters(clipboardText)) {
-      console.log('UTM Randomizer: Found URL with UTM parameters:', clipboardText);
-      
-      const randomizedURL = randomizeUTMParameters(clipboardText);
-      
-      if (randomizedURL !== clipboardText) {
-        // Write the randomized URL back to clipboard
-        await navigator.clipboard.writeText(randomizedURL);
-        console.log('UTM Randomizer: Replaced with:', randomizedURL);
-        
-        // Show a brief notification
-        showNotification('UTM parameters randomized! 🎲');
+    // Send to background for processing
+    chrome.runtime.sendMessage(
+      { action: 'checkAndRandomize', text },
+      async (response) => {
+        if (response?.processed) {
+          lastProcessedUrl = response.randomizedUrl;
+          lastProcessedTime = Date.now();
+          
+          await navigator.clipboard.writeText(response.randomizedUrl);
+          showNotification('UTM parameters randomized! 🎲');
+          console.log('UTM Randomizer: Replaced', response.originalUrl, 'with', response.randomizedUrl);
+        }
       }
-    }
+    );
   } catch (error) {
-    console.error('UTM Randomizer: Error processing clipboard:', error);
+    // User denied clipboard access or other error
+    console.debug('UTM Randomizer: Clipboard access failed:', error);
   } finally {
     isProcessing = false;
   }
 }
 
+const debouncedCheck = debounce(checkClipboard, 100);
+
 function showNotification(message: string) {
+  // Remove any existing notifications first
+  const existing = document.querySelector('.utm-randomizer-notification');
+  if (existing) existing.remove();
+  
   const notification = document.createElement('div');
+  notification.className = 'utm-randomizer-notification';
   notification.textContent = message;
   notification.style.cssText = `
     position: fixed;
     top: 20px;
     right: 20px;
-    background: #4CAF50;
+    background: linear-gradient(135deg, #4CAF50, #45a049);
     color: white;
-    padding: 12px 20px;
-    border-radius: 6px;
-    z-index: 10000;
-    font-family: Arial, sans-serif;
+    padding: 14px 24px;
+    border-radius: 8px;
+    z-index: 2147483647;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 14px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transform: translateY(-10px);
+    transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    pointer-events: none;
+    user-select: none;
   `;
   
   document.body.appendChild(notification);
   
-  // Fade in
+  // Trigger animation
   requestAnimationFrame(() => {
     notification.style.opacity = '1';
+    notification.style.transform = 'translateY(0)';
   });
   
-  // Remove after 3 seconds
+  // Auto remove with fade out
   setTimeout(() => {
     notification.style.opacity = '0';
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.parentNode.removeChild(notification);
-      }
-    }, 300);
-  }, 3000);
+    notification.style.transform = 'translateY(-10px)';
+    setTimeout(() => notification.remove(), 300);
+  }, 2500);
 }
 
-// Monitor copy events
-document.addEventListener('copy', () => {
-  // Small delay to ensure clipboard is updated
-  setTimeout(interceptClipboard, 50);
-});
-
-// Also monitor keyboard shortcuts
-document.addEventListener('keydown', (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
-    setTimeout(interceptClipboard, 50);
+// Monitor copy events with better handling
+document.addEventListener('copy', (event) => {
+  // Only process if text is selected (not images, etc.)
+  const selection = window.getSelection();
+  if (selection && selection.toString().trim()) {
+    debouncedCheck();
   }
 });
 
-console.log('UTM Randomizer: Content script loaded');
+// Keyboard shortcut monitoring with proper key detection
+document.addEventListener('keydown', (event) => {
+  // Ctrl+C or Cmd+C
+  if ((event.ctrlKey || event.metaKey) && event.key === 'c' && !event.shiftKey && !event.altKey) {
+    debouncedCheck();
+  }
+  
+  // Ctrl+X or Cmd+X (cut operation)
+  if ((event.ctrlKey || event.metaKey) && event.key === 'x' && !event.shiftKey && !event.altKey) {
+    debouncedCheck();
+  }
+});
+
+// Also monitor paste events to check if user is pasting a URL
+document.addEventListener('paste', async (event) => {
+  // Small delay to process after paste completes
+  setTimeout(debouncedCheck, 50);
+});
+
+// Monitor focus events - useful for when user switches tabs after copying from address bar
+document.addEventListener('focus', () => {
+  // Check clipboard when page gains focus
+  debouncedCheck();
+}, true);
+
+// Listen for visibility changes
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    debouncedCheck();
+  }
+});
+
+console.log('UTM Randomizer: Content script loaded and monitoring clipboard events');
