@@ -1,12 +1,9 @@
-// content.ts - Improved content script with better clipboard handling
+// content.ts - Handles copy events within webpages only
 
 let isProcessing = false;
-let lastProcessedUrl: string | null = null;
-let lastProcessedTime = 0;
-let isExtensionEnabled = true; // Default to enabled
-const DEBOUNCE_TIME = 500; // Prevent rapid re-processing
+let isExtensionEnabled = true;
 
-// Get initial enabled state from background
+// Get initial state
 chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
   if (response && typeof response.enabled === 'boolean') {
     isExtensionEnabled = response.enabled;
@@ -20,57 +17,44 @@ chrome.runtime.onMessage.addListener((request) => {
   }
 });
 
-// Debounced clipboard check
-function debounce<T extends (...args: unknown[]) => unknown>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: ReturnType<typeof setTimeout>;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
-}
-
-async function checkClipboard() {
+// Process clipboard after copy event
+async function interceptClipboard() {
   if (!isExtensionEnabled || isProcessing) return;
-  
-  const now = Date.now();
-  if (now - lastProcessedTime < DEBOUNCE_TIME) return;
   
   try {
     isProcessing = true;
-    const text = await navigator.clipboard.readText();
     
-    // Skip if same URL was just processed
-    if (text === lastProcessedUrl) return;
+    // Read clipboard content
+    const clipboardText = await navigator.clipboard.readText();
+    
+    if (!clipboardText) return;
     
     // Send to background for processing
     chrome.runtime.sendMessage(
-      { action: 'checkAndRandomize', text },
+      { action: 'processCopiedText', text: clipboardText },
       async (response) => {
         if (response?.processed) {
-          lastProcessedUrl = response.randomizedUrl;
-          lastProcessedTime = Date.now();
-          
+          // Write randomized URL back to clipboard
           await navigator.clipboard.writeText(response.randomizedUrl);
-          showNotification('UTM parameters randomized! 🎲');
+          
+          // Show notification
+          showNotification('UTM parameters randomized!');
+          
           console.log('UTM Randomizer: Replaced', response.originalUrl, 'with', response.randomizedUrl);
         }
       }
     );
   } catch (error) {
-    // User denied clipboard access or other error
-    console.debug('UTM Randomizer: Clipboard access failed:', error);
+    // Clipboard access denied or other error
+    console.debug('UTM Randomizer: Could not access clipboard:', error);
   } finally {
     isProcessing = false;
   }
 }
 
-const debouncedCheck = debounce(checkClipboard, 100);
-
+// Show in-page notification
 function showNotification(message: string) {
-  // Remove any existing notifications first
+  // Remove any existing notification
   const existing = document.querySelector('.utm-randomizer-notification');
   if (existing) existing.remove();
   
@@ -113,65 +97,30 @@ function showNotification(message: string) {
   }, 2500);
 }
 
-// Monitor copy events with better handling
+// Monitor copy events within the webpage
 document.addEventListener('copy', () => {
-  // Only process if text is selected (not images, etc.)
-  const selection = window.getSelection();
-  if (selection && selection.toString().trim()) {
-    debouncedCheck();
-  }
+  // Small delay to ensure clipboard is updated
+  setTimeout(interceptClipboard, 50);
 });
 
-// Keyboard shortcut monitoring with proper key detection
+// Also monitor keyboard shortcuts for copy
 document.addEventListener('keydown', (event) => {
   // Ctrl+C or Cmd+C
   if ((event.ctrlKey || event.metaKey) && event.key === 'c' && !event.shiftKey && !event.altKey) {
-    debouncedCheck();
+    // Only process if text is selected
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim()) {
+      setTimeout(interceptClipboard, 50);
+    }
   }
   
-  // Ctrl+X or Cmd+X (cut operation)
+  // Ctrl+X or Cmd+X (cut)
   if ((event.ctrlKey || event.metaKey) && event.key === 'x' && !event.shiftKey && !event.altKey) {
-    debouncedCheck();
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim()) {
+      setTimeout(interceptClipboard, 50);
+    }
   }
 });
 
-// Also monitor paste events to check if user is pasting a URL
-document.addEventListener('paste', async () => {
-  // Small delay to process after paste completes
-  setTimeout(debouncedCheck, 50);
-});
-
-// Monitor focus events - useful for when user switches tabs after copying from address bar
-document.addEventListener('focus', () => {
-  // Check clipboard when page gains focus
-  debouncedCheck();
-}, true);
-
-// Listen for visibility changes
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    debouncedCheck();
-  }
-});
-
-// Detect user activity and notify background to check clipboard
-let lastActivityNotification = 0;
-const ACTIVITY_DEBOUNCE = 1000; // Only notify once per second
-
-function notifyUserActivity() {
-  if (!isExtensionEnabled) return;
-  
-  const now = Date.now();
-  if (now - lastActivityNotification < ACTIVITY_DEBOUNCE) return;
-  
-  lastActivityNotification = now;
-  chrome.runtime.sendMessage({ action: 'userActivity' });
-}
-
-// Monitor user interactions that might follow copying from address bar
-document.addEventListener('click', notifyUserActivity, true);
-document.addEventListener('mousedown', notifyUserActivity, true);
-document.addEventListener('keypress', notifyUserActivity, true);
-document.addEventListener('scroll', notifyUserActivity, true);
-
-console.log('UTM Randomizer: Content script loaded and monitoring clipboard events');
+console.log('UTM Randomizer: Content script loaded and monitoring copy events');
