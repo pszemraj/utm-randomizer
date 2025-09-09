@@ -90,7 +90,7 @@ export function randomizeUTMParameters(url: string): string {
     const parametersChanged: string[] = [];
     
     // Process standard UTM parameters
-    const utmMappings = {
+    const utmMappings: Record<string, { array: string[], lastKey: string }> = {
       'utm_source': { array: FUNNY_SOURCES, lastKey: 'source' },
       'utm_medium': { array: FUNNY_MEDIUMS, lastKey: 'medium' },
       'utm_campaign': { array: FUNNY_CAMPAIGNS, lastKey: 'campaign' },
@@ -98,15 +98,25 @@ export function randomizeUTMParameters(url: string): string {
       'utm_content': { array: FUNNY_CONTENT, lastKey: 'content' }
     };
     
-    for (const [key, mapping] of Object.entries(utmMappings)) {
-      if (params.has(key)) {
+    // Process ALL utm_ parameters, not just known ones
+    for (const key of Array.from(params.keys())) {
+      if (key.toLowerCase().startsWith('utm_')) {
         hasUTM = true;
-        const newValue = getWeightedRandom(
-          mapping.array, 
-          lastUsed[mapping.lastKey as keyof typeof lastUsed] || undefined
-        );
-        params.set(key, newValue);
-        lastUsed[mapping.lastKey as keyof typeof lastUsed] = newValue;
+        
+        // Use specific mapping if available, otherwise use a default
+        const mapping = utmMappings[key];
+        if (mapping) {
+          const newValue = getWeightedRandom(
+            mapping.array, 
+            lastUsed[mapping.lastKey as keyof typeof lastUsed] || undefined
+          );
+          params.set(key, newValue);
+          lastUsed[mapping.lastKey as keyof typeof lastUsed] = newValue;
+        } else {
+          // For unknown utm_ parameters (like utm_name), use a random funny source
+          const randomArray = [FUNNY_SOURCES, FUNNY_MEDIUMS, FUNNY_CAMPAIGNS][Math.floor(Math.random() * 3)];
+          params.set(key, getWeightedRandom(randomArray, undefined));
+        }
         parametersChanged.push(key);
       }
     }

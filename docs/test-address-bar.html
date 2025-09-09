@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Address Bar Copy Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-url {
+            padding: 10px;
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            background: #e8f5e9;
+            border-radius: 5px;
+        }
+        .log {
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            font-family: monospace;
+            height: 200px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>UTM Randomizer - Address Bar Copy Test</h1>
+    
+    <div class="status">
+        <h3>Test Scenario: Simulating Address Bar Copy</h3>
+        <p>When you copy from the address bar, no DOM events fire. The extension must detect this via:</p>
+        <ul>
+            <li>Tab focus changes</li>
+            <li>Window focus changes</li>
+            <li>Manual trigger (Ctrl+Shift+U)</li>
+        </ul>
+    </div>
+
+    <div class="test-url">
+        <strong>Test URL:</strong><br>
+        https://www.reddit.com/r/Anthropic/?utm_source=aaaa&utm_medium=bbbb&utm_name=cccc&utm_term=dddd
+    </div>
+
+    <h3>Test Steps:</h3>
+    <ol>
+        <li>Click "Copy to Clipboard" to simulate address bar copy</li>
+        <li>Click "Trigger Tab Focus" to simulate switching tabs</li>
+        <li>Check the clipboard content</li>
+    </ol>
+
+    <button onclick="copyToClipboard()">1. Copy to Clipboard (Simulate Address Bar)</button>
+    <button onclick="triggerTabFocus()">2. Trigger Tab Focus</button>
+    <button onclick="checkClipboard()">3. Check Clipboard</button>
+    <button onclick="clearLog()">Clear Log</button>
+
+    <div class="log" id="log"></div>
+
+    <script>
+        const testUrl = 'https://www.reddit.com/r/Anthropic/?utm_source=aaaa&utm_medium=bbbb&utm_name=cccc&utm_term=dddd';
+        
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function copyToClipboard() {
+            try {
+                // This simulates copying from address bar - no copy event is fired
+                await navigator.clipboard.writeText(testUrl);
+                log('✓ URL copied to clipboard (no copy event fired - like address bar)');
+                log('  URL: ' + testUrl);
+            } catch (err) {
+                log('✗ Failed to copy: ' + err);
+            }
+        }
+
+        function triggerTabFocus() {
+            log('→ Simulating tab focus change...');
+            // The extension should detect this and check clipboard
+            
+            // Try to trigger visibility change
+            document.dispatchEvent(new Event('visibilitychange'));
+            window.dispatchEvent(new Event('focus'));
+            
+            log('  Dispatched focus and visibility events');
+            log('  Extension should now check clipboard via background script');
+        }
+
+        async function checkClipboard() {
+            try {
+                const text = await navigator.clipboard.readText();
+                log('📋 Current clipboard content:');
+                log('  ' + text);
+                
+                if (text.includes('utm_source=aaaa')) {
+                    log('✗ UTM parameters NOT randomized');
+                } else if (text.includes('utm_source=')) {
+                    log('✓ UTM parameters WERE randomized!');
+                } else {
+                    log('? No UTM parameters found');
+                }
+            } catch (err) {
+                log('✗ Failed to read clipboard: ' + err);
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Initial log
+        log('Test page loaded. Extension should be monitoring clipboard.');
+        log('Open Chrome DevTools to see extension console logs.');
+    </script>
+</body>
+</html>

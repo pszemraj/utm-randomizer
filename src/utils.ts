@@ -13,8 +13,13 @@ export function hasUTMParameters(url: string): boolean {
   try {
     const urlObj = new URL(url);
     const params = urlObj.searchParams;
-    const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
-    return utmKeys.some(key => params.has(key));
+    // Check for ANY parameter starting with utm_
+    for (const key of params.keys()) {
+      if (key.toLowerCase().startsWith('utm_')) {
+        return true;
+      }
+    }
+    return false;
   } catch {
     return false;
   }
