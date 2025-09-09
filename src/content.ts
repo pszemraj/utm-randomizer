@@ -3,7 +3,22 @@
 let isProcessing = false;
 let lastProcessedUrl: string | null = null;
 let lastProcessedTime = 0;
+let isExtensionEnabled = true; // Default to enabled
 const DEBOUNCE_TIME = 500; // Prevent rapid re-processing
+
+// Get initial enabled state from background
+chrome.runtime.sendMessage({ action: 'getState' }, (response) => {
+  if (response && typeof response.enabled === 'boolean') {
+    isExtensionEnabled = response.enabled;
+  }
+});
+
+// Listen for state changes
+chrome.runtime.onMessage.addListener((request) => {
+  if (request.action === 'stateChanged') {
+    isExtensionEnabled = request.enabled;
+  }
+});
 
 // Debounced clipboard check
 function debounce<T extends (...args: unknown[]) => unknown>(
@@ -18,7 +33,7 @@ function debounce<T extends (...args: unknown[]) => unknown>(
 }
 
 async function checkClipboard() {
-  if (isProcessing) return;
+  if (!isExtensionEnabled || isProcessing) return;
   
   const now = Date.now();
   if (now - lastProcessedTime < DEBOUNCE_TIME) return;

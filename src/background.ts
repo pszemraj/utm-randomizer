@@ -1,16 +1,12 @@
 // background.ts - Proper implementation with clipboard monitoring
 import { randomizeUTMParameters } from './utm-randomizer';
+import { isValidURL, hasUTMParameters } from './utils';
 
 // Use chrome.clipboard API for monitoring (requires Chrome 116+)
 // Fallback to content script injection for older versions
 
 let isEnabled = true;
 let processedUrls = new Set<string>();
-
-// Clear processed URLs periodically to prevent memory bloat
-setInterval(() => {
-  processedUrls.clear();
-}, 60000); // Clear every minute
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('UTM Randomizer extension installed');
@@ -64,6 +60,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'toggleExtension') {
     isEnabled = !isEnabled;
     sendResponse({ enabled: isEnabled });
+    // Broadcast state change to all tabs
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, { action: 'stateChanged', enabled: isEnabled }).catch(() => {});
+        }
+      });
+    });
+  } else if (request.action === 'getState') {
+    sendResponse({ enabled: isEnabled });
+  } else if (request.action === 'showNotification') {
+    showNotification(request.message || 'UTM parameters randomized! 🎲');
+    sendResponse({ success: true });
   }
   
   return true; // Keep channel open for async response
@@ -113,8 +122,11 @@ function checkClipboardInPage() {
         if (response?.processed) {
           navigator.clipboard.writeText(response.randomizedUrl)
             .then(() => {
-              // Show notification
-              showNotification('UTM parameters randomized! 🎲');
+              // Show notification using Chrome notifications API via message
+              chrome.runtime.sendMessage({ 
+                action: 'showNotification',
+                message: 'UTM parameters randomized! 🎲'
+              });
             });
         }
       });
@@ -142,24 +154,4 @@ function showNotification(message: string) {
     message: message,
     priority: 1
   });
-}
-
-function isValidURL(str: string): boolean {
-  try {
-    const url = new URL(str);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-function hasUTMParameters(url: string): boolean {
-  try {
-    const urlObj = new URL(url);
-    const params = urlObj.searchParams;
-    const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
-    return utmKeys.some(key => params.has(key));
-  } catch {
-    return false;
-  }
 }
