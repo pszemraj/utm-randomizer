@@ -205,7 +205,8 @@ export function sanitizeUrl(url: string): string {
 }
 
 // Update statistics
-function updateStats(paramCount: number) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
+function updateStats(_paramCount: number) {
   // Check if we're in a browser environment with chrome API
   if (typeof chrome !== 'undefined' && chrome.storage) {
     chrome.storage.local.get(['countToday', 'countTotal', 'lastResetDate'], (data) => {

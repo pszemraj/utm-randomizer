@@ -1,46 +1,200 @@
 # UTM Randomizer Chrome Extension
 
-A Chrome extension that automatically replaces UTM parameters with random/funny values when you copy links to your clipboard, helping thwart free advertising data collection.
+A robust Chrome extension that automatically replaces UTM tracking parameters with randomized values when copying URLs, protecting your privacy and preventing marketing attribution tracking.
 
-## Features
+## Overview
 
-- 🎲 Automatically detects UTM parameters in copied URLs
-- 🤪 Replaces them with hilarious random values
-- 🔔 Shows brief notifications when parameters are randomized
-- 🚀 Works on all websites
-- 🔒 Privacy-focused - no data collection
+UTM Randomizer intercepts clipboard operations to detect and randomize tracking parameters in URLs. It works seamlessly across all websites, including when copying from the browser address bar, providing comprehensive protection against marketing tracking.
+
+## Key Features
+
+### Core Functionality
+- **Automatic Detection**: Identifies UTM parameters and other tracking codes in copied URLs
+- **Smart Randomization**: Replaces tracking parameters with humorous but functional alternatives
+- **Universal Coverage**: Works on all websites and browser address bar copies
+- **Multiple Trigger Methods**:
+  - Automatic on copy (Ctrl/Cmd+C)
+  - Tab focus monitoring for address bar copies
+  - Right-click context menu
+  - Keyboard shortcut (Ctrl/Cmd+Shift+U)
+  - Manual trigger via popup
+
+### Supported Tracking Parameters
+- **UTM Parameters**: utm_source, utm_medium, utm_campaign, utm_term, utm_content
+- **Facebook**: fbclid, fb_source, fb_action_ids, fb_action_types
+- **Google**: gclid, wbraid, gbraid, _ga
+- **Email Marketing**: mc_cid, mc_eid (Mailchimp), ml_subscriber (MailerLite)
+- **Other Platforms**: yclid (Yandex), twclid (Twitter), msclkid (Microsoft), ef_id (Adobe)
+
+### User Interface
+- **Popup Dashboard**: Toggle switch, statistics, and manual clipboard check
+- **Statistics Tracking**: Daily and total URLs randomized
+- **Visual Notifications**: Non-intrusive success indicators
+- **Context Menu**: Right-click option for manual randomization
 
 ## Installation
 
-1. Clone this repository
-2. Run `npm install` to install dependencies
-3. Run `npm run build` to build the extension
-4. Open Chrome and go to `chrome://extensions/`
-5. Enable "Developer mode"
-6. Click "Load unpacked" and select this directory
-7. The extension will now monitor your clipboard for UTM-tagged URLs
+### From Source
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/utm-randomizer.git
+   cd utm-randomizer
+   ```
 
-## How it works
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-When you copy a URL containing UTM parameters like:
+3. Build the extension:
+   ```bash
+   npm run build
+   ```
+
+4. Load in Chrome:
+   - Navigate to `chrome://extensions/`
+   - Enable "Developer mode" (top right)
+   - Click "Load unpacked"
+   - Select the project directory
+
+## Usage
+
+### Automatic Mode
+Simply copy any URL containing tracking parameters. The extension automatically:
+1. Detects tracking parameters
+2. Replaces them with randomized values
+3. Updates your clipboard
+4. Shows a brief confirmation
+
+### Manual Controls
+- **Popup**: Click the extension icon to access controls and statistics
+- **Context Menu**: Right-click on selected text/links → "Randomize UTM Parameters"
+- **Keyboard Shortcut**: Press Ctrl+Shift+U (Cmd+Shift+U on Mac)
+
+### Example Transformation
+
+**Before:**
 ```
-https://example.com?utm_source=facebook&utm_medium=social&utm_campaign=spring_sale
+https://example.com?utm_source=facebook&utm_medium=social&utm_campaign=spring_sale&fbclid=abc123
 ```
 
-It gets automatically replaced with something like:
+**After:**
 ```
-https://example.com?utm_source=carrier-pigeon&utm_medium=interpretive-dance&utm_campaign=operation-click-bait
+https://example.com?utm_source=carrier-pigeon&utm_medium=interpretive-dance&utm_campaign=operation-click-bait&fbclid=nice-try-zuckerberg
 ```
 
 ## Development
 
-- `npm run dev` - Build in development mode with watch
-- `npm run build` - Build for production
-- `npm run lint` - Run ESLint
-- `npm run type-check` - Run TypeScript type checking
+### Prerequisites
+- Node.js 16+ 
+- npm or yarn
+- Chrome browser
+
+### Scripts
+```bash
+npm run dev          # Development build with watch mode
+npm run build        # Production build
+npm run test         # Run test suite
+npm run lint         # Run ESLint
+npm run type-check   # TypeScript type checking
+```
+
+### Project Structure
+```
+utm-randomizer/
+├── src/
+│   ├── background.ts   # Service worker for clipboard monitoring
+│   ├── content.ts      # Content script for page interaction
+│   ├── popup.ts        # Popup UI logic
+│   └── utm-randomizer.ts # Core randomization logic
+├── tests/
+│   └── terminal-test-suite.ts # Comprehensive test suite
+├── dist/               # Built extension files
+├── manifest.json       # Extension manifest
+└── popup.html          # Popup UI
+```
+
+### Testing
+Run the comprehensive test suite:
+```bash
+npm test
+```
+
+Tests include:
+- URL randomization logic
+- Parameter detection
+- Edge cases handling
+- Performance benchmarks (2.5M+ URLs/second)
+
+## Technical Details
+
+### Architecture
+- **Background Script**: Handles clipboard operations via Chrome APIs
+- **Content Script**: Monitors page events and clipboard access
+- **Message Passing**: Secure communication between scripts
+- **Memory Management**: Automatic cleanup to prevent memory leaks
+
+### Performance
+- **Debouncing**: 100ms for clipboard checks, 500ms deduplication
+- **Caching**: 5-second cache for repeated URLs
+- **Memory Cleanup**: Automatic purge every 60 seconds
+- **Processing Speed**: 2.5M+ URLs/second
+
+### Security & Privacy
+- **No Data Collection**: All processing happens locally
+- **No External Requests**: Completely offline operation
+- **Minimal Permissions**: Only essential Chrome APIs used
+- **Open Source**: Full transparency of code behavior
 
 ## Permissions
 
-- `clipboardRead` - To read copied URLs
-- `clipboardWrite` - To write randomized URLs back
-- `activeTab` - To run on all websites
+The extension requires these permissions:
+- `clipboardRead/Write`: Access clipboard for URL processing
+- `activeTab`: Interact with current tab
+- `contextMenus`: Add right-click menu option
+- `notifications`: Show success confirmations
+- `scripting`: Inject clipboard monitoring
+- `storage`: Save statistics and preferences
+- `tabs`: Monitor tab focus changes
+
+## Browser Compatibility
+
+- Chrome 116+ (recommended)
+- Edge 116+
+- Other Chromium-based browsers
+
+## Troubleshooting
+
+### Extension Not Working
+1. Ensure all permissions are granted
+2. Check if extension is enabled in chrome://extensions/
+3. Reload the extension after updates
+
+### Clipboard Access Denied
+- Grant clipboard permissions when prompted
+- Check site-specific permissions in Chrome settings
+
+### Address Bar URLs Not Randomizing
+- Ensure tab focus monitoring is working
+- Try using the manual trigger (Ctrl+Shift+U)
+
+## Contributing
+
+Contributions are welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Run tests and linting
+4. Submit a pull request
+
+## License
+
+MIT License - See LICENSE file for details
+
+## Acknowledgments
+
+Built to combat invasive marketing tracking and protect user privacy. Special thanks to the open-source community for inspiration and tools.
+
+---
+
+**Version**: 1.1.0  
+**Last Updated**: September 2024

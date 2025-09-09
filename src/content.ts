@@ -6,11 +6,11 @@ let lastProcessedTime = 0;
 const DEBOUNCE_TIME = 500; // Prevent rapid re-processing
 
 // Debounced clipboard check
-function debounce<T extends (...args: any[]) => any>(
+function debounce<T extends (...args: unknown[]) => unknown>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout;
+  let timeout: ReturnType<typeof setTimeout>;
   return (...args: Parameters<T>) => {
     clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
@@ -99,7 +99,7 @@ function showNotification(message: string) {
 }
 
 // Monitor copy events with better handling
-document.addEventListener('copy', (event) => {
+document.addEventListener('copy', () => {
   // Only process if text is selected (not images, etc.)
   const selection = window.getSelection();
   if (selection && selection.toString().trim()) {
@@ -121,7 +121,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 // Also monitor paste events to check if user is pasting a URL
-document.addEventListener('paste', async (event) => {
+document.addEventListener('paste', async () => {
   // Small delay to process after paste completes
   setTimeout(debouncedCheck, 50);
 });
