@@ -1,6 +1,6 @@
 # UTM Randomizer Chrome Extension
 
-A robust Chrome extension that automatically replaces UTM tracking parameters with randomized values when copying URLs, protecting your privacy and preventing marketing attribution tracking.
+A privacy-focused Chrome extension that automatically replaces UTM tracking parameters with randomized values when copying URLs, preventing marketing attribution and protecting user privacy.
 
 ## Overview
 
@@ -129,16 +129,16 @@ Tests include:
 ## Technical Details
 
 ### Architecture
-- **Background Script**: Handles clipboard operations via Chrome APIs
-- **Content Script**: Monitors page events and clipboard access
-- **Message Passing**: Secure communication between scripts
-- **Memory Management**: Automatic cleanup to prevent memory leaks
+- **Service Worker**: Background script using Chrome Offscreen API for secure clipboard access
+- **Content Script**: Monitors copy events within webpages
+- **Offscreen Document**: Dedicated context for clipboard operations
+- **Security First**: Only operates when Chrome is active and user initiates action
 
 ### Performance
-- **Debouncing**: 100ms for clipboard checks, 500ms deduplication
-- **Caching**: 5-second cache for repeated URLs
-- **Memory Cleanup**: Automatic purge every 60 seconds
-- **Processing Speed**: 2.5M+ URLs/second
+- **Debouncing**: Intelligent clipboard monitoring with user activity detection
+- **Caching**: 3-second deduplication for repeated URLs
+- **Processing Speed**: 3M+ URLs/second
+- **Resource Efficient**: Minimal CPU and memory footprint
 
 ### Security & Privacy
 - **No Data Collection**: All processing happens locally
@@ -149,19 +149,19 @@ Tests include:
 ## Permissions
 
 The extension requires these permissions:
+- `offscreen`: Create secure context for clipboard operations
 - `clipboardRead/Write`: Access clipboard for URL processing
-- `activeTab`: Interact with current tab
 - `contextMenus`: Add right-click menu option
-- `notifications`: Show success confirmations
-- `scripting`: Inject clipboard monitoring
+- `notifications`: Display success indicators
+- `scripting`: Inject notification display
 - `storage`: Save statistics and preferences
-- `tabs`: Monitor tab focus changes
+- `tabs`: Monitor user activity in Chrome
 
 ## Browser Compatibility
 
-- Chrome 116+ (recommended)
-- Edge 116+
-- Other Chromium-based browsers
+- Chrome 109+ (required for Offscreen API)
+- Edge 109+
+- Chromium-based browsers with Manifest V3 support
 
 ## Troubleshooting
 
@@ -196,5 +196,5 @@ Built to combat invasive marketing tracking and protect user privacy. Special th
 
 ---
 
-**Version**: 1.1.0  
-**Last Updated**: September 2024
+**Version**: 2.0.0  
+**Last Updated**: September 2025

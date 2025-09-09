@@ -2,6 +2,32 @@
 
 All notable changes to the UTM Randomizer extension will be documented in this file.
 
+## [2.0.0] - 2025-09-09
+
+### Major Changes
+- **Architecture**: Complete rewrite using Chrome Offscreen API for secure clipboard access
+- **Security**: Extension only operates when Chrome is active and user initiates action
+- **Notifications**: Replaced system notifications with in-page visual indicators
+- **Performance**: Improved to 3M+ URLs/second processing capability
+
+### Added
+- **Offscreen Document**: Dedicated secure context for clipboard operations
+- **Badge Notifications**: Fallback indicator when in-page notifications unavailable
+- **Chrome Focus Tracking**: Ensures clipboard only accessed when Chrome is active
+- **Manual Trigger**: Improved popup with direct clipboard check
+
+### Fixed
+- **Critical Security Issue**: No longer monitors clipboard when Chrome is not active
+- **Notification Display**: Works on all pages including chrome:// URLs
+- **Address Bar Detection**: More reliable detection using multiple triggers
+- **UTM Coverage**: Now detects ANY utm_* parameter including custom ones
+
+### Improved
+- **Code Organization**: Moved test tools to docs/tools subdirectory
+- **Memory Management**: Reduced cache time to 3 seconds
+- **Error Handling**: Better fallbacks for restricted pages
+- **Documentation**: Professional documentation with clear explanations
+
 ## [1.1.0] - 2024-09-09
 
 ### Critical Fixes
