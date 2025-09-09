@@ -8,7 +8,8 @@ module.exports = (env, argv) => {
       background: './src/background.ts',
       content: './src/content.ts',
       popup: './src/popup.ts',
-      utils: './src/utils.ts'
+      utils: './src/utils.ts',
+      offscreen: './src/offscreen.ts'
     },
     module: {
       rules: [
