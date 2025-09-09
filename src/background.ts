@@ -130,13 +130,18 @@ async function checkClipboardForAddressBarCopy() {
     // Show in-page notification in active tab
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (activeTab?.id) {
-      chrome.scripting.executeScript({
-        target: { tabId: activeTab.id },
-        func: showInPageNotification,
-        args: ['UTM parameters randomized from address bar!']
-      }).catch(() => {
-        // Tab might not allow script injection
-      });
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          func: showInPageNotification,
+          args: ['UTM parameters randomized from address bar!']
+        });
+      } catch (error) {
+        // Can't inject into this tab (chrome://, extensions page, etc.)
+        // Show badge notification as fallback
+        console.log('Cannot show in-page notification, using badge');
+        await showBadgeNotification();
+      }
     }
     
     console.log('Address bar URL randomized:', randomized);
@@ -184,6 +189,18 @@ function showInPageNotification(message: string) {
     notification.style.transform = 'translateY(-10px)';
     setTimeout(() => notification.remove(), 300);
   }, 2500);
+}
+
+// Show badge notification as fallback
+async function showBadgeNotification() {
+  // Show a badge on the extension icon
+  chrome.action.setBadgeText({ text: '✓' });
+  chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+  
+  // Clear badge after 2 seconds
+  setTimeout(() => {
+    chrome.action.setBadgeText({ text: '' });
+  }, 2000);
 }
 
 // Handle messages from content scripts
@@ -279,11 +296,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       });
       
       // Show in-page notification
-      chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: showInPageNotification,
-        args: ['UTM parameters randomized!']
-      }).catch(() => {});
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: showInPageNotification,
+          args: ['UTM parameters randomized!']
+        });
+      } catch (error) {
+        console.log('Cannot show notification in this tab, using badge');
+        await showBadgeNotification();
+      }
       
       // Update stats
       stats.countTotal++;
