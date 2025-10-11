@@ -6,6 +6,7 @@ A Chrome extension that automatically replaces common tracking parameters (UTM, 
 
 - 🎯 Detects UTM parameters **and** popular analytics IDs like `fbclid`, `gclid`, `msclkid`, `mkt_tok`, HubSpot/Marketo tags, and more
 - 🎲 Replaces marketing payloads with hilarious random values (hashes stay hash-y, sources get jokes)
+- 📋 Hooks into modern copy buttons (`navigator.clipboard.write*`) and traditional copy events alike
 - 🔔 Shows brief notifications when parameters are randomized
 - 🚀 Works on all websites where clipboard access is permitted
 - 🔒 Privacy-focused - no data collection
