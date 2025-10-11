@@ -1,9 +1,23 @@
 import { randomizeTrackingParameters } from './utm-randomizer';
 
 const NOTIFICATION_MESSAGE = 'Tracking parameters randomized! 🎲';
-const POINTER_CHECK_DELAYS = [120, 260, 520, 900];
-const COPY_EVENT_DELAYS = [40, 120];
-const COPY_KEYWORDS = ['copy', 'clipboard', 'share', 'link', 'url', 'invite', 'permalink', 'copylink', 'copy-link'];
+const POINTER_CHECK_DELAYS = [120, 320, 640, 1100, 1850, 2600];
+const COPY_EVENT_DELAYS = [40, 140, 320];
+const COPY_KEYWORDS = [
+  'copy',
+  'clipboard',
+  'share',
+  'link',
+  'url',
+  'invite',
+  'permalink',
+  'perma-link',
+  'copylink',
+  'copy-link',
+  'sharelink',
+  'share-link',
+  'copy-url',
+];
 
 let sweepInProgress = false;
 let lastClipboardValue: string | null = null;
@@ -50,6 +64,36 @@ function elementHasCopyIntent(element: Element): boolean {
   });
 }
 
+function isInteractiveElement(element: Element): boolean {
+  if (
+    element instanceof HTMLButtonElement ||
+    element instanceof HTMLAnchorElement ||
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement
+  ) {
+    return true;
+  }
+
+  if (element instanceof HTMLElement) {
+    const role = element.getAttribute('role');
+    if (role && ['button', 'menuitem', 'option', 'link', 'switch', 'tab'].includes(role.toLowerCase())) {
+      return true;
+    }
+
+    if (typeof element.onclick === 'function' || element.tabIndex >= 0) {
+      return true;
+    }
+
+    const classList = Array.from(element.classList);
+    if (classList.some(cls => cls.toLowerCase().includes('button') || cls.toLowerCase().includes('copy'))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function shouldMonitorPointerTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) {
     return false;
@@ -58,7 +102,7 @@ function shouldMonitorPointerTarget(target: EventTarget | null): boolean {
   let current: Element | null = target;
   let depth = 0;
   while (current && depth < 5) {
-    if (elementHasCopyIntent(current)) {
+    if (elementHasCopyIntent(current) || isInteractiveElement(current)) {
       return true;
     }
     current = current.parentElement;

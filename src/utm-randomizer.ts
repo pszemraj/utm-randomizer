@@ -123,6 +123,7 @@ registerCategory('generic', [
   'ga_location',
   'adid',
   'adgroupid',
+  'adunit',
   'device',
   'placement',
   'matchtype',
@@ -131,6 +132,16 @@ registerCategory('generic', [
   'creativeid',
   'creative_id',
   'adgroupname',
+  'emc',
+  'nl',
+  'referringsource',
+  'referring_source',
+  'sharelink',
+  'share_link',
+  'share_url',
+  'sharechannel',
+  'newsletter',
+  'audience',
 ]);
 
 const EXACT_HASH_KEYS = new Set(
@@ -169,6 +180,16 @@ const EXACT_HASH_KEYS = new Set(
     'ncid',
     'adobe_mc_ref',
     'adobe_mc_sdid',
+    'instance_id',
+    'segment_id',
+    'regi_id',
+    'user_id',
+    'smid',
+    'unlocked_article_code',
+    'ad_id',
+    'ref_id',
+    'visitor_id',
+    'subscriber_id',
   ].map(key => key.toLowerCase()),
 );
 
@@ -190,6 +211,7 @@ const GENERIC_TRACKING_HINTS: RegExp[] = [
   /(^|[_-])aff([_-]|$)/,
   /(^|[_-])(session|visitor)(_?id)?([_-]|$)/,
   /(^|[_-])adid([_-]|$)/,
+  /(^|[_-])(newsletter|audience|segment)([_-]|$)/,
 ];
 
 const ALPHANUMERIC = 'abcdefghijklmnopqrstuvwxyz0123456789';
