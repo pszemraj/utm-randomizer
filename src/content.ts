@@ -1,4 +1,4 @@
-import { randomizeUTMParameters } from './utm-randomizer';
+import { hasTrackingParameters, randomizeTrackingParameters } from './utm-randomizer';
 
 let isProcessing = false;
 
@@ -6,17 +6,6 @@ function isValidURL(str: string): boolean {
   try {
     new URL(str);
     return true;
-  } catch {
-    return false;
-  }
-}
-
-function hasUTMParameters(url: string): boolean {
-  try {
-    const urlObj = new URL(url);
-    const params = urlObj.searchParams;
-    const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
-    return utmKeys.some(key => params.has(key));
   } catch {
     return false;
   }
@@ -31,10 +20,10 @@ async function interceptClipboard() {
     // Read clipboard content
     const clipboardText = await navigator.clipboard.readText();
     
-    if (isValidURL(clipboardText) && hasUTMParameters(clipboardText)) {
-      console.log('UTM Randomizer: Found URL with UTM parameters:', clipboardText);
+    if (isValidURL(clipboardText) && hasTrackingParameters(clipboardText)) {
+      console.log('UTM Randomizer: Found URL with tracking parameters:', clipboardText);
       
-      const randomizedURL = randomizeUTMParameters(clipboardText);
+      const randomizedURL = randomizeTrackingParameters(clipboardText);
       
       if (randomizedURL !== clipboardText) {
         // Write the randomized URL back to clipboard
@@ -42,7 +31,7 @@ async function interceptClipboard() {
         console.log('UTM Randomizer: Replaced with:', randomizedURL);
         
         // Show a brief notification
-        showNotification('UTM parameters randomized! 🎲');
+        showNotification('Tracking parameters randomized! 🎲');
       }
     }
   } catch (error) {

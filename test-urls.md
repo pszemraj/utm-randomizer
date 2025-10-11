@@ -23,3 +23,10 @@ https://store.com/item?id=123&utm_source=affiliate&utm_medium=referral&color=blu
 ```
 https://example.com/page?id=123&category=tech&sort=date
 ```
+
+## Modern analytics IDs (should jumble tokens too)
+```
+https://news.site/story?fbclid=IwAR1abc123XYZ&gclid=CjwK12345&msclkid=abcdef012345&utm_source=newsletter&utm_medium=email
+https://shop.example/product?mkt_tok=MTIzLTM0NTYtNzg5MC1hYmNkLWVmZ2hp&utm_campaign=sale&utm_content=hero_banner
+https://blog.b2b.com/post?_hsenc=p123456789&_hsmi=12345678&mc_cid=abc123&mc_eid=4df567&utm_term=marketing
+```
