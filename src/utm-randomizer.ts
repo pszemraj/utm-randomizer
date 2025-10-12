@@ -89,6 +89,23 @@ const FUNNY_GENERIC = [
   'mystery-tour',
 ];
 
+const FUNNY_WORD_BANK = Array.from(
+  new Set([
+    ...FUNNY_GENERIC,
+    ...FUNNY_SOURCES,
+    ...FUNNY_MEDIUMS,
+    ...FUNNY_CAMPAIGNS,
+    ...FUNNY_TERMS,
+    ...FUNNY_CONTENT,
+    'ad-tech-exorcism',
+    'cookie-confetti',
+    'tracking-troll',
+    'surveillance-slapstick',
+    'signal-smuggler',
+    'botnet-ballet',
+  ]),
+);
+
 type TrackingCategory = 'source' | 'medium' | 'campaign' | 'term' | 'content' | 'generic' | 'hash';
 
 const CATEGORY_LOOKUP = new Map<string, Exclude<TrackingCategory, 'hash'>>();
@@ -220,22 +237,6 @@ function getRandomElement<T>(array: T[]): T {
   return array[Math.floor(Math.random() * array.length)];
 }
 
-function mimicCasing(sample: string, value: string): string {
-  if (!sample) return value;
-  const lower = sample.toLowerCase();
-  const upper = sample.toUpperCase();
-
-  if (sample === upper) {
-    return value.toUpperCase();
-  }
-
-  if (sample === lower) {
-    return value.toLowerCase();
-  }
-
-  return value;
-}
-
 function randomAlphaNumeric(length: number): string {
   let token = '';
   for (let i = 0; i < length; i += 1) {
@@ -245,26 +246,20 @@ function randomAlphaNumeric(length: number): string {
 }
 
 function generateTrackingToken(original: string): string {
-  const normalized = original.trim();
-  if (!normalized) {
-    return randomAlphaNumeric(16);
+  const desiredWordCount = Math.min(4, Math.max(2, Math.floor(Math.max(original.length, 12) / 16)));
+  const words: string[] = [];
+
+  while (words.length < desiredWordCount) {
+    const candidate = getRandomElement(FUNNY_WORD_BANK);
+    if (!words.includes(candidate)) {
+      words.push(candidate);
+    }
   }
 
-  const separators = normalized.match(/[-_]/g);
-  if (!separators) {
-    const length = Math.min(Math.max(normalized.length, 12), 64);
-    return mimicCasing(normalized, randomAlphaNumeric(length));
-  }
+  const suffixLength = Math.min(10, Math.max(4, Math.ceil(Math.max(original.length, 8) / 7)));
+  const suffix = randomAlphaNumeric(suffixLength);
 
-  const segments = normalized.split(/[-_]/);
-  const rebuilt = segments
-    .map(segment => {
-      const length = Math.min(Math.max(segment.length, 6), 32);
-      return mimicCasing(segment, randomAlphaNumeric(length));
-    })
-    .join(separators[0]);
-
-  return rebuilt;
+  return [...words, suffix].join('-');
 }
 
 function getFunnyValueForCategory(category: Exclude<TrackingCategory, 'hash'>): string {

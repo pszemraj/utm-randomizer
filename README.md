@@ -5,7 +5,7 @@ A Chrome extension that automatically replaces common tracking parameters (UTM, 
 ## Features
 
 - 🎯 Detects UTM parameters **and** popular analytics IDs like `fbclid`, `gclid`, `msclkid`, `mkt_tok`, HubSpot/Marketo tags, and more
-- 🎲 Replaces marketing payloads with hilarious random values (hashes stay hash-y, sources get jokes)
+- 🎲 Replaces marketing payloads with rebellious nonsense (IDs become chaos phrases, sources get jokes)
 - 📋 Hooks into modern copy buttons (`navigator.clipboard.write*`) and traditional copy events alike
 - 🔔 Shows brief notifications when parameters are randomized
 - 🚀 Works on all websites where clipboard access is permitted
@@ -44,7 +44,7 @@ The extension keeps an evolving catalogue of common marketing parameters, includ
 - HubSpot (`_hsenc`, `_hsmi`), Marketo (`mkt_tok`), Mailchimp (`mc_eid`, `mc_cid`), Adobe MC IDs, Omeda (`oly_anon_id`, `oly_enc_id`), and similar
 - Generic tracking hints like `campaign`, `source`, `adgroup`, `creative`, `placement`, and friends
 
-Identifiers stay the same shape (hashes stay hashed) so links keep working, while attribution data turns into goofy nonsense.
+Identifiers turn into chaotic nonsense phrases so attribution data becomes useless while links keep working.
 
 ## Development
 
@@ -52,6 +52,7 @@ Identifiers stay the same shape (hashes stay hashed) so links keep working, whil
 - `npm run build` - Build for production
 - `npm run lint` - Run ESLint
 - `npm run type-check` - Run TypeScript type checking
+- `npm run test` - Run deterministic unit tests for the randomizer logic
 
 ## Permissions
 

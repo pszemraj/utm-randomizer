@@ -201,7 +201,9 @@ async function runClipboardSweep(trigger: 'copy-event' | 'pointer-click', delays
       await wait(delay);
       const mutated = await tryMutateClipboard(trigger);
       if (mutated) {
-        break;
+        // Remember new baseline so subsequent iterations catch any site-overwrites.
+        // Do not break; some sites rewrite the clipboard again later in the sequence.
+        continue;
       }
     }
   } finally {
