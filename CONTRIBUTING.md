@@ -32,6 +32,7 @@ Thank you for your interest in contributing to UTM Randomizer! This document pro
 - `npm run build` - Build for production
 - `npm run lint` - Run ESLint
 - `npm run type-check` - Run TypeScript type checking
+- `npm run test` - Run deterministic randomizer unit tests
 
 ### Adding New Funny Values
 
@@ -69,7 +70,7 @@ Test your changes by:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. Run tests: `npm run lint && npm run type-check`
+4. Run tests: `npm run lint && npm run type-check && npm run test`
 5. Commit your changes (`git commit -m 'Add amazing feature'`)
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request

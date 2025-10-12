@@ -150,7 +150,7 @@ function showNotification(message: string) {
   }, 2600);
 }
 
-async function tryMutateClipboard(trigger: 'copy-event' | 'pointer-click'): Promise<boolean> {
+async function tryMutateClipboard(): Promise<boolean> {
   if (document.hidden || !document.hasFocus()) {
     return false;
   }
@@ -182,7 +182,6 @@ async function tryMutateClipboard(trigger: 'copy-event' | 'pointer-click'): Prom
     await navigator.clipboard.writeText(randomized);
     lastClipboardValue = randomized;
     showNotification(NOTIFICATION_MESSAGE);
-    console.log('UTM Randomizer:', trigger, 'replaced clipboard content');
     return true;
   } catch (error) {
     console.error('UTM Randomizer: Failed to write randomized URL to clipboard', error);
@@ -190,7 +189,7 @@ async function tryMutateClipboard(trigger: 'copy-event' | 'pointer-click'): Prom
   }
 }
 
-async function runClipboardSweep(trigger: 'copy-event' | 'pointer-click', delays: number[]) {
+async function runClipboardSweep(delays: number[]) {
   if (sweepInProgress) {
     return;
   }
@@ -199,7 +198,7 @@ async function runClipboardSweep(trigger: 'copy-event' | 'pointer-click', delays
   try {
     for (const delay of delays) {
       await wait(delay);
-      const mutated = await tryMutateClipboard(trigger);
+      const mutated = await tryMutateClipboard();
       if (mutated) {
         // Remember new baseline so subsequent iterations catch any site-overwrites.
         // Do not break; some sites rewrite the clipboard again later in the sequence.
@@ -214,7 +213,7 @@ async function runClipboardSweep(trigger: 'copy-event' | 'pointer-click', delays
 document.addEventListener(
   'copy',
   () => {
-    runClipboardSweep('copy-event', COPY_EVENT_DELAYS);
+    runClipboardSweep(COPY_EVENT_DELAYS);
   },
   true,
 );
@@ -238,7 +237,7 @@ document.addEventListener(
     if (document.hidden || !document.hasFocus()) {
       return;
     }
-    runClipboardSweep('pointer-click', POINTER_CHECK_DELAYS);
+    runClipboardSweep(POINTER_CHECK_DELAYS);
   },
   true,
 );

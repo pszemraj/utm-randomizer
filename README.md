@@ -18,8 +18,8 @@ A Chrome extension that automatically replaces common tracking parameters (UTM, 
 3. Run `npm run build` to build the extension
 4. Open Chrome and go to `chrome://extensions/`
 5. Enable "Developer mode"
-6. Click "Load unpacked" and select this directory
-7. The extension will now monitor your clipboard for UTM-tagged URLs
+6. Click "Load unpacked" and select this directory (the `manifest.json` expects icons at `assets/icons/`)
+7. The extension will now monitor your clipboard for tracking-heavy URLs
 
 ## How it works
 
