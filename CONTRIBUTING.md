@@ -5,17 +5,20 @@ Thank you for your interest in contributing to UTM Randomizer! This document pro
 ## Development Setup
 
 1. **Clone the repository**
+
    ```bash
    git clone <repository-url>
    cd utm-randomizer
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    ```
 
 3. **Build the extension**
+
    ```bash
    npm run build
    ```
@@ -28,6 +31,7 @@ Thank you for your interest in contributing to UTM Randomizer! This document pro
 ## Development Workflow
 
 ### Scripts
+
 - `npm run dev` - Build in development mode with watch
 - `npm run build` - Build for production
 - `npm run lint` - Run ESLint
@@ -45,6 +49,7 @@ To add new funny replacement values, edit `src/utm-randomizer.ts`:
 - `FUNNY_CONTENT` - For utm_content parameters
 
 Guidelines for new values:
+
 - Keep them humorous but not offensive
 - Avoid real company/brand names
 - Make them obviously fake to prevent confusion
@@ -53,6 +58,7 @@ Guidelines for new values:
 ### Testing
 
 Test your changes by:
+
 1. Building the extension with `npm run build`
 2. Reloading the extension in Chrome
 3. Using the test URLs [on the repo wiki](https://github.com/pszemraj/utm-randomizer/wiki/Test-URLs)
@@ -78,6 +84,7 @@ Test your changes by:
 ## Reporting Issues
 
 When reporting issues, please include:
+
 - Chrome version
 - Extension version
 - Steps to reproduce
