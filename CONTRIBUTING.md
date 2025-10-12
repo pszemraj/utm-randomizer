@@ -39,7 +39,7 @@ Thank you for your interest in contributing to UTM Randomizer! This document pro
 To add new funny replacement values, edit `src/utm-randomizer.ts`:
 
 - `FUNNY_SOURCES` - For utm_source parameters
-- `FUNNY_MEDIUMS` - For utm_medium parameters  
+- `FUNNY_MEDIUMS` - For utm_medium parameters
 - `FUNNY_CAMPAIGNS` - For utm_campaign parameters
 - `FUNNY_TERMS` - For utm_term parameters
 - `FUNNY_CONTENT` - For utm_content parameters
@@ -55,7 +55,7 @@ Guidelines for new values:
 Test your changes by:
 1. Building the extension with `npm run build`
 2. Reloading the extension in Chrome
-3. Using the test URLs in `test-urls.md`
+3. Using the test URLs [on the repo wiki](https://github.com/pszemraj/utm-randomizer/wiki/Test-URLs)
 4. Copying URLs with UTM parameters and verifying they're randomized
 
 ## Code Style
