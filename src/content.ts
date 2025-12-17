@@ -34,6 +34,67 @@ function lowerOrEmpty(value: string | null | undefined): string {
   return value ? value.toLowerCase() : '';
 }
 
+function stripWrappingCharacters(value: string): string {
+  return value.replace(/^[<"'`]+/, '').replace(/[>"'`]+$/, '');
+}
+
+function resolveUrlFromClipboard(raw: string): string | null {
+  const trimmed = stripWrappingCharacters(raw.trim().replace(/[\u200B-\u200D\uFEFF]/g, ''));
+  if (!trimmed || /\s/.test(trimmed)) {
+    return null;
+  }
+
+  const attempts: Array<{ candidate: string; useDocumentBase: boolean }> = [];
+  const pushed = new Set<string>();
+
+  const pushAttempt = (candidate: string, useDocumentBase = false) => {
+    if (!candidate || pushed.has(`${candidate}|${useDocumentBase}`)) {
+      return;
+    }
+    pushed.add(`${candidate}|${useDocumentBase}`);
+    attempts.push({ candidate, useDocumentBase });
+  };
+
+  pushAttempt(trimmed);
+
+  if (/^www\./i.test(trimmed)) {
+    pushAttempt(`https://${trimmed}`);
+  }
+
+  if (trimmed.startsWith('//')) {
+    pushAttempt(`https:${trimmed}`);
+  }
+
+  if (trimmed.startsWith('/')) {
+    pushAttempt(trimmed, true);
+  }
+
+  if (trimmed.startsWith('?') || trimmed.startsWith('#')) {
+    pushAttempt(trimmed, true);
+  }
+
+  if (trimmed.startsWith('./') || trimmed.startsWith('../')) {
+    pushAttempt(trimmed, true);
+  }
+
+  if (!trimmed.includes('://') && /^[a-z0-9.-]+\.[a-z]{2,}([/?#:]|$)/i.test(trimmed)) {
+    pushAttempt(`https://${trimmed}`);
+  }
+
+  for (const { candidate, useDocumentBase } of attempts) {
+    try {
+      const url = useDocumentBase ? new URL(candidate, window.location.href) : new URL(candidate);
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        return url.toString();
+      }
+    } catch {
+      // Ignore parse failures and continue attempting alternatives
+    }
+  }
+
+  return null;
+}
+
 function elementHasCopyIntent(element: Element): boolean {
   const texts: string[] = [];
 
@@ -172,8 +233,14 @@ async function tryMutateClipboard(): Promise<boolean> {
     return false;
   }
 
-  const randomized = randomizeTrackingParameters(clipboardText);
-  if (randomized === clipboardText) {
+  const normalized = resolveUrlFromClipboard(clipboardText);
+  if (!normalized) {
+    lastClipboardValue = clipboardText;
+    return false;
+  }
+
+  const randomized = randomizeTrackingParameters(normalized);
+  if (randomized === normalized) {
     lastClipboardValue = clipboardText;
     return false;
   }

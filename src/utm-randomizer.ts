@@ -312,51 +312,69 @@ function categorizeParam(key: string): TrackingCategory | null {
   return null;
 }
 
-export function hasTrackingParameters(url: string): boolean {
+function parseUrl(input: string): URL | null {
+  let parsed: URL;
+  const base =
+    typeof window !== 'undefined' && window.location && typeof window.location.href === 'string'
+      ? window.location.href
+      : undefined;
+
   try {
-    const urlObj = new URL(url);
-    for (const key of urlObj.searchParams.keys()) {
-      if (categorizeParam(key)) {
-        return true;
-      }
-    }
-    return false;
-  } catch (error) {
-    console.error('Failed to parse URL while checking tracking params:', error);
+    parsed = base ? new URL(input, base) : new URL(input);
+  } catch {
+    return null;
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return null;
+  }
+
+  return parsed;
+}
+
+export function hasTrackingParameters(url: string): boolean {
+  const urlObj = parseUrl(url);
+  if (!urlObj) {
     return false;
   }
+
+  for (const key of urlObj.searchParams.keys()) {
+    if (categorizeParam(key)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function randomizeTrackingParameters(url: string): string {
-  try {
-    const urlObj = new URL(url);
-    const params = new URLSearchParams(urlObj.search);
-
-    let mutated = false;
-
-    params.forEach((value, key) => {
-      const category = categorizeParam(key);
-      if (!category) {
-        return;
-      }
-
-      mutated = true;
-
-      if (category === 'hash') {
-        params.set(key, generateTrackingToken(value));
-      } else {
-        params.set(key, getFunnyValueForCategory(category));
-      }
-    });
-
-    if (!mutated) {
-      return url;
-    }
-
-    urlObj.search = params.toString();
-    return urlObj.toString();
-  } catch (error) {
-    console.error('Failed to randomize tracking parameters:', error);
+  const urlObj = parseUrl(url);
+  if (!urlObj) {
     return url;
   }
+
+  const params = new URLSearchParams(urlObj.search);
+
+  let mutated = false;
+
+  params.forEach((value, key) => {
+    const category = categorizeParam(key);
+    if (!category) {
+      return;
+    }
+
+    mutated = true;
+
+    if (category === 'hash') {
+      params.set(key, generateTrackingToken(value));
+    } else {
+      params.set(key, getFunnyValueForCategory(category));
+    }
+  });
+
+  if (!mutated) {
+    return url;
+  }
+
+  urlObj.search = params.toString();
+  return urlObj.toString();
 }
