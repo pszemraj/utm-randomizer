@@ -233,14 +233,22 @@ const GENERIC_TRACKING_HINTS: RegExp[] = [
 
 const ALPHANUMERIC = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
+function secureRandomInt(max: number): number {
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  return array[0] % max;
+}
+
 function getRandomElement<T>(array: T[]): T {
-  return array[Math.floor(Math.random() * array.length)];
+  return array[secureRandomInt(array.length)];
 }
 
 function randomAlphaNumeric(length: number): string {
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
   let token = '';
   for (let i = 0; i < length; i += 1) {
-    token += ALPHANUMERIC.charAt(Math.floor(Math.random() * ALPHANUMERIC.length));
+    token += ALPHANUMERIC.charAt(array[i] % ALPHANUMERIC.length);
   }
   return token;
 }

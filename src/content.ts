@@ -24,6 +24,11 @@ let lastClipboardValue: string | null = null;
 let baselineInitialized = false;
 let pointerCandidate = false;
 
+const clipboardSupported =
+  typeof navigator !== 'undefined' &&
+  typeof navigator.clipboard !== 'undefined' &&
+  typeof navigator.clipboard.readText === 'function';
+
 function wait(ms: number): Promise<void> {
   return new Promise(resolve => {
     window.setTimeout(resolve, ms);
@@ -212,7 +217,7 @@ function showNotification(message: string) {
 }
 
 async function tryMutateClipboard(): Promise<boolean> {
-  if (document.hidden || !document.hasFocus()) {
+  if (!clipboardSupported || document.hidden || !document.hasFocus()) {
     return false;
   }
 
@@ -220,6 +225,7 @@ async function tryMutateClipboard(): Promise<boolean> {
   try {
     clipboardText = await navigator.clipboard.readText();
   } catch (error) {
+    console.debug('UTM Randomizer: Clipboard read failed', error);
     return false;
   }
 
@@ -309,14 +315,18 @@ document.addEventListener(
   true,
 );
 
-(async () => {
-  try {
-    const initial = await navigator.clipboard.readText();
-    lastClipboardValue = initial;
-    baselineInitialized = true;
-  } catch {
-    baselineInitialized = true;
-  }
-})();
-
-console.log('UTM Randomizer: Content script loaded with clipboard sweep mode');
+if (clipboardSupported) {
+  (async () => {
+    try {
+      const initial = await navigator.clipboard.readText();
+      lastClipboardValue = initial;
+      baselineInitialized = true;
+    } catch (error) {
+      console.debug('UTM Randomizer: Initial clipboard read failed', error);
+      baselineInitialized = true;
+    }
+  })();
+  console.debug('UTM Randomizer: Content script loaded');
+} else {
+  console.debug('UTM Randomizer: Clipboard API not available');
+}
