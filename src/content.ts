@@ -1,5 +1,10 @@
 import { randomizeTrackingParameters } from './utm-randomizer';
 
+const clipboardSupported =
+  typeof navigator !== 'undefined' &&
+  typeof navigator.clipboard !== 'undefined' &&
+  typeof navigator.clipboard.readText === 'function';
+
 const NOTIFICATION_MESSAGE = 'Tracking parameters randomized! 🎲';
 const POINTER_CHECK_DELAYS = [120, 320, 640, 1100, 1850, 2600];
 const COPY_EVENT_DELAYS = [40, 140, 320];
@@ -150,6 +155,67 @@ function showNotification(message: string) {
   }, 2600);
 }
 
+function stripWrappingCharacters(value: string): string {
+  return value.replace(/^[<"'`]+/, '').replace(/[>"'`]+$/, '');
+}
+
+function resolveUrlFromClipboard(raw: string): string | null {
+  const trimmed = stripWrappingCharacters(raw.trim().replace(/[\u200B-\u200D\uFEFF]/g, ''));
+  if (!trimmed || /\s/.test(trimmed)) {
+    return null;
+  }
+
+  const attempts: Array<{ candidate: string; useDocumentBase: boolean }> = [];
+  const pushed = new Set<string>();
+
+  const pushAttempt = (candidate: string, useDocumentBase = false) => {
+    if (!candidate || pushed.has(`${candidate}|${useDocumentBase}`)) {
+      return;
+    }
+    pushed.add(`${candidate}|${useDocumentBase}`);
+    attempts.push({ candidate, useDocumentBase });
+  };
+
+  pushAttempt(trimmed);
+
+  if (/^www\./i.test(trimmed)) {
+    pushAttempt(`https://${trimmed}`);
+  }
+
+  if (trimmed.startsWith('//')) {
+    pushAttempt(`https:${trimmed}`);
+  }
+
+  if (trimmed.startsWith('/')) {
+    pushAttempt(trimmed, true);
+  }
+
+  if (trimmed.startsWith('?') || trimmed.startsWith('#')) {
+    pushAttempt(trimmed, true);
+  }
+
+  if (trimmed.startsWith('./') || trimmed.startsWith('../')) {
+    pushAttempt(trimmed, true);
+  }
+
+  if (!trimmed.includes('://') && /^[a-z0-9.-]+\.[a-z]{2,}([/?#:]|$)/i.test(trimmed)) {
+    pushAttempt(`https://${trimmed}`);
+  }
+
+  for (const { candidate, useDocumentBase } of attempts) {
+    try {
+      const url = useDocumentBase ? new URL(candidate, window.location.href) : new URL(candidate);
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        return url.toString();
+      }
+    } catch {
+      // Ignore parse failures and continue attempting alternatives
+    }
+  }
+
+  return null;
+}
+
 async function tryMutateClipboard(): Promise<boolean> {
   if (document.hidden || !document.hasFocus()) {
     return false;
@@ -159,6 +225,7 @@ async function tryMutateClipboard(): Promise<boolean> {
   try {
     clipboardText = await navigator.clipboard.readText();
   } catch (error) {
+    console.debug('UTM Randomizer: Clipboard read failed', error);
     return false;
   }
 
@@ -172,8 +239,14 @@ async function tryMutateClipboard(): Promise<boolean> {
     return false;
   }
 
-  const randomized = randomizeTrackingParameters(clipboardText);
-  if (randomized === clipboardText) {
+  const resolvedUrl = resolveUrlFromClipboard(clipboardText);
+  if (!resolvedUrl) {
+    lastClipboardValue = clipboardText;
+    return false;
+  }
+
+  const randomized = randomizeTrackingParameters(resolvedUrl);
+  if (randomized === resolvedUrl) {
     lastClipboardValue = clipboardText;
     return false;
   }
@@ -184,7 +257,7 @@ async function tryMutateClipboard(): Promise<boolean> {
     showNotification(NOTIFICATION_MESSAGE);
     return true;
   } catch (error) {
-    console.error('UTM Randomizer: Failed to write randomized URL to clipboard', error);
+    console.debug('UTM Randomizer: Failed to write randomized URL to clipboard', error);
     return false;
   }
 }
@@ -210,46 +283,51 @@ async function runClipboardSweep(delays: number[]) {
   }
 }
 
-document.addEventListener(
-  'copy',
-  () => {
-    runClipboardSweep(COPY_EVENT_DELAYS);
-  },
-  true,
-);
+if (clipboardSupported) {
+  document.addEventListener(
+    'copy',
+    () => {
+      runClipboardSweep(COPY_EVENT_DELAYS);
+    },
+    true,
+  );
 
-document.addEventListener(
-  'pointerdown',
-  (event) => {
-    pointerCandidate = shouldMonitorPointerTarget(event.target);
-  },
-  true,
-);
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      pointerCandidate = shouldMonitorPointerTarget(event.target);
+    },
+    true,
+  );
 
-document.addEventListener(
-  'click',
-  (event) => {
-    const isCandidate = pointerCandidate || shouldMonitorPointerTarget(event.target);
-    pointerCandidate = false;
-    if (!isCandidate) {
-      return;
+  document.addEventListener(
+    'click',
+    (event) => {
+      const isCandidate = pointerCandidate || shouldMonitorPointerTarget(event.target);
+      pointerCandidate = false;
+      if (!isCandidate) {
+        return;
+      }
+      if (document.hidden || !document.hasFocus()) {
+        return;
+      }
+      runClipboardSweep(POINTER_CHECK_DELAYS);
+    },
+    true,
+  );
+
+  (async () => {
+    try {
+      const initial = await navigator.clipboard.readText();
+      lastClipboardValue = initial;
+      baselineInitialized = true;
+    } catch (error) {
+      console.debug('UTM Randomizer: Initial clipboard read failed', error);
+      baselineInitialized = true;
     }
-    if (document.hidden || !document.hasFocus()) {
-      return;
-    }
-    runClipboardSweep(POINTER_CHECK_DELAYS);
-  },
-  true,
-);
+  })();
 
-(async () => {
-  try {
-    const initial = await navigator.clipboard.readText();
-    lastClipboardValue = initial;
-    baselineInitialized = true;
-  } catch {
-    baselineInitialized = true;
-  }
-})();
-
-console.log('UTM Randomizer: Content script loaded with clipboard sweep mode');
+  console.debug('UTM Randomizer: Content script loaded');
+} else {
+  console.debug('UTM Randomizer: Clipboard API not available');
+}
