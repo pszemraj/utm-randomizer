@@ -3,6 +3,7 @@ const path = require('path');
 module.exports = {
   entry: {
     content: './src/content.ts',
+    popup: './src/popup.ts',
   },
   module: {
     rules: [

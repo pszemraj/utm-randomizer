@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { hasTrackingParameters, randomizeTrackingParameters } from '../src/utm-randomizer';
+import { hasTrackingParameters, randomizeTrackingParameters, isAlreadyRandomized } from '../src/utm-randomizer';
 
 type TestCase = {
   name: string;
@@ -70,6 +70,54 @@ const tests: TestCase[] = [
       const original = 'https://example.com/path?foo=bar&baz=qux#section';
       const randomized = randomizeTrackingParameters(original);
       assert.strictEqual(randomized, original);
+    },
+  },
+  {
+    name: 'does not re-randomize already randomized URLs (idempotency)',
+    run: () => {
+      const original = 'https://example.com?utm_source=facebook&utm_medium=social&fbclid=abc123';
+      const firstPass = randomizeTrackingParameters(original);
+
+      // Verify first pass changed the URL
+      assert.notStrictEqual(firstPass, original, 'First randomization should change URL');
+
+      // Second pass should return identical result (no re-randomization)
+      const secondPass = randomizeTrackingParameters(firstPass);
+      assert.strictEqual(secondPass, firstPass, 'Already randomized URL should not change');
+    },
+  },
+  {
+    name: 'isAlreadyRandomized detects funny category values',
+    run: () => {
+      // Known funny values from FUNNY_* arrays
+      assert.strictEqual(isAlreadyRandomized('definitely-not-facebook'), true);
+      assert.strictEqual(isAlreadyRandomized('smoke-signals'), true);
+      assert.strictEqual(isAlreadyRandomized('operation-click-bait'), true);
+      assert.strictEqual(isAlreadyRandomized('unicorn-tears'), true);
+      assert.strictEqual(isAlreadyRandomized('banner-of-shame'), true);
+      assert.strictEqual(isAlreadyRandomized('nope-not-today'), true);
+
+      // Real tracking values should not be detected as randomized
+      assert.strictEqual(isAlreadyRandomized('facebook'), false);
+      assert.strictEqual(isAlreadyRandomized('cpc'), false);
+      assert.strictEqual(isAlreadyRandomized('spring_sale'), false);
+      assert.strictEqual(isAlreadyRandomized('IwAR3abc123xyz'), false);
+    },
+  },
+  {
+    name: 'isAlreadyRandomized detects hash token patterns',
+    run: () => {
+      // Valid hash token patterns containing known FUNNY_WORD_BANK phrases
+      // These use hyphenated phrases from the word bank
+      assert.strictEqual(isAlreadyRandomized('cookie-crumbler-mystery-tour-abc123'), true);
+      assert.strictEqual(isAlreadyRandomized('tracking-troll-nope-not-today-xyz789'), true);
+      assert.strictEqual(isAlreadyRandomized('ad-tech-exorcism-botnet-ballet-abcd1234'), true);
+
+      // Invalid patterns (no known phrases or wrong structure)
+      assert.strictEqual(isAlreadyRandomized('abc123'), false);
+      assert.strictEqual(isAlreadyRandomized('single'), false);
+      assert.strictEqual(isAlreadyRandomized('unknown-words-test-abc123'), false);
+      assert.strictEqual(isAlreadyRandomized('IwAR3abc123xyz789def'), false);
     },
   },
 ];

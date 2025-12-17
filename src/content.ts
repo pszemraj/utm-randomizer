@@ -11,27 +11,56 @@ const COPY_EVENT_DELAYS = [40, 140, 320];
 const COPY_KEYWORDS = [
   'copy',
   'clipboard',
-  'share',
-  'link',
-  'url',
-  'invite',
-  'permalink',
-  'perma-link',
   'copylink',
   'copy-link',
-  'sharelink',
-  'share-link',
+  'copy_link',
   'copy-url',
+  'copy_url',
+  'copyurl',
+  'copy-to-clipboard',
+  'copytoclipboard',
 ];
 
-let sweepInProgress = false;
+let sweepAbortController: AbortController | null = null;
 let lastClipboardValue: string | null = null;
 let baselineInitialized = false;
 let pointerCandidate = false;
+let extensionEnabled = true;
 
-function wait(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    window.setTimeout(resolve, ms);
+// Load initial enabled state from storage
+chrome.storage.local.get(['enabled']).then((result) => {
+  extensionEnabled = result.enabled !== false;
+});
+
+// Listen for changes to enabled state
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.enabled !== undefined) {
+    extensionEnabled = changes.enabled.newValue !== false;
+  }
+});
+
+async function incrementStats() {
+  const result = await chrome.storage.local.get(['totalCount', 'sessionCount']);
+  await chrome.storage.local.set({
+    totalCount: (result.totalCount || 0) + 1,
+    sessionCount: (result.sessionCount || 0) + 1,
+  });
+}
+
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(resolve, ms);
+
+    if (signal) {
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timeoutId);
+          reject(new DOMException('Aborted', 'AbortError'));
+        },
+        { once: true },
+      );
+    }
   });
 }
 
@@ -125,21 +154,54 @@ function showNotification(message: string) {
 
   const notification = document.createElement('div');
   notification.id = '__utm-randomizer-toast';
-  notification.textContent = message;
+
+  // Create message span
+  const messageSpan = document.createElement('span');
+  messageSpan.textContent = message;
+
+  // Create dismiss button
+  const dismissBtn = document.createElement('button');
+  dismissBtn.textContent = '\u00d7'; // × character
+  dismissBtn.setAttribute('aria-label', 'Dismiss notification');
+  dismissBtn.style.cssText = `
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 0 0 12px;
+    opacity: 0.7;
+    line-height: 1;
+  `;
+  dismissBtn.addEventListener('mouseenter', () => {
+    dismissBtn.style.opacity = '1';
+  });
+  dismissBtn.addEventListener('mouseleave', () => {
+    dismissBtn.style.opacity = '0.7';
+  });
+
+  notification.appendChild(messageSpan);
+  notification.appendChild(dismissBtn);
+
+  // Neutral colors that work in light/dark mode, bottom-left to avoid conflicts
   notification.style.cssText = `
     position: fixed;
-    top: 20px;
-    right: 20px;
-    background: #4CAF50;
-    color: white;
-    padding: 12px 20px;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(50, 50, 50, 0.95);
+    color: #f0f0f0;
+    padding: 10px 14px;
     border-radius: 6px;
     z-index: 2147483647;
-    font-family: Arial, sans-serif;
-    font-size: 14px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     opacity: 0;
-    transition: opacity 0.25s ease;
+    transition: opacity 0.2s ease;
+    display: flex;
+    align-items: center;
+    max-width: 300px;
+    pointer-events: auto;
   `;
 
   document.body.appendChild(notification);
@@ -147,12 +209,22 @@ function showNotification(message: string) {
     notification.style.opacity = '1';
   });
 
-  setTimeout(() => {
+  // Shorter duration: 1.8s instead of 2.6s
+  const timeoutId = setTimeout(() => {
     notification.style.opacity = '0';
-    setTimeout(() => {
-      notification.remove();
-    }, 250);
-  }, 2600);
+    setTimeout(() => notification.remove(), 200);
+  }, 1800);
+
+  // Clear timeout if manually dismissed
+  dismissBtn.addEventListener(
+    'click',
+    () => {
+      clearTimeout(timeoutId);
+      notification.style.opacity = '0';
+      setTimeout(() => notification.remove(), 200);
+    },
+    { once: true },
+  );
 }
 
 function stripWrappingCharacters(value: string): string {
@@ -217,6 +289,10 @@ function resolveUrlFromClipboard(raw: string): string | null {
 }
 
 async function tryMutateClipboard(): Promise<boolean> {
+  if (!extensionEnabled) {
+    return false;
+  }
+
   if (document.hidden || !document.hasFocus()) {
     return false;
   }
@@ -254,6 +330,7 @@ async function tryMutateClipboard(): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(randomized);
     lastClipboardValue = randomized;
+    await incrementStats();
     showNotification(NOTIFICATION_MESSAGE);
     return true;
   } catch (error) {
@@ -263,14 +340,22 @@ async function tryMutateClipboard(): Promise<boolean> {
 }
 
 async function runClipboardSweep(delays: number[]) {
-  if (sweepInProgress) {
-    return;
+  // Cancel any in-progress sweep
+  if (sweepAbortController) {
+    sweepAbortController.abort();
   }
 
-  sweepInProgress = true;
+  sweepAbortController = new AbortController();
+  const signal = sweepAbortController.signal;
+
   try {
     for (const delay of delays) {
-      await wait(delay);
+      await wait(delay, signal);
+
+      if (signal.aborted) {
+        return;
+      }
+
       const mutated = await tryMutateClipboard();
       if (mutated) {
         // Remember new baseline so subsequent iterations catch any site-overwrites.
@@ -278,8 +363,18 @@ async function runClipboardSweep(delays: number[]) {
         continue;
       }
     }
+  } catch (error) {
+    // AbortError is expected when a new sweep cancels this one
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.debug('UTM Randomizer: Sweep cancelled for new operation');
+      return;
+    }
+    throw error;
   } finally {
-    sweepInProgress = false;
+    // Only clear if this is still the current controller
+    if (sweepAbortController?.signal === signal) {
+      sweepAbortController = null;
+    }
   }
 }
 
