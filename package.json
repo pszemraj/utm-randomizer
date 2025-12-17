@@ -1,6 +1,6 @@
 {
   "name": "utm-randomizer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Chrome extension that replaces tracking parameters in copied URLs with absurd values",
   "scripts": {
     "build": "webpack --mode=production",
