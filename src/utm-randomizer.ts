@@ -106,6 +106,44 @@ const FUNNY_WORD_BANK = Array.from(
   ]),
 );
 
+// Set of all funny values for O(1) lookup to detect already-randomized values
+const ALL_FUNNY_VALUES = new Set([
+  ...FUNNY_SOURCES,
+  ...FUNNY_MEDIUMS,
+  ...FUNNY_CAMPAIGNS,
+  ...FUNNY_TERMS,
+  ...FUNNY_CONTENT,
+  ...FUNNY_GENERIC,
+]);
+
+// Regex to match hash token pattern: hyphenated words followed by alphanumeric suffix
+// Pattern: multiple hyphen-separated segments ending with 4-10 alphanumeric chars
+const HASH_TOKEN_PATTERN = /^[a-z]+-[a-z]+(-[a-z]+)*-[a-z0-9]{4,10}$/;
+
+/**
+ * Checks if a value has already been randomized by this extension.
+ * Detects both category-specific funny values and hash token patterns.
+ */
+export function isAlreadyRandomized(value: string): boolean {
+  // Check if value matches any funny value exactly
+  if (ALL_FUNNY_VALUES.has(value)) {
+    return true;
+  }
+
+  // Check if value matches the hash token pattern and contains known phrases
+  if (HASH_TOKEN_PATTERN.test(value)) {
+    // Check if any phrase from FUNNY_WORD_BANK appears in the value
+    // Hash tokens are constructed as: phrase1-phrase2-...-alphanumericSuffix
+    // where each phrase is a hyphenated string from FUNNY_WORD_BANK
+    const hasKnownPhrase = FUNNY_WORD_BANK.some(phrase => value.includes(phrase));
+    if (hasKnownPhrase) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 type TrackingCategory = 'source' | 'medium' | 'campaign' | 'term' | 'content' | 'generic' | 'hash';
 
 const CATEGORY_LOOKUP = new Map<string, Exclude<TrackingCategory, 'hash'>>();
@@ -367,6 +405,11 @@ export function randomizeTrackingParameters(url: string): string {
   params.forEach((value, key) => {
     const category = categorizeParam(key);
     if (!category) {
+      return;
+    }
+
+    // Skip if value is already randomized (prevents re-randomization on tab switch)
+    if (isAlreadyRandomized(value)) {
       return;
     }
 

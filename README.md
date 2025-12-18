@@ -1,61 +1,73 @@
-# UTM Randomizer Chrome Extension
+# UTM Randomizer
 
-A Chrome extension that automatically replaces common tracking parameters (UTM, fbclid, gclid, etc.) with random/funny values when you copy links to your clipboard, helping thwart free advertising data collection.
+A Chrome extension that automatically replaces tracking parameters (UTM, fbclid, gclid, etc.) with random values when you copy links, disrupting analytics attribution while keeping links functional.
 
 ## Features
 
-- 🎯 Detects UTM parameters **and** popular analytics IDs like `fbclid`, `gclid`, `msclkid`, `mkt_tok`, HubSpot/Marketo tags, and more
-- 🎲 Replaces marketing payloads with rebellious nonsense (IDs become chaos phrases, sources get jokes)
-- 📋 Hooks into modern copy buttons (`navigator.clipboard.write*`) and traditional copy events alike
-- 🔔 Shows brief notifications when parameters are randomized
-- 🚀 Works on all websites where clipboard access is permitted
-- 🔒 Privacy-focused - no data collection
+- Detects UTM parameters and analytics IDs (`fbclid`, `gclid`, `msclkid`, `mkt_tok`, HubSpot, Marketo, Mailchimp, Adobe, Omeda, and more)
+- Replaces tracking values with humorous nonsense (IDs become word salad, sources become jokes)
+- Works with both `Ctrl+C` copy events and "Copy Link" buttons
+- Popup UI with enable/disable toggle and randomization stats
+- Shows brief notification when parameters are randomized
+- Privacy-focused: no data collection, all processing is local
 
 ## Installation
+
+### From Source
 
 1. Clone this repository
 2. Run `npm install` to install dependencies
 3. Run `npm run build` to build the extension
-4. Open Chrome and go to `chrome://extensions/`
-5. Enable "Developer mode"
-6. Click "Load unpacked" and select this directory (the `manifest.json` expects icons at `assets/icons/`)
-7. The extension will now monitor your clipboard for tracking-heavy URLs
+4. Open Chrome and navigate to `chrome://extensions/`
+5. Enable "Developer mode" (toggle in top right)
+6. Click "Load unpacked" and select this directory
+7. The extension icon will appear in your toolbar
 
-## How it works
+## Usage
 
-When you copy a URL containing tracking parameters like:
+Once installed, the extension runs automatically. Copy any URL containing tracking parameters and they will be replaced with random values.
 
+**Before:**
 ```
-https://example.com?utm_source=facebook&utm_medium=social&utm_campaign=spring_sale&fbclid=IwAR0rkF
-```
-
-It gets automatically replaced with something like:
-
-```
-https://example.com?utm_source=carrier-pigeon&utm_medium=interpretive-dance&utm_campaign=operation-click-bait&fbclid=CATNIP-REBELLION
+https://example.com/page?utm_source=facebook&utm_medium=cpc&fbclid=IwAR3xyz123
 ```
 
-### What gets randomized?
+**After:**
+```
+https://example.com/page?utm_source=carrier-pigeon&utm_medium=smoke-signals&fbclid=cookie-crumbler-mystery-tour-abc123
+```
 
-The extension keeps an evolving catalogue of common marketing parameters, including:
+Click the extension icon to:
+- Toggle the extension on/off
+- View randomization statistics
 
-- `utm_*`, `ga_*`, `hsa_*`, `mkt_tok`
-- `fbclid`, `gclid`, `gbraid`, `wbraid`, `msclkid`, `yclid`, `ttclid`, `twclid`
-- HubSpot (`_hsenc`, `_hsmi`), Marketo (`mkt_tok`), Mailchimp (`mc_eid`, `mc_cid`), Adobe MC IDs, Omeda (`oly_anon_id`, `oly_enc_id`), and similar
-- Generic tracking hints like `campaign`, `source`, `adgroup`, `creative`, `placement`, and friends
+### Supported Parameters
 
-Identifiers turn into chaotic nonsense phrases so attribution data becomes useless while links keep working.
+| Category | Examples |
+|----------|----------|
+| UTM | `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` |
+| Click IDs | `fbclid`, `gclid`, `gbraid`, `wbraid`, `msclkid`, `yclid`, `ttclid`, `twclid` |
+| Marketing Platforms | `mkt_tok`, `_hsenc`, `_hsmi`, `mc_eid`, `mc_cid`, `oly_anon_id` |
+| Generic | `campaign`, `source`, `adgroup`, `creative`, `placement`, `ref` |
 
 ## Development
 
-- `npm run dev` - Build in development mode with watch
-- `npm run build` - Build for production
-- `npm run lint` - Run ESLint
-- `npm run type-check` - Run TypeScript type checking
-- `npm run test` - Run deterministic unit tests for the randomizer logic
+```bash
+npm run dev          # Development build with watch mode
+npm run build        # Production build
+npm run lint         # Run ESLint
+npm run type-check   # TypeScript type checking
+npm run test         # Run unit tests
+```
 
 ## Permissions
 
-- `clipboardRead` - To read copied URLs
-- `clipboardWrite` - To write randomized URLs back
-- `activeTab` - To run on all websites
+| Permission | Purpose |
+|------------|---------|
+| `clipboardRead` | Read copied URLs to detect tracking parameters |
+| `clipboardWrite` | Write randomized URLs back to clipboard |
+| `storage` | Persist enable/disable state and statistics |
+
+## License
+
+MIT
