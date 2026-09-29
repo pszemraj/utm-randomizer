@@ -8,7 +8,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = fileURLToPath(new URL('../tests/fixtures/', import.meta.url));
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 
-/** Starts the playground server; resolves with its origin once listening. */
+/**
+ * Starts the playground server.
+ *
+ * @param {number} [port] Port to listen on; 0 picks a free one.
+ * @param {string} [host] Interface to bind; loopback keeps the page a secure context.
+ * @returns {Promise<{ origin: string, close: () => Promise<void> }>} The base URL and a function that stops the server.
+ */
 export function startPlayground(port = 0, host = '127.0.0.1') {
   const server = createServer(async (request, response) => {
     const { pathname } = new URL(request.url ?? '/', 'http://localhost');

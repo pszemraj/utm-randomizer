@@ -1,7 +1,31 @@
 import js from '@eslint/js';
 import { defineConfig } from 'eslint/config';
+import jsdoc from 'eslint-plugin-jsdoc';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+
+// Every function, class, method, interface, type alias, and exported constant needs a doc comment.
+// Parameters and return values are typed by TypeScript, so @param/@returns tags are optional,
+// but any tags that are written must be valid and match the signature.
+const jsdocRules = {
+  'jsdoc/require-jsdoc': [
+    'error',
+    {
+      publicOnly: false,
+      checkConstructors: false,
+      require: { FunctionDeclaration: true, ClassDeclaration: true, MethodDefinition: true },
+      contexts: [
+        'TSInterfaceDeclaration',
+        'TSTypeAliasDeclaration',
+        'ExportNamedDeclaration[declaration.type="VariableDeclaration"]',
+      ],
+    },
+  ],
+  'jsdoc/require-param': 'off',
+  'jsdoc/require-returns': 'off',
+  // One blank line between the description and the first tag.
+  'jsdoc/tag-lines': ['error', 'never', { startLines: 1 }],
+};
 
 export default defineConfig(
   { ignores: ['dist/', 'release/', 'coverage/', 'test-results/', 'playwright-report/'] },
@@ -30,5 +54,16 @@ export default defineConfig(
   {
     files: ['**/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    files: ['src/**/*.ts', 'tests/**/*.ts', '*.config.ts'],
+    extends: [jsdoc.configs['flat/recommended-typescript-error']],
+    rules: jsdocRules,
+  },
+  {
+    // Plain JavaScript: types live in JSDoc, TypeScript-style.
+    files: ['scripts/**/*.mjs'],
+    extends: [jsdoc.configs['flat/recommended-typescript-flavor-error']],
+    rules: jsdocRules,
   },
 );

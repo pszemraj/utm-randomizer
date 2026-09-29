@@ -87,7 +87,7 @@ Chrome summarizes these at install time as reading and changing data on all webs
 
 ```bash
 npm run dev          # rebuild dist/ on every change, then reload the extension card
-npm run check        # lint, format check, typecheck, unit tests
+npm run check        # lint (including required doc comments), format check, typecheck, unit tests
 npm run test:e2e     # build, then run Playwright against the real extension in Chromium
 npm run playground   # serve the manual test page at http://127.0.0.1:5173
 npm run package      # build and zip dist/ into release/utm-randomizer-<version>.zip

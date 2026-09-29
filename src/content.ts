@@ -16,12 +16,13 @@ const isTopFrame = window === window.top;
 const clipboard: WatchedClipboard | null =
   window.isSecureContext && 'clipboard' in navigator ? navigator.clipboard : null;
 
+/** False once the extension was reloaded, updated, or removed (`chrome.runtime.id` disappears). */
 function isContextValid(): boolean {
-  // chrome.runtime.id disappears once the extension is reloaded, updated, or removed.
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime can vanish with the context
   return Boolean(chrome.runtime?.id);
 }
 
+/** Fire-and-forget message to the service worker. */
 function send(message: ExtensionMessage): void {
   try {
     chrome.runtime.sendMessage(message).catch(() => undefined);
@@ -30,6 +31,7 @@ function send(message: ExtensionMessage): void {
   }
 }
 
+/** Shows a notification in this frame; its Undo restores the original clipboard text. */
 function toast(payload: ToastPayload): void {
   const { undoText } = payload;
   try {

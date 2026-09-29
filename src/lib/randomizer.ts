@@ -145,6 +145,7 @@ function secureRandomInt(max: number): number {
   }
 }
 
+/** A uniformly random element of a non-empty list. */
 function pick<T>(items: readonly T[]): T {
   const item = items[secureRandomInt(items.length)];
   if (item === undefined) {
@@ -153,6 +154,7 @@ function pick<T>(items: readonly T[]): T {
   return item;
 }
 
+/** A random string of lowercase letters and digits. */
 function randomAlphanumeric(length: number): string {
   let token = '';
   for (let i = 0; i < length; i += 1) {

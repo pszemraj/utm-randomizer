@@ -8,6 +8,7 @@ const MODE_HINTS: Record<Mode, string> = {
   strip: 'Deletes tracking parameters from the link',
 };
 
+/** Looks up a popup element by id and checks its type, so markup drift fails loudly. */
 function element<T extends HTMLElement>(id: string, type: new () => T): T {
   const found = document.getElementById(id);
   if (!(found instanceof type)) {
@@ -31,6 +32,7 @@ const changeShortcut = element('changeShortcut', HTMLAnchorElement);
 let settings: Settings;
 let pageUrl: string | null = null;
 
+/** Syncs the controls and hints with the given settings. */
 function render(current: Settings): void {
   settings = current;
   enabledToggle.checked = current.enabled;
@@ -45,15 +47,18 @@ function render(current: Settings): void {
   document.body.classList.toggle('paused', !current.enabled);
 }
 
+/** Displays a stored counter, treating missing values as zero. */
 function renderCount(target: HTMLElement, value: unknown): void {
   target.textContent = (Number(value) || 0).toLocaleString();
 }
 
+/** Shows a status line under the copy button. */
 function setStatus(message: string, isError = false): void {
   copyStatus.textContent = message;
   copyStatus.classList.toggle('error', isError);
 }
 
+/** Copies the active tab's URL with its tracking parameters rewritten. */
 async function copyPageLink(): Promise<void> {
   if (!pageUrl) {
     return;
@@ -75,6 +80,7 @@ async function copyPageLink(): Promise<void> {
   }
 }
 
+/** Loads settings, statistics, the active tab, and the configured shortcut into the popup. */
 async function init(): Promise<void> {
   element('version', HTMLSpanElement).textContent = `v${chrome.runtime.getManifest().version}`;
   render(await loadSettings());

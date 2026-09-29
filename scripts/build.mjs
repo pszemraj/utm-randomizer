@@ -26,6 +26,7 @@ const options = {
   logLevel: 'info',
 };
 
+/** Copies HTML, CSS, and icons into dist/ and writes the manifest with the package version. */
 async function copyStaticFiles() {
   const { version } = JSON.parse(await readFile('package.json', 'utf8'));
   const manifest = JSON.parse(await readFile('src/manifest.json', 'utf8'));

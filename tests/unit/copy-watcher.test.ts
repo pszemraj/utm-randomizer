@@ -23,10 +23,12 @@ class FakeClipboard extends EventTarget implements WatchedClipboard {
     }
   }
 
+  /** Current fake clipboard text. */
   readText(): Promise<string> {
     return Promise.resolve(this.text);
   }
 
+  /** Replaces the fake clipboard text and records the write. */
   writeText(text: string): Promise<void> {
     this.text = text;
     this.writes.push(text);
@@ -45,6 +47,7 @@ let settings: Settings;
 let rewrites: RewriteEvent[];
 let now: number;
 
+/** Starts a watcher in Remove mode (deterministic output) with a controllable clock; records rewrites. */
 function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {}, isContextValid = () => true) {
   settings = { ...DEFAULT_SETTINGS, mode: 'strip', ...overrides };
   rewrites = [];
@@ -59,10 +62,12 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
   return watcher;
 }
 
+/** A cancelable, bubbling copy or cut event with an empty DataTransfer, like the browser dispatches. */
 function copyEvent(type: 'copy' | 'cut' = 'copy'): ClipboardEvent {
   return new ClipboardEvent(type, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
 }
 
+/** Selects the whole text content of `element`. */
 function selectText(element: Element): void {
   const range = document.createRange();
   range.selectNodeContents(element);
@@ -71,10 +76,12 @@ function selectText(element: Element): void {
   selection?.addRange(range);
 }
 
+/** Simulates the user clicking on the page, which opens the watcher's intent window. */
 function interact(): void {
   document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
 }
 
+/** Lets pending clipboard reads and writes (chained promises) settle. */
 async function flush(): Promise<void> {
   for (let i = 0; i < 5; i += 1) {
     await Promise.resolve();

@@ -29,10 +29,12 @@ const SUFFIX_CATEGORIES = new Map<string, Category>([
   ['content', 'content'],
 ]);
 
+/** Category for the part of a family parameter after its prefix, e.g. `source` in `utm_source`. */
 function bySuffix(suffix: string): Category {
   return SUFFIX_CATEGORIES.get(suffix) ?? 'generic';
 }
 
+/** Exact entries for a parameter family, e.g. `family('pk_', ['source'])` gives `pk_source`. */
 function family(prefix: string, suffixes: string[]): [string, Category][] {
   return suffixes.map((suffix) => [`${prefix}${suffix}`, bySuffix(suffix)]);
 }
@@ -190,12 +192,15 @@ const GLOBAL_PARAMS = new Map<string, Category>([
   ['_branch_referrer', 'id'],
 ]);
 
+/** Parameters that are tracking only on particular sites. */
 interface SiteRule {
   /** `example.com` matches the domain and its subdomains; `example.*` matches any TLD, e.g. example.co.uk. */
   hosts: string[];
   /** Only apply on matching paths. */
   path?: RegExp;
+  /** Exact parameter names (lowercase) and their categories. */
   params: Record<string, Category>;
+  /** Parameter name prefixes (lowercase) and their categories. */
   prefixes?: Record<string, Category>;
 }
 
@@ -491,6 +496,7 @@ const SITE_RULES: SiteRule[] = [
   { hosts: ['netflix.com'], params: { trackid: 'id', tctx: 'id', source: 'source' } },
 ];
 
+/** Compiles a {@link SiteRule} host pattern into a predicate over lowercase hostnames. */
 function hostMatcher(pattern: string): (host: string) => boolean {
   if (pattern.endsWith('.*')) {
     // Any TLD, optionally behind a common second-level label: example.com, example.co.uk, example.com.au.

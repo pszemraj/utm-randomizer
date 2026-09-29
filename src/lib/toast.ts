@@ -1,10 +1,17 @@
+/** Options for {@link showToast}. */
 export interface ToastOptions {
+  /** Text shown in the notification. */
   message: string;
-  /** Adds an Undo button. */
+  /** Adds an Undo button that calls this; the notification reports whether it succeeded. */
   onUndo?: () => Promise<void>;
+  /**
+   * How long the notification stays up: 4.5 s by default with Undo, 2.5 s without. Hovering or
+   * focusing it pauses the countdown.
+   */
   durationMs?: number;
 }
 
+/** Tag name of the element that hosts the notification's shadow root. */
 export const TOAST_TAG = 'utm-randomizer-toast';
 
 // Inline declarations on the host beat page stylesheets; the popover UA styles would otherwise center it.
@@ -59,6 +66,7 @@ const SHADOW_CSS = `
 
 let activeToast: { host: HTMLElement; timer: number } | null = null;
 
+/** Removes the notification currently on screen, if any, and cancels its timer. */
 function removeActiveToast(): void {
   if (activeToast) {
     window.clearTimeout(activeToast.timer);

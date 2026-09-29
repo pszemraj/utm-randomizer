@@ -7,6 +7,7 @@ const MENU_COPY_PAGE = 'copy-clean-page';
 const COMMAND_COPY_PAGE = 'copy-clean-page-url';
 const WEB_PAGES = ['http://*/*', 'https://*/*'];
 
+/** Context menu labels, worded for the current mode. */
 function menuTitles(mode: Settings['mode']): Record<typeof MENU_COPY_LINK | typeof MENU_COPY_PAGE, string> {
   return mode === 'strip'
     ? { [MENU_COPY_LINK]: 'Copy link without tracking', [MENU_COPY_PAGE]: 'Copy page link without tracking' }
@@ -16,6 +17,7 @@ function menuTitles(mode: Settings['mode']): Record<typeof MENU_COPY_LINK | type
       };
 }
 
+/** (Re)creates the context menu entries; safe to call repeatedly. */
 async function createMenus(): Promise<void> {
   const titles = menuTitles((await loadSettings()).mode);
   await chrome.contextMenus.removeAll();
@@ -33,9 +35,12 @@ async function createMenus(): Promise<void> {
   });
 }
 
-// Stats: lifetime total in local storage, this browser session in session storage.
-// Increments are serialized so concurrent tabs cannot lose counts.
 let statsQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Adds `urls` to the lifetime total (local storage) and the browser-session count (session
+ * storage). Increments are serialized so concurrent tabs cannot lose counts.
+ */
 function countRewrites(urls: number): Promise<void> {
   statsQueue = statsQueue
     .then(async () => {
@@ -54,9 +59,13 @@ function countRewrites(urls: number): Promise<void> {
   return statsQueue;
 }
 
-// Service workers have no DOM, so clipboard writes go through a short-lived offscreen document.
-// Writes are serialized: only one offscreen document may exist at a time.
 let clipboardQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Puts `text` on the clipboard. Service workers have no DOM, so the write goes through a
+ * short-lived offscreen document. Writes are serialized because only one offscreen document may
+ * exist at a time.
+ */
 function writeClipboard(text: string): Promise<void> {
   const write = async () => {
     // A worker restart can leave the previous document behind.
@@ -85,6 +94,7 @@ function writeClipboard(text: string): Promise<void> {
   return result;
 }
 
+/** Shows `text` on the toolbar icon for two seconds in the given tab. */
 async function flashBadge(tabId: number, text: string, color: string): Promise<void> {
   await chrome.action.setBadgeBackgroundColor({ tabId, color });
   await chrome.action.setBadgeText({ tabId, text });

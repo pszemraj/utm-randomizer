@@ -16,13 +16,30 @@ npm run dev
 ## Checks
 
 ```bash
-npm run check      # lint, format check, typecheck, unit tests
+npm run check      # lint (including required doc comments), format check, typecheck, unit tests
 npm run test:e2e   # build, then Playwright tests with the extension loaded in Chromium
 ```
 
 Both must pass before a pull request is merged; CI runs them on every pull request. For end-to-end tests, run `npx playwright install chromium` once, or point `CHROMIUM_PATH` at an existing Chromium binary. `npm run format` fixes formatting.
 
 For manual testing, run `npm run playground` and open `http://127.0.0.1:5173` in the browser where `dist/` is loaded. The page covers every way sites copy links and includes look-alike functional links that must paste unchanged.
+
+## Code style
+
+TypeScript runs in strict mode, ESLint uses `typescript-eslint`'s strict type-checked rules, and Prettier owns formatting; `npm run check` enforces all three.
+
+Every function, class, method, interface, type alias, and exported constant needs a `/** ... */` doc comment that says what it is for, not how it is implemented. This covers internal helpers and test helpers too, and `eslint-plugin-jsdoc` fails the lint when one is missing. Types come from TypeScript, so `@param` and `@returns` tags are optional; add them when a parameter or return value needs explanation (units, `null` meaning "no change", and so on). Tags that are present must match the signature, and one blank line separates the description from the first tag:
+
+```ts
+/**
+ * Rewrites the tracking parameters of a single link, editing the query string in place.
+ *
+ * @returns The rewritten link, or null when it is not a link or has nothing to rewrite.
+ */
+export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | null {
+```
+
+In `scripts/*.mjs`, which are plain JavaScript, write types inside the tags (`@param {number} [port]`).
 
 ## Adding a tracking parameter
 

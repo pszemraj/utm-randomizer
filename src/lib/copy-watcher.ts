@@ -7,25 +7,35 @@ export interface WatchedClipboard extends EventTarget {
   writeText(text: string): Promise<void>;
 }
 
+/** Reported through {@link WatcherDeps.onRewrite} after each rewrite. */
 export interface RewriteEvent {
+  /** Clipboard text before the rewrite; what Undo restores. */
   original: string;
+  /** Clipboard text after the rewrite. */
   rewritten: string;
+  /** Number of links that changed. */
   urls: number;
 }
 
+/** Everything {@link startCopyWatcher} needs from its environment; tests pass fakes. */
 export interface WatcherDeps {
   /** `navigator.clipboard`, or null where the async Clipboard API is unavailable (insecure contexts). */
   clipboard: WatchedClipboard | null;
+  /** Current settings; read on every event so changes apply immediately. */
   getSettings: () => Settings;
+  /** Called after each rewrite, to show a notification and count it. */
   onRewrite: (event: RewriteEvent) => void;
   /** False once the extension was reloaded or removed; the watcher then shuts itself down. */
   isContextValid?: () => boolean;
+  /** Monotonic clock in milliseconds; defaults to `performance.now()`. */
   now?: () => number;
 }
 
+/** Handle returned by {@link startCopyWatcher}. */
 export interface CopyWatcher {
   /** Puts `text` back on the clipboard without rewriting it again (the toast's Undo). */
   restore(text: string): Promise<void>;
+  /** Removes every listener and cancels pending clipboard checks. */
   stop(): void;
 }
 
@@ -40,7 +50,9 @@ const SELECTABLE_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel']);
 const COPY_HINT = /copy|clipboard/i;
 const INTERACTIVE_ROLES = new Set(['button', 'menuitem', 'option', 'link', 'switch', 'tab']);
 
+/** The `clipboardchange` event (Chrome 144+), which the DOM typings may not include yet. */
 interface ClipboardChangeLike extends Event {
+  /** MIME types now on the clipboard. */
   types?: readonly string[];
 }
 
@@ -84,6 +96,10 @@ function rewriteHtml(html: string, options: RewriteOptions): string | null {
   return changed ? doc.body.innerHTML : null;
 }
 
+/**
+ * Whether a click target is plausibly a "Copy link" control: a button, link, or menu item, or an
+ * element whose id, class, label, or tooltip mentions copying. Checks up to five ancestors.
+ */
 function looksLikeCopyControl(target: EventTarget | null): boolean {
   let element = target instanceof Element ? target : null;
   for (let depth = 0; element && depth < 5; depth += 1, element = element.parentElement) {
@@ -137,6 +153,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
 
   const rewriteOptions = (): RewriteOptions => ({ mode: getSettings().mode, baseUrl: location.href });
 
+  /** Whether to act on events; shuts the watcher down once the extension context is gone. */
   function active(): boolean {
     if (!isContextValid()) {
       stop();
@@ -145,10 +162,16 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     return getSettings().enabled;
   }
 
+  /** Records a user interaction with this page (click, key, context menu, copy). */
   function markIntent(): void {
     lastIntent = now();
   }
 
+  /**
+   * Rewrites a copy or cut while it is being dispatched, through `event.clipboardData`.
+   *
+   * @returns Whether the event's clipboard data was rewritten.
+   */
   function onCopy(event: ClipboardEvent): boolean {
     const data = event.clipboardData;
     if (restoring || !data || !active()) {
@@ -195,6 +218,11 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     return true;
   }
 
+  /**
+   * Reads the clipboard and writes back a rewritten version if it holds tracked links.
+   *
+   * @param embedded Also rewrite links inside longer text (only safe for plain-text clipboard contents).
+   */
   async function rewriteClipboard(embedded: boolean): Promise<void> {
     if (!clipboard || document.hidden || !document.hasFocus()) {
       return;
@@ -307,11 +335,13 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     );
   }
 
+  /** Removes every listener and cancels pending clipboard checks. */
   function stop(): void {
     listeners.abort();
     sweep?.abort();
   }
 
+  /** Writes `text` to the clipboard and marks it as ours so it is not rewritten again. */
   async function restore(text: string): Promise<void> {
     lastWritten = text;
     if (clipboard) {

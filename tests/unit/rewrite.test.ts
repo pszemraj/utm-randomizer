@@ -4,6 +4,7 @@ import { hasTrackingParams, rewriteText, rewriteUrl } from '../../src/lib/rewrit
 const randomize = { mode: 'randomize' } as const;
 const strip = { mode: 'strip' } as const;
 
+/** Query parameters of an absolute URL. */
 function params(url: string): URLSearchParams {
   return new URL(url).searchParams;
 }

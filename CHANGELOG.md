@@ -33,6 +33,7 @@ All notable changes to this project will be documented in this file.
 - Content scripts stop working as soon as the extension is disabled, reloaded, or removed, instead of running until the page reloads.
 - New icon with transparent padding, following Chrome Web Store icon guidelines.
 - Tooling: TypeScript 6, ESLint 10 with typed `typescript-eslint` rules, Prettier, esbuild instead of webpack, and Vitest instead of the ts-node script.
+- Doc comments on every function, class, method, interface, type alias, and exported constant, enforced by `eslint-plugin-jsdoc`.
 
 ### Fixed
 

@@ -4,21 +4,28 @@ import { funnyValue, isAlreadyRandomized } from './randomizer';
 /** `randomize` swaps tracking values for nonsense; `strip` removes tracking parameters entirely. */
 export type Mode = 'randomize' | 'strip';
 
+/** How to rewrite, and how to interpret relative links. */
 export interface RewriteOptions {
   mode: Mode;
   /** Resolves relative links (`/path?utm_source=x`) so site-specific rules can apply. */
   baseUrl?: string;
 }
 
+/** A rewritten link. */
 export interface UrlRewrite {
+  /** The link with tracking values replaced or removed. */
   url: string;
   /** Number of parameters replaced or removed. */
   params: number;
 }
 
+/** Rewritten clipboard text. */
 export interface TextRewrite {
+  /** The full text with every rewritten link substituted in place. */
   text: string;
+  /** Number of links that changed. */
   urls: number;
+  /** Number of parameters replaced or removed across all links. */
   params: number;
 }
 
@@ -37,6 +44,7 @@ const WRAPPERS: [open: string, close: string][] = [
   ['`', '`'],
 ];
 
+/** Decodes a form-encoded query component, returning the input unchanged when it is malformed. */
 function safeDecode(value: string): string {
   try {
     return decodeURIComponent(value.replace(/\+/g, ' '));
@@ -153,8 +161,10 @@ function trimLinkEnd(link: string): [link: string, trailing: string] {
 }
 
 /**
- * Rewrites clipboard text. A lone link (optionally wrapped in <> or quotes) may be scheme-less or
- * relative; with `embedded`, absolute http(s) links inside longer text are rewritten too.
+ * Rewrites clipboard text. A lone link (optionally wrapped in <>, parentheses, or quotes) may be
+ * scheme-less or relative; with `embedded`, absolute http(s) links inside longer text are rewritten too.
+ *
+ * @returns The rewritten text, or null when nothing changed.
  */
 export function rewriteText(text: string, options: RewriteOptions & { embedded?: boolean }): TextRewrite | null {
   if (text.length > MAX_TEXT_LENGTH) {
