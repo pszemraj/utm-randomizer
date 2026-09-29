@@ -21,12 +21,25 @@ const isTopFrame = window === window.top;
 const clipboard: WatchedClipboard | null =
   window.isSecureContext && 'clipboard' in navigator ? navigator.clipboard : null;
 
-void Promise.all([loadSettings(), requestSecret().catch(() => null)]).then(([loadedSettings, loadedKey]) => {
-  settings = loadedSettings;
-  key ??= loadedKey;
+/** Set once a settings change arrives, so the initial load cannot overwrite it with older values. */
+let settingsUpdated = false;
+
+// Settings and key load separately: the key can take a round trip to the service worker, and
+// settings must not wait for it.
+void loadSettings().then((loaded) => {
+  if (!settingsUpdated) {
+    settings = loaded;
+  }
   addressBar?.clean();
 });
+void requestSecret()
+  .catch(() => null)
+  .then((loaded) => {
+    key ??= loaded;
+    addressBar?.clean();
+  });
 const unwatchSettings = watchSettings((updated) => {
+  settingsUpdated = true;
   settings = updated;
   addressBar?.clean();
 });
