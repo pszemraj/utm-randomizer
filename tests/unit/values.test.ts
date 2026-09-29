@@ -74,7 +74,7 @@ describe('replacementValue', () => {
   it('only produces URL-safe values', () => {
     for (let i = 0; i < 2000; i += 1) {
       for (const category of CATEGORIES) {
-        for (const style of ['decoy', 'silly'] as const) {
+        for (const style of ['decoy', 'silly', 'hybrid'] as const) {
           expect(replacementValue(style, category, 'newsletter', `seed-${String(i)}`)).toMatch(/^[A-Za-z0-9_.+~-]+$/);
         }
       }
@@ -86,7 +86,7 @@ describe('replacementValue', () => {
     for (let i = 0; i < 20_000; i += 1) {
       const raw = randomRaw(random);
       const category = pick(random, CATEGORIES);
-      const style = pick(random, ['decoy', 'silly'] as const);
+      const style = pick(random, ['decoy', 'silly', 'hybrid'] as const);
       const seed = `seed-${String(i % 97)}`;
       const once = replacementValue(style, category, raw, seed);
       expect(replacementValue(style, category, once, seed), `${style} ${category} ${raw} -> ${once}`).toBe(once);

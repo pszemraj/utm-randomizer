@@ -2,10 +2,10 @@ import { paramClassifier } from './params';
 import { replacementValue } from './values';
 
 /**
- * `decoy` swaps tracking values for believable fakes, `silly` for obvious nonsense, and `strip`
- * removes tracking parameters entirely.
+ * `decoy` swaps tracking values for believable fakes, `silly` for obvious nonsense, `hybrid` for a
+ * per-value mix of the two, and `strip` removes tracking parameters entirely.
  */
-export type Mode = 'decoy' | 'silly' | 'strip';
+export type Mode = 'decoy' | 'silly' | 'hybrid' | 'strip';
 
 /** How to rewrite, and how to interpret relative links. */
 export interface RewriteOptions {

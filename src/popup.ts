@@ -6,9 +6,10 @@ const COMMAND_COPY_PAGE = 'copy-clean-page-url';
 const MODE_HINTS: Record<Mode, string> = {
   decoy: 'Believable fakes that poison analytics, e.g. utm_source=bing',
   silly: 'Obvious nonsense, e.g. utm_source=carrier-pigeon',
+  hybrid: 'Believable fakes and obvious nonsense, mixed value by value',
   strip: 'Deletes tracking parameters from the link',
 };
-const MODES: readonly Mode[] = ['decoy', 'silly', 'strip'];
+const MODES: readonly Mode[] = ['decoy', 'silly', 'hybrid', 'strip'];
 
 /** Looks up a popup element by id and checks its type, so markup drift fails loudly. */
 function element<T extends HTMLElement>(id: string, type: new () => T): T {

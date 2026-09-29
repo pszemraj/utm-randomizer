@@ -25,7 +25,7 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
-const MODES: readonly Mode[] = ['decoy', 'silly', 'strip'];
+const MODES: readonly Mode[] = ['decoy', 'silly', 'hybrid', 'strip'];
 const SECRET_KEY = 'secret';
 
 /** Fills in defaults for missing or malformed stored values. */
@@ -133,6 +133,13 @@ export function describeMode(mode: Mode): { emoji: string; done: string; copyLin
         done: 'randomized',
         copyLink: 'Copy link with tracking randomized',
         copyPage: 'Copy page link with tracking randomized',
+      };
+    case 'hybrid':
+      return {
+        emoji: '🃏',
+        done: 'swapped for decoys and nonsense',
+        copyLink: 'Copy link with hybrid tracking',
+        copyPage: 'Copy page link with hybrid tracking',
       };
     case 'strip':
       return {

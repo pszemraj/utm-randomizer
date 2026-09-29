@@ -48,7 +48,7 @@ Parameters are defined in `src/lib/params.ts`. Pick the narrowest rule that cove
 - `GLOBAL_PARAMS` or `GLOBAL_PREFIXES` only for names that mean tracking on every site, such as a vendor's click ID. Cite the vendor with a trailing comment.
 - A `SITE_RULES` entry for names that are functional somewhere else (`ref`, `source`, `si`, `t`, ...). Add a `path` pattern if the name is functional on other pages of the same site.
 
-Each rule declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which picks the kind of replacement value. In Decoy mode, word values get a believable word of that category and anything that looks like an encoded identifier is scrambled in its own format; `id` always scrambles. In Silly mode, `id` produces word-salad tokens.
+Each rule declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which picks the kind of replacement value. In Decoy mode, word values get a believable word of that category and anything that looks like an encoded identifier is scrambled in its own format; `id` always scrambles. In Silly mode, `id` produces word-salad tokens. Hybrid mode picks Decoy or Silly per value.
 
 Every new rule needs a test in `tests/unit/rewrite.test.ts`: a case under "site-specific tracking" showing the link being cleaned, and, for any name that is ambiguous in general, a case under "functional links stay intact" showing an ordinary link that uses the same name and must not change.
 

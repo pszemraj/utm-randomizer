@@ -113,6 +113,15 @@ test.describe('copying on web pages', () => {
     expect(new URL(copied).searchParams.get('utm_source')).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)+$/);
   });
 
+  test('mixes decoys and nonsense in Hybrid mode', async ({ playground, readClipboard, setSettings }) => {
+    await setSettings({ mode: 'hybrid' });
+    await playground.getByTestId('copy-writetext').click();
+    const copied = await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
+    expect(new URL(copied).searchParams.get('id')).toBe('42');
+    await expect(playground.locator('utm-randomizer-toast')).toContainText('Tracking swapped for decoys and nonsense');
+    expect(await expectStable(readClipboard, 2000)).toBe(copied);
+  });
+
   test('leaves functional links untouched', async ({ playground, readClipboard }) => {
     await playground.getByTestId('copy-functional-youtube').click();
     await playground.waitForTimeout(2000);
@@ -255,6 +264,7 @@ test.describe('extension pages', () => {
     await expect(popup.getByRole('switch', { name: /Clean the address bar/ })).toBeChecked();
     await expect(popup.getByRole('switch', { name: /Watch the whole clipboard/ })).toBeChecked();
     await expect(popup.getByRole('radio', { name: 'Decoy' })).toBeChecked();
+    await expect(popup.getByRole('radio', { name: 'Hybrid' })).not.toBeChecked();
 
     await popup.getByText('Remove', { exact: true }).click();
     await popup.getByRole('switch', { name: /Show notifications/ }).uncheck();

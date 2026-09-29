@@ -1,11 +1,12 @@
 # UTM Randomizer
 
-A Chrome extension that poisons link tracking. When you copy a link, or the page you are on has one in its address bar, it replaces the tracking values with believable decoys, so the links you share feed attribution reports with fake sources, campaigns, and click IDs that cannot be told apart from real ones. Silly mode uses obvious nonsense instead, and Remove mode deletes the parameters. Everything runs locally and the extension makes no network requests.
+A Chrome extension that poisons link tracking. When you copy a link, or the page you are on has one in its address bar, it replaces the tracking values with believable decoys, so the links you share feed attribution reports with fake sources, campaigns, and click IDs that cannot be told apart from real ones. Silly mode uses obvious nonsense instead, Hybrid mode mixes the two value by value, and Remove mode deletes the parameters. Everything runs locally and the extension makes no network requests.
 
 ```text
 Copied  https://example.com/article?id=42&utm_source=newsletter&utm_medium=email&utm_campaign=spring_sale&fbclid=IwAR3xYz123AbC456dEf789
-Decoy   https://example.com/article?id=42&utm_source=discord&utm_medium=audio&utm_campaign=retargeting_2024&fbclid=IwAR7tMu583FbG424jNq992
-Silly   https://example.com/article?id=42&utm_source=alien-mothership&utm_medium=trained-squirrels&utm_campaign=mission-impossible-to-track&fbclid=yodeling-analytics-anxiety-alien-mothership-gv7xk
+Decoy   https://example.com/article?id=42&utm_source=outbrain&utm_medium=notification&utm_campaign=holiday_smb&fbclid=IwAR1hOl802PeN816eVz897
+Silly   https://example.com/article?id=42&utm_source=a-very-confused-cat&utm_medium=shouting-really-loud&utm_campaign=operation-click-bait&fbclid=tracking-troll-the-utm-rebellion-in94ro
+Hybrid  https://example.com/article?id=42&utm_source=a-very-confused-cat&utm_medium=notification&utm_campaign=operation-click-bait&fbclid=IwAR1hOl802PeN816eVz897
 Remove  https://example.com/article?id=42
 ```
 
@@ -34,7 +35,7 @@ After a rewrite, a small notification appears in the bottom-left corner of the p
 
 Three explicit actions copy a cleaned link on demand: right-click a link → **Copy link with decoy tracking**; right-click a page → **Copy page link with decoy tracking**; and **Alt+Shift+U** or the popup's **Copy this page's link** button for the current page. The shortcut can be changed at `chrome://extensions/shortcuts`.
 
-The toolbar popup switches between Decoy, Silly, and Remove, turns each layer and the notifications on or off, pauses everything automatic, and shows how many links were cleaned in total and in the current browser session.
+The toolbar popup switches between Decoy, Silly, Hybrid, and Remove, turns each layer and the notifications on or off, pauses everything automatic, and shows how many links were cleaned in total and in the current browser session.
 
 ## Replacement values
 
@@ -46,7 +47,7 @@ The toolbar popup switches between Decoy, Silly, and Remove, turns each layer an
 
 The values are derived from a random key created when the extension is installed plus the link itself. The same link always gets the same decoys on your browser, so rewriting is idempotent: copying an already-cleaned link, cleaning the address bar again, and the background watcher seeing a link a page already cleaned all leave it unchanged. Without your key, nobody can tell which values are decoys.
 
-**Silly** uses obvious nonsense (`utm_source=carrier-pigeon`, click IDs as word salad), and **Remove** deletes the tracking parameters.
+**Silly** uses obvious nonsense (`utm_source=carrier-pigeon`, click IDs as word salad). **Hybrid** picks a decoy or nonsense separately for each value, so one link can carry a believable click ID next to a joke source; the picks are seeded the same way, so a link keeps its mix. **Remove** deletes the tracking parameters.
 
 ## What gets rewritten
 
@@ -119,7 +120,7 @@ To try changes by hand, build and load `dist/`, run `npm run playground`, and op
 | `src/popup.*`                    | Toolbar popup                                                                        |
 | `src/lib/params.ts`              | Tracking-parameter rules, global and per site                                        |
 | `src/lib/rewrite.ts`             | In-place link and text rewriting                                                     |
-| `src/lib/values.ts`, `prng.ts`   | Decoy and silly replacement values, seeded per install                               |
+| `src/lib/values.ts`, `prng.ts`   | Decoy, silly, and hybrid replacement values, seeded per install                      |
 | `src/lib/copy-watcher.ts`        | Copy detection on pages: copy events, `clipboardchange`, polling fallback            |
 | `src/lib/address-bar.ts`         | Address-bar cleaning                                                                 |
 | `src/lib/toast.ts`               | On-page notification in a shadow root on the top layer                               |

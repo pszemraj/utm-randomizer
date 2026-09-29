@@ -6,6 +6,7 @@
  *   write them, and identifiers (click IDs, tokens) rewritten character by character so they keep
  *   the original's exact length, alphabet, prefix, and encoding.
  * - Silly style produces obvious nonsense (`utm_source=carrier-pigeon`).
+ * - Hybrid style picks decoy or silly independently for each value, so one link mixes both.
  *
  * Values are drawn from a seeded generator (see prng.ts), so a link always gets the same
  * replacements and rewriting is idempotent.
@@ -13,8 +14,8 @@
 import type { Category } from './params';
 import { pick, randomInt, seededRandom, type Random } from './prng';
 
-/** How replacement values look: believable decoys or obvious nonsense. */
-export type Style = 'decoy' | 'silly';
+/** How replacement values look: believable decoys, obvious nonsense, or a per-value mix of both. */
+export type Style = 'decoy' | 'silly' | 'hybrid';
 
 const DECOY_SOURCES = [
   'google',
@@ -648,13 +649,18 @@ function sillyToken(random: Random): string {
  * (see rewrite.ts); the value itself only contributes its shape, so feeding a replacement back in
  * returns the same replacement.
  *
- * @param style Believable decoys or obvious nonsense.
+ * @param style Believable decoys, obvious nonsense, or a per-value mix of both.
  * @param category What the parameter carries; picks the vocabulary for word values.
  * @param raw The current value, still URL-encoded.
  * @param seed Stable per link and parameter, including the secret per-install key.
  * @returns A URL-safe replacement in the same encoding style as `raw`.
  */
 export function replacementValue(style: Style, category: Category, raw: string, seed: string): string {
+  if (style === 'hybrid') {
+    // The pick depends only on the seed, never on the value, so a rewritten link keeps its mix.
+    const pickSilly = seededRandom(`${seed}|hybrid`)() < 0.5;
+    return replacementValue(pickSilly ? 'silly' : 'decoy', category, raw, seed);
+  }
   if (style === 'silly') {
     const random = seededRandom(`${seed}|silly`);
     return category === 'id' ? sillyToken(random) : pick(random, FUNNY[category]);

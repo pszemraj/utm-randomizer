@@ -108,6 +108,31 @@ describe('rewriteUrl (silly)', () => {
   });
 });
 
+describe('rewriteUrl (hybrid)', () => {
+  const link = 'https://example.com/?utm_source=newsletter&utm_medium=email&utm_campaign=spring_sale&utm_content=hero';
+
+  it('picks a decoy or nonsense for each value independently, the same way every time', () => {
+    const hybridKeys = Array.from({ length: 50 }, (_, key) => String(key));
+    let mixed = 0;
+    for (const key of hybridKeys) {
+      const hybrid = params(rewriteUrl(link, { mode: 'hybrid', key })?.url ?? '');
+      const decoyValues = params(rewriteUrl(link, { mode: 'decoy', key })?.url ?? '');
+      const sillyValues = params(rewriteUrl(link, { mode: 'silly', key })?.url ?? '');
+      const picks = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].map((name) => {
+        const value = hybrid.get(name);
+        expect([decoyValues.get(name), sillyValues.get(name)], name).toContain(value);
+        return value === sillyValues.get(name);
+      });
+      if (picks.includes(true) && picks.includes(false)) {
+        mixed += 1;
+      }
+      expect(rewriteUrl(link, { mode: 'hybrid', key })?.url).toBe(rewriteUrl(link, { mode: 'hybrid', key })?.url);
+    }
+    // Four fair picks mix both kinds 7 times in 8; allow plenty of slack.
+    expect(mixed).toBeGreaterThan(30);
+  });
+});
+
 describe('idempotency', () => {
   const links = [
     'https://example.com/?utm_source=fb&utm_medium=social&utm_campaign=2025_launch&fbclid=abc123&gclid=xyz',
@@ -118,7 +143,7 @@ describe('idempotency', () => {
     'https://example.com/?_ga=2.123456789.1234567890-1234567890.1700000000&_gl=1*abc12*_ga*MTIzNA..&mc_eid=a1b2c3d4e5',
   ];
 
-  it.each(['decoy', 'silly', 'strip'] as const)('rewriting a rewritten link changes nothing (%s)', (mode) => {
+  it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('rewriting a rewritten link changes nothing (%s)', (mode) => {
     for (const link of links) {
       for (let key = 0; key < 300; key += 1) {
         const once = rewriteUrl(link, { mode, key: String(key) });

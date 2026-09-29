@@ -16,7 +16,7 @@ Clipboard contents and addresses are used only for these checks. They are never 
 
 Stored locally in Chrome's extension storage and never synced or transmitted:
 
-- your settings (on/off, Decoy, Silly, or Remove, and which cleaning layers and notifications are on);
+- your settings (on/off, Decoy, Silly, Hybrid, or Remove, and which cleaning layers and notifications are on);
 - a count of how many links were rewritten, in total and in the current browser session. Only the numbers are stored, not the links;
 - a random key created when the extension is installed. Decoy values are derived from it so the same link always gets the same decoys; it identifies nothing and never leaves your browser.
 
