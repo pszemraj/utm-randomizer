@@ -1,5 +1,24 @@
 import { expect, test } from './fixtures';
 
+/**
+ * Polls the clipboard until `accept` holds for its text and returns that text. Empty text is never
+ * accepted: the clipboard starts empty, and a check like "no longer contains the original" must not
+ * pass before the page has written anything.
+ */
+async function waitForClipboard(read: () => Promise<string>, accept: (text: string) => boolean): Promise<string> {
+  let text = '';
+  await expect
+    .poll(
+      async () => {
+        text = await read();
+        return text !== '' && accept(text);
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+  return text;
+}
+
 /** Tracking parameters that must not survive with their original values. */
 function expectRandomized(copied: string, original: string): void {
   const before = new URL(original).searchParams;
@@ -19,8 +38,7 @@ test.describe('copying on web pages', () => {
     await playground.getByTestId('copy-writetext').click();
     const original =
       'https://example.com/article?id=42&utm_source=newsletter&utm_medium=email&utm_campaign=spring&fbclid=IwAR3xyz';
-    await expect.poll(readClipboard).not.toBe(original);
-    const copied = await readClipboard();
+    const copied = await waitForClipboard(readClipboard, (text) => text !== original);
     expectRandomized(copied, original);
     expect(new URL(copied).searchParams.get('id')).toBe('42');
     await expect(playground.locator('utm-randomizer-toast')).toContainText('Tracking randomized');
@@ -29,14 +47,12 @@ test.describe('copying on web pages', () => {
   test('rewrites links copied with execCommand', async ({ playground, readClipboard }) => {
     await playground.getByTestId('copy-execcommand').click();
     const original = 'https://shop.example/p/123?gclid=Cj0KCQjw&utm_source=google&utm_medium=cpc';
-    await expect.poll(readClipboard).not.toContain('gclid=Cj0KCQjw');
-    expectRandomized(await readClipboard(), original);
+    expectRandomized(await waitForClipboard(readClipboard, (text) => !text.includes('gclid=Cj0KCQjw')), original);
   });
 
   test('rewrites clipboard data set by page copy handlers', async ({ playground, readClipboard }) => {
     await playground.getByTestId('copy-setdata').click();
-    await expect.poll(readClipboard).not.toContain('mc_eid=def456');
-    const copied = await readClipboard();
+    const copied = await waitForClipboard(readClipboard, (text) => !text.includes('mc_eid=def456'));
     expect(copied).toMatch(/^https:\/\/example\.com\/post\?ref=share&mc_cid=[a-z0-9-]+&mc_eid=[a-z0-9-]+&keep=yes$/);
     expect(copied).not.toContain('mc_cid=abc123');
   });
@@ -51,7 +67,7 @@ test.describe('copying on web pages', () => {
     const code = playground.getByTestId('select-code');
     await code.click({ clickCount: 3 });
     await playground.keyboard.press('ControlOrMeta+C');
-    await expect.poll(readClipboard).not.toContain('msclkid=abc123def');
+    await waitForClipboard(readClipboard, (text) => !text.includes('msclkid=abc123def'));
     // Triple-click selects the whole block, including its line break; whitespace is preserved.
     const copied = (await readClipboard()).trim();
     expect(copied).toMatch(/^https:\/\/example\.com\/deal\?id=9&utm_source=[a-z0-9-]+&msclkid=[a-z0-9-]+$/);
@@ -94,7 +110,7 @@ test.describe('copying on web pages', () => {
     const original =
       'https://example.com/article?id=42&utm_source=newsletter&utm_medium=email&utm_campaign=spring&fbclid=IwAR3xyz';
     await playground.getByTestId('copy-writetext').click();
-    await expect.poll(readClipboard).not.toBe(original);
+    await waitForClipboard(readClipboard, (text) => text !== original);
     await playground.locator('utm-randomizer-toast').getByRole('button', { name: 'Undo' }).click();
     await expect.poll(readClipboard).toBe(original);
     await playground.waitForTimeout(1000);
@@ -103,7 +119,7 @@ test.describe('copying on web pages', () => {
 
   test('counts rewrites', async ({ playground, readClipboard, serviceWorker }) => {
     await playground.getByTestId('copy-writetext').click();
-    await expect.poll(readClipboard).not.toContain('utm_source=newsletter');
+    await waitForClipboard(readClipboard, (text) => !text.includes('utm_source=newsletter'));
     await expect
       .poll(() => serviceWorker.evaluate(async () => (await chrome.storage.local.get('totalCount')).totalCount))
       .toBe(1);
@@ -121,8 +137,10 @@ test.describe('copying on web pages', () => {
     const href = await link.getAttribute('href');
     await link.click({ button: 'right' });
     await writeClipboardExternally(href ?? '');
-    await expect.poll(readClipboard, { timeout: 10_000 }).not.toContain('utm_source=facebook');
-    expectRandomized(await readClipboard(), href ?? '');
+    expectRandomized(
+      await waitForClipboard(readClipboard, (text) => !text.includes('utm_source=facebook')),
+      href ?? '',
+    );
   });
 
   test('leaves clipboard changes from elsewhere alone when the page was not used', async ({
@@ -142,8 +160,8 @@ test.describe('copying on web pages', () => {
     readClipboard,
   }) => {
     await playground.frameLocator('[data-testid="frame"]').getByRole('button', { name: 'Copy embedded link' }).click();
-    await expect.poll(readClipboard).not.toContain('utm_source=iframe');
-    expect(await readClipboard()).toMatch(/^https:\/\/example\.com\/embed\?utm_source=[a-z0-9-]+&v=3$/);
+    const copied = await waitForClipboard(readClipboard, (text) => !text.includes('utm_source=iframe'));
+    expect(copied).toMatch(/^https:\/\/example\.com\/embed\?utm_source=[a-z0-9-]+&v=3$/);
     await expect(playground.locator('utm-randomizer-toast')).toContainText('Tracking randomized');
   });
 });
