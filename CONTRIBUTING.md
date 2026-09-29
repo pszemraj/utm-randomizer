@@ -1,92 +1,52 @@
 # Contributing to UTM Randomizer
 
-Thank you for your interest in contributing to UTM Randomizer! This document provides guidelines for contributing to the project.
+## Setup
 
-## Development Setup
+Node 22.13+ or 24 is required (`.nvmrc` pins 24).
 
-1. **Clone the repository**
+```bash
+git clone https://github.com/pszemraj/utm-randomizer.git
+cd utm-randomizer
+npm ci
+npm run dev
+```
 
-   ```bash
-   git clone <repository-url>
-   cd utm-randomizer
-   ```
+`npm run dev` rebuilds `dist/` on every change. Load `dist/` once via `chrome://extensions` → Developer mode → **Load unpacked**, then click the reload icon on the extension's card after each rebuild. Pages that were open before a reload keep the old content script until they are refreshed.
 
-2. **Install dependencies**
+## Checks
 
-   ```bash
-   npm install
-   ```
+```bash
+npm run check      # lint, format check, typecheck, unit tests
+npm run test:e2e   # build, then Playwright tests with the extension loaded in Chromium
+```
 
-3. **Build the extension**
+Both must pass before a pull request is merged; CI runs them on every pull request. For end-to-end tests, run `npx playwright install chromium` once, or point `CHROMIUM_PATH` at an existing Chromium binary. `npm run format` fixes formatting.
 
-   ```bash
-   npm run build
-   ```
+For manual testing, run `npm run playground` and open `http://127.0.0.1:5173` in the browser where `dist/` is loaded. The page covers every way sites copy links and includes look-alike functional links that must paste unchanged.
 
-4. **Load in Chrome for testing**
-   - Open `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked" and select this directory
+## Adding a tracking parameter
 
-## Development Workflow
+Parameters are defined in `src/lib/params.ts`. Pick the narrowest rule that covers the parameter:
 
-### Scripts
+- `GLOBAL_PARAMS` or `GLOBAL_PREFIXES` only for names that mean tracking on every site, such as a vendor's click ID. Cite the vendor with a trailing comment.
+- A `SITE_RULES` entry for names that are functional somewhere else (`ref`, `source`, `si`, `t`, ...). Add a `path` pattern if the name is functional on other pages of the same site.
 
-- `npm run dev` - Build in development mode with watch
-- `npm run build` - Build for production
-- `npm run lint` - Run ESLint
-- `npm run type-check` - Run TypeScript type checking
-- `npm run test` - Run deterministic randomizer unit tests
+Each rule declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which picks the kind of nonsense used in Randomize mode; `id` produces word-salad tokens for opaque identifiers.
 
-### Adding New Funny Values
+Every new rule needs a test in `tests/unit/rewrite.test.ts`: a case under "site-specific tracking" showing the link being cleaned, and, for any name that is ambiguous in general, a case under "functional links stay intact" showing an ordinary link that uses the same name and must not change.
 
-To add new funny replacement values, edit `src/utm-randomizer.ts`:
+## Adding replacement values
 
-- `FUNNY_SOURCES` - For utm_source parameters
-- `FUNNY_MEDIUMS` - For utm_medium parameters
-- `FUNNY_CAMPAIGNS` - For utm_campaign parameters
-- `FUNNY_TERMS` - For utm_term parameters
-- `FUNNY_CONTENT` - For utm_content parameters
+The funny values live in `src/lib/randomizer.ts`, one list per category. Keep them lowercase and hyphenated (letters, digits, hyphens), humorous but not offensive, obviously fake, and free of real company or brand names. New values are recognized as already randomized automatically.
 
-Guidelines for new values:
+## Submitting changes
 
-- Keep them humorous but not offensive
-- Avoid real company/brand names
-- Make them obviously fake to prevent confusion
-- Keep them relatively short
+1. Create a branch named with a Conventional Commits type, for example `feat/threads-share-params` or `fix/amazon-variant-links`.
+2. Write commit messages in the same style: `feat: strip Threads share tracking`, `fix(params): keep Amazon variant selection`.
+3. Run `npm run check` and `npm run test:e2e`.
+4. If behavior changes, update `README.md` and add an entry to `CHANGELOG.md`.
+5. Open a pull request describing what changed and how you tested it.
 
-### Testing
+## Reporting issues
 
-Test your changes by:
-
-1. Building the extension with `npm run build`
-2. Reloading the extension in Chrome
-3. Using the test URLs [on the repo wiki](https://github.com/pszemraj/utm-randomizer/wiki/Test-URLs)
-4. Copying URLs with UTM parameters and verifying they're randomized
-
-## Code Style
-
-- Use TypeScript for all new code
-- Follow the existing ESLint configuration
-- Write descriptive variable and function names
-- Add comments for complex logic
-
-## Submitting Changes
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests: `npm run lint && npm run type-check && npm run test`
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-## Reporting Issues
-
-When reporting issues, please include:
-
-- Chrome version
-- Extension version
-- Steps to reproduce
-- Example URLs (if applicable)
-- Expected vs actual behavior
+Include your Chrome version, the extension version (shown in the popup), steps to reproduce, the link before and after (remove anything personal), and what you expected instead. For a link that broke after being rewritten, the site's domain and the parameter name are usually enough.

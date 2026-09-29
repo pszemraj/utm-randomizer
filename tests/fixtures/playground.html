@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>UTM Randomizer playground</title>
+    <style>
+      :root {
+        --bg: #f4f5f7;
+        --card: #ffffff;
+        --text: #1c2025;
+        --muted: #5d6671;
+        --border: #e0e3e8;
+        --accent: #23794a;
+        --accent-contrast: #ffffff;
+        --code: #eef1f4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15171a;
+          --card: #1e2125;
+          --text: #e7e9ec;
+          --muted: #9ba4ae;
+          --border: #2f343a;
+          --accent: #5cc98a;
+          --accent-contrast: #0b1d12;
+          --code: #272b31;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          15px/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 26px;
+      }
+      h2 {
+        margin: 0 0 4px;
+        font-size: 17px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      section {
+        margin-top: 20px;
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--card);
+      }
+      .row {
+        display: grid;
+        grid-template-columns: minmax(170px, auto) 1fr;
+        gap: 6px 12px;
+        align-items: center;
+        padding: 10px 0;
+        border-top: 1px solid var(--border);
+      }
+      .row:first-of-type {
+        border-top: 0;
+      }
+      code,
+      .url {
+        overflow-wrap: anywhere;
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: var(--code);
+        font:
+          13px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      button {
+        padding: 7px 12px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: var(--accent-contrast);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      a {
+        color: var(--accent);
+      }
+      .done::after {
+        content: ' ✓';
+      }
+      ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+      li {
+        margin: 6px 0;
+        overflow-wrap: anywhere;
+      }
+      input,
+      textarea {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          13px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      iframe {
+        width: 100%;
+        height: 90px;
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+      }
+      @media (max-width: 560px) {
+        .row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>UTM Randomizer playground</h1>
+      <p class="muted">
+        Every control copies a link the way real sites do. Paste into the box at the bottom (or anywhere) to see what
+        reached your clipboard. In <strong>Randomize</strong> mode tracking values turn into nonsense; in
+        <strong>Remove</strong> mode they disappear. Links under “Should not change” must paste exactly as shown.
+      </p>
+
+      <section>
+        <h2>Copy buttons</h2>
+        <p class="muted">The different APIs sites use for “Copy link”.</p>
+        <div
+          class="row"
+          data-url="https://example.com/article?id=42&utm_source=newsletter&utm_medium=email&utm_campaign=spring&fbclid=IwAR3xyz"
+        >
+          <button data-copy="writeText" data-testid="copy-writetext">writeText()</button>
+          <span class="url"></span>
+        </div>
+        <div class="row" data-url="https://shop.example/p/123?gclid=Cj0KCQjw&utm_source=google&utm_medium=cpc">
+          <button data-copy="execCommand" data-testid="copy-execcommand">execCommand('copy')</button>
+          <span class="url"></span>
+        </div>
+        <div class="row" data-url="https://example.com/post?ref=share&mc_cid=abc123&mc_eid=def456&keep=yes">
+          <button data-copy="setData" data-testid="copy-setdata">copy event + setData</button>
+          <span class="url"></span>
+        </div>
+        <div class="row" data-url="https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123456">
+          <button data-copy="delayed" data-testid="copy-delayed">writeText() after 800 ms</button>
+          <span class="url"></span>
+        </div>
+        <div
+          class="row"
+          data-text="Check this out: https://example.com/a?utm_source=twitter&amp;x=1 and https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c3d"
+        >
+          <button data-copy="writeText" data-testid="copy-sharetext">Share text with 2 links</button>
+          <span class="url"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>Right-click → Copy link address</h2>
+        <p class="muted">Also try the extension's own “Copy link with tracking …” menu item on these.</p>
+        <ul>
+          <li>
+            <a
+              data-testid="link-utm"
+              href="https://example.com/?utm_source=facebook&utm_medium=social&utm_campaign=launch"
+              >UTM-tagged article</a
+            >
+          </li>
+          <li>
+            <a href="https://x.com/jack/status/20?s=20&t=AbCdEfGh">Post on X with share tracking</a>
+          </li>
+          <li>
+            <a href="https://www.instagram.com/p/C0abc/?igsh=MWt4bXZ2cGx">Instagram post</a>
+          </li>
+          <li>
+            <a
+              href="https://www.reddit.com/r/rust/comments/abc/title/?share_id=Xy12AbC&utm_content=2&utm_medium=android_app&utm_name=androidcss&utm_source=share&utm_term=1"
+              >Reddit share link</a
+            >
+          </li>
+          <li>
+            <a href="https://www.amazon.com/dp/B0ABC123/?crid=2XYZ&keywords=usb+cable&qid=1700000000&sprefix=usb&sr=8-1"
+              >Amazon product from search</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://www.linkedin.com/posts/someone_activity-123?utm_source=share&utm_medium=member_desktop&rcm=ACoAAB"
+              >LinkedIn post</a
+            >
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Select and copy (Ctrl+C / ⌘C)</h2>
+        <div class="row">
+          <span>Link in text</span>
+          <code data-testid="select-code">https://example.com/deal?id=9&utm_source=bing&msclkid=abc123def</code>
+        </div>
+        <div class="row">
+          <span>Text field</span>
+          <input data-testid="select-input" value="https://www.example.org/?srsltid=AfmBOoq123&gad_source=1&page=2" />
+        </div>
+        <div class="row">
+          <span>Text area (links inside text)</span>
+          <textarea data-testid="select-textarea" rows="3">
+Notes: https://example.com/a?utm_campaign=x&id=1 and https://example.com/b?fbclid=y&id=2.</textarea>
+        </div>
+      </section>
+
+      <section>
+        <h2>Should not change</h2>
+        <p class="muted">Functional parameters that look like tracking. These must paste unchanged.</p>
+        <div class="row" data-url="https://www.youtube.com/results?search_query=lofi+beats">
+          <button data-copy="writeText" data-testid="copy-functional-youtube">YouTube search</button>
+          <span class="url"></span>
+        </div>
+        <div class="row" data-url="https://www.linkedin.com/jobs/search/?keywords=python&location=Berlin">
+          <button data-copy="writeText">LinkedIn job search</button>
+          <span class="url"></span>
+        </div>
+        <div class="row" data-url="https://maps.google.com/?cid=12345678901234567890">
+          <button data-copy="writeText">Google Maps place</button>
+          <span class="url"></span>
+        </div>
+        <div class="row" data-url="https://www.nytimes.com/2025/01/01/us/story.html?unlocked_article_code=1.abc.XYZ">
+          <button data-copy="writeText">NYT gift link</button>
+          <span class="url"></span>
+        </div>
+        <div class="row" data-url="https://gitlab.com/group/project/-/blob/main/README.md?ref_type=heads">
+          <button data-copy="writeText">GitLab file</button>
+          <span class="url"></span>
+        </div>
+        <div class="row" data-url="https://example.com/?search=shoes&term=fall2025&channel=beta&promo=SAVE20">
+          <button data-copy="writeText">Generic look-alikes</button>
+          <span class="url"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>Inside an iframe</h2>
+        <iframe
+          title="Embedded copy button"
+          data-testid="frame"
+          srcdoc="<!doctype html><meta name=color-scheme content='light dark'><body style='font:14px system-ui;margin:12px'><button id=copy style='padding:6px 10px'>Copy embedded link</button> <code>https://example.com/embed?utm_source=iframe&amp;v=3</code><script>document.getElementById('copy').onclick=()=>navigator.clipboard.writeText('https://example.com/embed?utm_source=iframe&v=3')</script>"
+        ></iframe>
+      </section>
+
+      <section>
+        <h2>Clipboard inspector</h2>
+        <p class="muted">Paste here to see exactly what was copied.</p>
+        <textarea data-testid="paste" rows="3" placeholder="Paste (Ctrl+V / ⌘V)"></textarea>
+      </section>
+    </main>
+
+    <script>
+      for (const row of document.querySelectorAll('[data-url], [data-text]')) {
+        row.querySelector('.url').textContent = row.dataset.url ?? row.dataset.text;
+      }
+
+      function copyWithExecCommand(text) {
+        const field = document.createElement('textarea');
+        field.value = text;
+        field.style.position = 'fixed';
+        field.style.opacity = '0';
+        document.body.append(field);
+        field.select();
+        document.execCommand('copy');
+        field.remove();
+      }
+
+      function copyWithSetData(text) {
+        document.addEventListener(
+          'copy',
+          (event) => {
+            event.preventDefault();
+            event.clipboardData.setData('text/plain', text);
+            event.clipboardData.setData('text/html', `<a href="${text.replace(/&/g, '&amp;')}">Shared link</a>`);
+          },
+          { once: true },
+        );
+        document.execCommand('copy');
+      }
+
+      document.addEventListener('click', async (event) => {
+        const button = event.target.closest('button[data-copy]');
+        if (!button) return;
+        const row = button.closest('[data-url], [data-text]');
+        const text = row.dataset.url ?? row.dataset.text;
+        const method = button.dataset.copy;
+        if (method === 'writeText') await navigator.clipboard.writeText(text);
+        if (method === 'execCommand') copyWithExecCommand(text);
+        if (method === 'setData') copyWithSetData(text);
+        if (method === 'delayed') {
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          await navigator.clipboard.writeText(text);
+        }
+        button.classList.add('done');
+        setTimeout(() => button.classList.remove('done'), 1500);
+      });
+    </script>
+  </body>
+</html>

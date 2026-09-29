@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "UTM Randomizer",
+  "version": "0.0.0",
+  "description": "Rewrites tracking parameters in links you copy with absurd values, or removes them, so shared links stop feeding analytics.",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "clipboardRead", "clipboardWrite", "contextMenus", "offscreen", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "UTM Randomizer",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "copy-clean-page-url": {
+      "suggested_key": {
+        "default": "Alt+Shift+U"
+      },
+      "description": "Copy the current page's link with tracking cleaned"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
