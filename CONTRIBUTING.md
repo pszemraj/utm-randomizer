@@ -48,13 +48,18 @@ Parameters are defined in `src/lib/params.ts`. Pick the narrowest rule that cove
 - `GLOBAL_PARAMS` or `GLOBAL_PREFIXES` only for names that mean tracking on every site, such as a vendor's click ID. Cite the vendor with a trailing comment.
 - A `SITE_RULES` entry for names that are functional somewhere else (`ref`, `source`, `si`, `t`, ...). Add a `path` pattern if the name is functional on other pages of the same site.
 
-Each rule declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which picks the kind of nonsense used in Randomize mode; `id` produces word-salad tokens for opaque identifiers.
+Each rule declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which picks the kind of replacement value. In Decoy mode, word values get a believable word of that category and anything that looks like an encoded identifier is scrambled in its own format; `id` always scrambles. In Silly mode, `id` produces word-salad tokens.
 
 Every new rule needs a test in `tests/unit/rewrite.test.ts`: a case under "site-specific tracking" showing the link being cleaned, and, for any name that is ambiguous in general, a case under "functional links stay intact" showing an ordinary link that uses the same name and must not change.
 
 ## Adding replacement values
 
-The funny values live in `src/lib/randomizer.ts`, one list per category. Keep them lowercase and hyphenated (letters, digits, hyphens), humorous but not offensive, obviously fake, and free of real company or brand names. New values are recognized as already randomized automatically.
+Replacement values live in `src/lib/values.ts`. Values are picked with a generator seeded by the per-install key and the link, so no list needs to be recognizable later: an already-rewritten link gets the same values again.
+
+- **Decoy lists** (`DECOY_SOURCES`, `DECOY_MEDIUMS`, and the parts campaign names, terms, and placements are composed from) should read like values real marketing tools and teams produce, including real platform names (`google`, `newsletter`, `paid_social`). Nothing in them should be distinctive enough to filter on. Every value must pass `isWordy`: start with a letter or digit, use only letters, digits, `_`, `.`, `+`, and `-`, contain a letter, and not look like a hexadecimal ID. Otherwise the next copy would treat it as an identifier and change it again.
+- **Silly lists** (`FUNNY`, `FUNNY_TOKEN_PHRASES`) should be lowercase and hyphenated, humorous but not offensive, obviously fake, and free of real company or brand names.
+
+`npm run check` runs property tests (`tests/unit/values.test.ts` and the idempotency cases in `tests/unit/rewrite.test.ts`) that fail if a value would be rewritten again or is not URL-safe.
 
 ## Submitting changes
 
