@@ -16,8 +16,8 @@
     <section class="card" aria-label="Settings">
       <label class="row">
         <span class="row-text">
-          <span class="row-title">Clean copied links</span>
-          <span class="row-hint" id="enabledHint">Rewrites tracking in links you copy on web pages</span>
+          <span class="row-title">Clean links automatically</span>
+          <span class="row-hint" id="enabledHint">Rewrites tracking in links you copy</span>
         </span>
         <input type="checkbox" role="switch" class="switch" id="enabled" />
       </label>
@@ -26,14 +26,32 @@
         <div class="row-line">
           <span class="row-title" id="modeLabel">Tracking</span>
           <div class="segmented" role="radiogroup" aria-labelledby="modeLabel">
-            <input type="radio" name="mode" id="mode-randomize" value="randomize" />
-            <label for="mode-randomize">Randomize</label>
+            <input type="radio" name="mode" id="mode-decoy" value="decoy" />
+            <label for="mode-decoy">Decoy</label>
+            <input type="radio" name="mode" id="mode-silly" value="silly" />
+            <label for="mode-silly">Silly</label>
             <input type="radio" name="mode" id="mode-strip" value="strip" />
             <label for="mode-strip">Remove</label>
           </div>
         </div>
         <p class="row-hint" id="modeHint"></p>
       </div>
+
+      <label class="row automatic">
+        <span class="row-text">
+          <span class="row-title">Clean the address bar</span>
+          <span class="row-hint">So copying or sharing the page's address is already clean</span>
+        </span>
+        <input type="checkbox" role="switch" class="switch" id="cleanAddressBar" />
+      </label>
+
+      <label class="row automatic">
+        <span class="row-text">
+          <span class="row-title">Watch the whole clipboard</span>
+          <span class="row-hint">Also catches links copied in other apps and browser pages</span>
+        </span>
+        <input type="checkbox" role="switch" class="switch" id="watchClipboard" />
+      </label>
 
       <label class="row">
         <span class="row-text">

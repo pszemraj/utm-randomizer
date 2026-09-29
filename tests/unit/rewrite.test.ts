@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { hasTrackingParams, rewriteText, rewriteUrl } from '../../src/lib/rewrite';
 
-const randomize = { mode: 'randomize' } as const;
+const decoy = { mode: 'decoy', key: 'test-key' } as const;
+const silly = { mode: 'silly', key: 'test-key' } as const;
 const strip = { mode: 'strip' } as const;
 
 /** Query parameters of an absolute URL. */
@@ -9,77 +10,79 @@ function params(url: string): URLSearchParams {
   return new URL(url).searchParams;
 }
 
-describe('rewriteUrl (randomize)', () => {
-  it('replaces every standard UTM value', () => {
+describe('rewriteUrl (decoy)', () => {
+  it('replaces every standard UTM value with a believable word value', () => {
     const original =
-      'https://example.com/?utm_source=aaaa&utm_medium=bbbb&utm_campaign=cccc&utm_term=dddd&utm_content=eeee';
-    const result = rewriteUrl(original, randomize);
-    expect(result?.params).toBe(5);
+      'https://example.com/?utm_source=newsletter&utm_medium=email&utm_campaign=spring&utm_term=shoes&utm_content=hero';
+    const result = rewriteUrl(original, decoy);
+    expect(result?.params).toBeGreaterThanOrEqual(4);
     const query = params(result?.url ?? '');
-    for (const [key, value] of Object.entries({
-      utm_source: 'aaaa',
-      utm_medium: 'bbbb',
-      utm_campaign: 'cccc',
-      utm_term: 'dddd',
-      utm_content: 'eeee',
-    })) {
-      expect(query.get(key)).toBeTruthy();
-      expect(query.get(key)).not.toBe(value);
+    expect([...query.keys()]).toEqual(['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']);
+    for (const value of query.values()) {
+      expect(value).toMatch(/^[A-Za-z0-9][A-Za-z0-9_. -]*$/);
     }
   });
 
-  it('turns click IDs into word salad', () => {
-    const result = rewriteUrl('https://example.com/?fbclid=IwAR3abc123&gclid=Cj0KCQ', randomize);
+  it('keeps the exact format of click IDs', () => {
+    const gclid = 'Cj0KCQjw9-KzBhDVARIsAFLvbqRZQ8x9Xk1_xYz2vT4mW7n8pL0aBcDeFgHiJkLmNoPq_BwE';
+    const msclkid = '3f2a9c0b1d4e5f60718293a4b5c6d7e8';
+    const result = rewriteUrl(`https://example.com/?gclid=${gclid}&msclkid=${msclkid}&_hsmi=123456789`, decoy);
     const query = params(result?.url ?? '');
-    expect(query.get('fbclid')).toMatch(/^[a-z0-9-]+-[a-z0-9]{4,10}$/);
-    expect(query.get('gclid')).toMatch(/^[a-z0-9-]+-[a-z0-9]{4,10}$/);
+    const fakeGclid = query.get('gclid') ?? '';
+    expect(fakeGclid).not.toBe(gclid);
+    expect(fakeGclid).toHaveLength(gclid.length);
+    expect(fakeGclid.slice(0, 4)).toBe('Cj0K');
+    expect(fakeGclid.replace(/[A-Za-z0-9]/g, '')).toBe(gclid.replace(/[A-Za-z0-9]/g, ''));
+    expect(query.get('msclkid')).toMatch(/^[0-9a-f]{32}$/);
+    expect(query.get('_hsmi')).toMatch(/^[1-9][0-9]{8}$/);
+  });
+
+  it('keeps percent-encoding in replaced values', () => {
+    const result = rewriteUrl('https://www.youtube.com/watch?v=x&pp=ygUEdGVzdA%3D%3D', decoy);
+    expect(result?.url).toMatch(/^https:\/\/www\.youtube\.com\/watch\?v=x&pp=ygUE[A-Za-z]{6}%3D%3D$/);
   });
 
   it('only touches tracking values and keeps every other byte', () => {
     const original =
-      'https://example.com/a%20b/?q=a,b&redirect=/x/y&utm_source=newsletter&amp&empty=&sp=a+b&x=%E2%9C%93#frag?utm_medium=x';
-    const result = rewriteUrl(original, randomize);
+      'https://example.com/a%20b/?q=a,b&redirect=/x/y&utm_source=weekly_digest_42&amp&empty=&sp=a+b&x=%E2%9C%93#frag?utm_medium=x';
+    const result = rewriteUrl(original, decoy);
     expect(result).not.toBeNull();
-    const [before, after] = original.split('utm_source=newsletter');
+    const [before, after] = original.split('utm_source=weekly_digest_42');
     expect(result?.url.startsWith(`${before ?? ''}utm_source=`)).toBe(true);
     expect(result?.url.endsWith(after ?? '')).toBe(true);
   });
 
   it('keeps duplicate keys and parameter order', () => {
-    const result = rewriteUrl('https://example.com/?tag=a&utm_source=x&tag=b&utm_source=y', randomize);
+    const result = rewriteUrl('https://example.com/?tag=a&utm_source=x1&tag=b&utm_source=y2', decoy);
     const keys = [...params(result?.url ?? '').keys()];
     expect(keys).toEqual(['tag', 'utm_source', 'tag', 'utm_source']);
     expect(params(result?.url ?? '').getAll('tag')).toEqual(['a', 'b']);
   });
 
   it('leaves valueless and empty tracking parameters alone', () => {
-    expect(rewriteUrl('https://example.com/?utm_source&utm_medium=', randomize)).toBeNull();
+    expect(rewriteUrl('https://example.com/?utm_source&utm_medium=', decoy)).toBeNull();
   });
 
-  it('is idempotent: rewriting a rewritten link changes nothing', () => {
-    for (let i = 0; i < 2000; i += 1) {
-      const once = rewriteUrl(
-        'https://example.com/?utm_source=fb&utm_medium=social&fbclid=abc123&gclid=xyz',
-        randomize,
-      );
-      expect(once).not.toBeNull();
-      expect(rewriteUrl(once?.url ?? '', randomize)).toBeNull();
-    }
+  it('is deterministic per key and link, and different across keys', () => {
+    const link = 'https://example.com/?utm_source=fb&utm_campaign=launch&fbclid=IwAR3xYz123AbC456dEf789';
+    expect(rewriteUrl(link, decoy)).toEqual(rewriteUrl(link, decoy));
+    const others = new Set(['a', 'b', 'c', 'd', 'e'].map((key) => rewriteUrl(link, { mode: 'decoy', key })?.url));
+    expect(others.size).toBeGreaterThan(1);
   });
 
   it('matches encoded keys but keeps their original spelling', () => {
-    const result = rewriteUrl('https://example.com/?utm%5Fsource=x&UTM_MEDIUM=y', randomize);
-    expect(result?.url).toMatch(/^https:\/\/example\.com\/\?utm%5Fsource=[a-z0-9-]+&UTM_MEDIUM=[a-z0-9-]+$/);
+    const result = rewriteUrl('https://example.com/?utm%5Fsource=newsletter&UTM_MEDIUM=email', decoy);
+    expect(result?.url).toMatch(/^https:\/\/example\.com\/\?utm%5Fsource=[^&]+&UTM_MEDIUM=[^&]+$/);
   });
 
   it('handles scheme-less, protocol-relative, and relative links without reshaping them', () => {
-    expect(rewriteUrl('www.example.com/p?utm_source=x', randomize)?.url).toMatch(/^www\.example\.com\/p\?utm_source=/);
-    expect(rewriteUrl('example.com?utm_source=x', randomize)?.url).toMatch(/^example\.com\?utm_source=/);
-    expect(rewriteUrl('//example.com/p?utm_source=x', randomize)?.url).toMatch(/^\/\/example\.com\/p\?utm_source=/);
-    expect(rewriteUrl('/watch?v=1&si=abc', { ...randomize, baseUrl: 'https://www.youtube.com/feed' })?.url).toMatch(
-      /^\/watch\?v=1&si=[a-z0-9-]+$/,
+    expect(rewriteUrl('www.example.com/p?utm_source=xx', decoy)?.url).toMatch(/^www\.example\.com\/p\?utm_source=/);
+    expect(rewriteUrl('example.com?utm_source=xx', decoy)?.url).toMatch(/^example\.com\?utm_source=/);
+    expect(rewriteUrl('//example.com/p?utm_source=xx', decoy)?.url).toMatch(/^\/\/example\.com\/p\?utm_source=/);
+    expect(rewriteUrl('/watch?v=1&si=abcdefgh', { ...decoy, baseUrl: 'https://www.youtube.com/feed' })?.url).toMatch(
+      /^\/watch\?v=1&si=[a-z]{8}$/,
     );
-    expect(rewriteUrl('/p?utm_source=x', randomize)).toBeNull();
+    expect(rewriteUrl('/p?utm_source=xx', decoy)).toBeNull();
   });
 
   it('ignores non-web links and text', () => {
@@ -91,7 +94,37 @@ describe('rewriteUrl (randomize)', () => {
       'https://example.com/#/route?utm_source=x',
       'https://example.com/no-query',
     ]) {
-      expect(rewriteUrl(input, randomize), input).toBeNull();
+      expect(rewriteUrl(input, decoy), input).toBeNull();
+    }
+  });
+});
+
+describe('rewriteUrl (silly)', () => {
+  it('uses obvious nonsense', () => {
+    const result = rewriteUrl('https://example.com/?utm_source=newsletter&fbclid=IwAR3abc123', silly);
+    const query = params(result?.url ?? '');
+    expect(query.get('utm_source')).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)+$/);
+    expect(query.get('fbclid')).toMatch(/^[a-z0-9-]+-[a-z0-9]{4,6}$/);
+  });
+});
+
+describe('idempotency', () => {
+  const links = [
+    'https://example.com/?utm_source=fb&utm_medium=social&utm_campaign=2025_launch&fbclid=abc123&gclid=xyz',
+    'https://shop.example/p?gclid=Cj0KCQjw9-KzBhDVARIsAFLvbqRZQ8x9Xk1_BwE&utm_term=running+shoes&utm_content=a%20b',
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=AbCdEf123456&pp=ygUEdGVzdA%3D%3D',
+    'https://x.com/jack/status/20?s=20&t=AbCdEfGhIjKlMn',
+    'https://www.amazon.com/dp/B0ABC/ref=sr_1_1?crid=2X9Z&qid=1700000000&sprefix=usb%2Caps%2C181&sr=8-1',
+    'https://example.com/?_ga=2.123456789.1234567890-1234567890.1700000000&_gl=1*abc12*_ga*MTIzNA..&mc_eid=a1b2c3d4e5',
+  ];
+
+  it.each(['decoy', 'silly', 'strip'] as const)('rewriting a rewritten link changes nothing (%s)', (mode) => {
+    for (const link of links) {
+      for (let key = 0; key < 300; key += 1) {
+        const once = rewriteUrl(link, { mode, key: String(key) });
+        expect(once, link).not.toBeNull();
+        expect(rewriteUrl(once?.url ?? '', { mode, key: String(key) }), once?.url).toBeNull();
+      }
     }
   });
 });
@@ -178,7 +211,8 @@ describe('functional links stay intact', () => {
     'https://www.netflix.com/browse?jbv=80057281',
     'https://substack.com/app-link/post?publication_id=1&post_id=2',
   ])('%s', (url) => {
-    expect(rewriteUrl(url, randomize)).toBeNull();
+    expect(rewriteUrl(url, decoy)).toBeNull();
+    expect(rewriteUrl(url, silly)).toBeNull();
     expect(rewriteUrl(url, strip)).toBeNull();
     expect(hasTrackingParams(url)).toBe(false);
   });

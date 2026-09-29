@@ -259,6 +259,7 @@ a {
 }
 
 body.paused .row-stack,
+body.paused .automatic,
 body.paused #notify {
   opacity: 0.6;
 }

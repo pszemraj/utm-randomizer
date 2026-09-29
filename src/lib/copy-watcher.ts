@@ -1,4 +1,4 @@
-import { rewriteText, rewriteUrl, type RewriteOptions } from './rewrite';
+import { rewriteText, rewriteUrl, withoutTracking, type RewriteOptions } from './rewrite';
 import type { Settings } from './settings';
 
 /** The subset of `navigator.clipboard` the watcher uses. */
@@ -23,6 +23,13 @@ export interface WatcherDeps {
   clipboard: WatchedClipboard | null;
   /** Current settings; read on every event so changes apply immediately. */
   getSettings: () => Settings;
+  /** The per-install key that seeds replacement values, or null while it is still loading. */
+  getKey: () => string | null;
+  /**
+   * Called before Undo puts the original back, so other watchers (the background clipboard watcher)
+   * leave it alone instead of rewriting it again.
+   */
+  beforeRestore?: (text: string) => Promise<void>;
   /** Called after each rewrite, to show a notification and count it. */
   onRewrite: (event: RewriteEvent) => void;
   /** False once the extension was reloaded or removed; the watcher then shuts itself down. */
@@ -41,6 +48,11 @@ export interface CopyWatcher {
 
 /** A clipboard change this soon after the user interacted with the page is attributed to the page. */
 const INTENT_WINDOW_MS = 10_000;
+/**
+ * The same link (ignoring tracking values) is not rewritten twice within this window, so watchers
+ * that disagree (a stale key, another extension) can never keep rewriting each other's output.
+ */
+const SAME_LINK_WINDOW_MS = 5_000;
 // Clipboard checks (ms after the gesture) for browsers without the `clipboardchange` event (Chrome < 144).
 const SWEEP_AFTER_COPY = [40, 150, 400];
 const SWEEP_AFTER_CLICK = [120, 350, 800, 1600, 2800];
@@ -139,7 +151,7 @@ function looksLikeCopyControl(target: EventTarget | null): boolean {
  * - Without `clipboardchange`, the clipboard is polled briefly after copy-like gestures.
  */
 export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
-  const { clipboard, getSettings, onRewrite } = deps;
+  const { clipboard, getSettings, getKey, onRewrite } = deps;
   const isContextValid = deps.isContextValid ?? (() => true);
   const now = deps.now ?? (() => performance.now());
   const supportsChangeEvent = clipboard !== null && 'onclipboardchange' in clipboard;
@@ -147,11 +159,18 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   let lastIntent = Number.NEGATIVE_INFINITY;
   /** The last text this watcher put on the clipboard; never rewritten again. */
   let lastWritten: string | null = null;
+  /** `lastWritten` without tracking parameters, and when it was written (see SAME_LINK_WINDOW_MS). */
+  let lastLink: { text: string; at: number } | null = null;
   let restoring = false;
   let sweep: AbortController | null = null;
   const listeners = new AbortController();
 
-  const rewriteOptions = (): RewriteOptions => ({ mode: getSettings().mode, baseUrl: location.href });
+  /** Current rewrite options, or null while replacement values cannot be computed yet. */
+  const rewriteOptions = (): RewriteOptions | null => {
+    const { mode } = getSettings();
+    const key = getKey();
+    return key === null && mode !== 'strip' ? null : { mode, key: key ?? '', baseUrl: location.href };
+  };
 
   /** Whether to act on events; shuts the watcher down once the extension context is gone. */
   function active(): boolean {
@@ -200,6 +219,9 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     }
 
     const options = rewriteOptions();
+    if (!options) {
+      return false;
+    }
     const result = original ? rewriteText(original, { ...options, embedded }) : null;
     const rewrittenHtml = html ? rewriteHtml(html, options) : null;
     if (!result && !rewrittenHtml) {
@@ -233,10 +255,18 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     } catch {
       return;
     }
-    if (!text || text === lastWritten || !active()) {
+    const options = rewriteOptions();
+    if (!text || text === lastWritten || !options || !active()) {
       return;
     }
-    const result = rewriteText(text, { ...rewriteOptions(), embedded });
+    if (
+      lastLink &&
+      now() - lastLink.at < SAME_LINK_WINDOW_MS &&
+      withoutTracking(text, location.href) === lastLink.text
+    ) {
+      return;
+    }
+    const result = rewriteText(text, { ...options, embedded });
     if (!result) {
       return;
     }
@@ -246,6 +276,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       return;
     }
     lastWritten = result.text;
+    lastLink = { text: withoutTracking(result.text, location.href), at: now() };
     onRewrite({ original: text, rewritten: result.text, urls: result.urls });
   }
 
@@ -344,6 +375,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   /** Writes `text` to the clipboard and marks it as ours so it is not rewritten again. */
   async function restore(text: string): Promise<void> {
     lastWritten = text;
+    await deps.beforeRestore?.(text);
     if (clipboard) {
       await clipboard.writeText(text);
       return;

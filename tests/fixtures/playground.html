@@ -155,8 +155,9 @@
       <h1>UTM Randomizer playground</h1>
       <p class="muted">
         Every control copies a link the way real sites do. Paste into the box at the bottom (or anywhere) to see what
-        reached your clipboard. In <strong>Randomize</strong> mode tracking values turn into nonsense; in
-        <strong>Remove</strong> mode they disappear. Links under “Should not change” must paste exactly as shown.
+        reached your clipboard. In <strong>Decoy</strong> mode tracking values turn into believable fakes, in
+        <strong>Silly</strong> mode into nonsense, and in <strong>Remove</strong> mode they disappear. Links under
+        “Should not change” must paste exactly as shown.
       </p>
 
       <section>
@@ -188,6 +189,41 @@
           <button data-copy="writeText" data-testid="copy-sharetext">Share text with 2 links</button>
           <span class="url"></span>
         </div>
+      </section>
+
+      <section>
+        <h2>Address bar</h2>
+        <p class="muted">
+          Open this page with tracking parameters. Once it has loaded, the address bar shows decoys (or nothing, in
+          Remove mode), so copying the address, sharing the tab, or bookmarking it is already clean.
+        </p>
+        <p>
+          <a
+            data-testid="open-tracked"
+            href="/?id=5&utm_source=newsletter&utm_medium=email&utm_campaign=launch&fbclid=IwAR3xYz123AbC456dEf789"
+            >Reload this page with tracking parameters</a
+          >
+          ·
+          <span data-url="/?page=2&utm_source=homepage&utm_content=promo_tile">
+            <button type="button" data-copy="pushState" data-testid="push-tracked">
+              Navigate in-page (pushState) to a tracked URL
+            </button>
+          </span>
+        </p>
+      </section>
+
+      <section>
+        <h2>Outside the page</h2>
+        <p class="muted">
+          With “Watch the whole clipboard” on, links copied anywhere are cleaned within about a second: copy this one
+          from a text editor, a chat app, or the address bar of a browser page like <code>chrome://history</code>, then
+          paste it below.
+        </p>
+        <p>
+          <code
+            >https://example.com/story?id=11&utm_source=twitter&utm_medium=social&gclid=Cj0KCQjw9-KzBhDVARIsAF_BwE</code
+          >
+        </p>
       </section>
 
       <section>
@@ -291,7 +327,8 @@ Notes: https://example.com/a?utm_campaign=x&id=1 and https://example.com/b?fbcli
 
     <script>
       for (const row of document.querySelectorAll('[data-url], [data-text]')) {
-        row.querySelector('.url').textContent = row.dataset.url ?? row.dataset.text;
+        const target = row.querySelector('.url');
+        if (target) target.textContent = row.dataset.url ?? row.dataset.text;
       }
 
       function copyWithExecCommand(text) {
@@ -327,6 +364,9 @@ Notes: https://example.com/a?utm_campaign=x&id=1 and https://example.com/b?fbcli
         if (method === 'writeText') await navigator.clipboard.writeText(text);
         if (method === 'execCommand') copyWithExecCommand(text);
         if (method === 'setData') copyWithSetData(text);
+        if (method === 'pushState') {
+          history.pushState(null, '', text);
+        }
         if (method === 'delayed') {
           await new Promise((resolve) => setTimeout(resolve, 800));
           await navigator.clipboard.writeText(text);

@@ -1,12 +1,14 @@
 import type { ExtensionMessage } from './lib/messages';
-import { rewriteUrl, type Mode } from './lib/rewrite';
-import { describeMode, loadSettings, saveSettings, watchSettings, type Settings } from './lib/settings';
+import { hasTrackingParams, rewriteUrl, type Mode } from './lib/rewrite';
+import { describeMode, loadSettings, requestSecret, saveSettings, watchSettings, type Settings } from './lib/settings';
 
 const COMMAND_COPY_PAGE = 'copy-clean-page-url';
 const MODE_HINTS: Record<Mode, string> = {
-  randomize: 'Swaps values for nonsense, e.g. utm_source=carrier-pigeon',
+  decoy: 'Believable fakes that poison analytics, e.g. utm_source=bing',
+  silly: 'Obvious nonsense, e.g. utm_source=carrier-pigeon',
   strip: 'Deletes tracking parameters from the link',
 };
+const MODES: readonly Mode[] = ['decoy', 'silly', 'strip'];
 
 /** Looks up a popup element by id and checks its type, so markup drift fails loudly. */
 function element<T extends HTMLElement>(id: string, type: new () => T): T {
@@ -19,6 +21,8 @@ function element<T extends HTMLElement>(id: string, type: new () => T): T {
 
 const enabledToggle = element('enabled', HTMLInputElement);
 const notifyToggle = element('notify', HTMLInputElement);
+const addressBarToggle = element('cleanAddressBar', HTMLInputElement);
+const clipboardToggle = element('watchClipboard', HTMLInputElement);
 const modeInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="mode"]'));
 const modeHint = element('modeHint', HTMLParagraphElement);
 const enabledHint = element('enabledHint', HTMLSpanElement);
@@ -30,6 +34,7 @@ const shortcut = element('shortcut', HTMLElement);
 const changeShortcut = element('changeShortcut', HTMLAnchorElement);
 
 let settings: Settings;
+let key = '';
 let pageUrl: string | null = null;
 
 /** Syncs the controls and hints with the given settings. */
@@ -37,13 +42,15 @@ function render(current: Settings): void {
   settings = current;
   enabledToggle.checked = current.enabled;
   notifyToggle.checked = current.notify;
+  addressBarToggle.checked = current.cleanAddressBar;
+  clipboardToggle.checked = current.watchClipboard;
   for (const input of modeInputs) {
     input.checked = input.value === current.mode;
   }
   modeHint.textContent = MODE_HINTS[current.mode];
   enabledHint.textContent = current.enabled
-    ? 'Rewrites tracking in links you copy on web pages'
-    : 'Paused: copied links are left as they are';
+    ? 'Rewrites tracking in links you copy'
+    : 'Paused: links are left as they are';
   document.body.classList.toggle('paused', !current.enabled);
 }
 
@@ -63,18 +70,21 @@ async function copyPageLink(): Promise<void> {
   if (!pageUrl) {
     return;
   }
-  const result = rewriteUrl(pageUrl, { mode: settings.mode });
+  const result = rewriteUrl(pageUrl, { mode: settings.mode, key });
   try {
     await navigator.clipboard.writeText(result?.url ?? pageUrl);
   } catch {
     setStatus('Could not write to the clipboard', true);
     return;
   }
+  const { emoji, done } = describeMode(settings.mode);
   if (result) {
-    const { emoji, verb } = describeMode(settings.mode);
-    setStatus(`${emoji} Copied with tracking ${verb}`);
+    setStatus(`${emoji} Copied, tracking ${done}`);
     const message: ExtensionMessage = { type: 'count', urls: 1 };
     chrome.runtime.sendMessage(message).catch(() => undefined);
+  } else if (hasTrackingParams(pageUrl)) {
+    // The address bar was already cleaned, so the link carries replacements already.
+    setStatus(`${emoji} Copied, tracking already ${done}`);
   } else {
     setStatus('Copied (no tracking found)');
   }
@@ -85,6 +95,7 @@ async function init(): Promise<void> {
   element('version', HTMLSpanElement).textContent = `v${chrome.runtime.getManifest().version}`;
   render(await loadSettings());
   watchSettings(render);
+  key = await requestSecret();
 
   const [{ totalCount: total }, { sessionCount: session }] = await Promise.all([
     chrome.storage.local.get('totalCount'),
@@ -117,10 +128,13 @@ async function init(): Promise<void> {
 
 enabledToggle.addEventListener('change', () => void saveSettings({ enabled: enabledToggle.checked }));
 notifyToggle.addEventListener('change', () => void saveSettings({ notify: notifyToggle.checked }));
+addressBarToggle.addEventListener('change', () => void saveSettings({ cleanAddressBar: addressBarToggle.checked }));
+clipboardToggle.addEventListener('change', () => void saveSettings({ watchClipboard: clipboardToggle.checked }));
 for (const input of modeInputs) {
   input.addEventListener('change', () => {
-    if (input.checked) {
-      void saveSettings({ mode: input.value === 'strip' ? 'strip' : 'randomize' });
+    const mode = MODES.find((candidate) => candidate === input.value);
+    if (input.checked && mode) {
+      void saveSettings({ mode });
     }
   });
 }

@@ -1,5 +1,12 @@
 import path from 'node:path';
-import { chromium, test as base, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import {
+  chromium,
+  expect as baseExpect,
+  test as base,
+  type BrowserContext,
+  type Page,
+  type Worker,
+} from '@playwright/test';
 import { startPlayground } from '../../scripts/playground.mjs';
 
 /** The local server that hosts tests/fixtures/playground.html. */
@@ -22,8 +29,10 @@ export interface ExtensionFixtures {
   playground: Page;
   /** Current clipboard text, read through an extension page. */
   readClipboard: () => Promise<string>;
-  /** Writes the clipboard from outside the page, like the browser's own "Copy link address". */
+  /** Writes the clipboard from outside the page, like the browser's own "Copy link address" or another app. */
   writeClipboardExternally: (text: string) => Promise<void>;
+  /** Waits until the background clipboard watcher (the offscreen document) is running or stopped. */
+  waitForWatcher: (running: boolean) => Promise<void>;
   /** Writes extension settings (see `src/lib/settings.ts`) straight to storage. */
   setSettings: (settings: Record<string, unknown>) => Promise<void>;
 }
@@ -35,6 +44,18 @@ export interface ExtensionOptions {
 }
 
 const EXTENSION_PATH = path.resolve('dist');
+
+/** Opens an extension page with a textarea for reading and writing the clipboard in tests. */
+async function extensionPage(context: BrowserContext, extensionId: string): Promise<Page> {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await page.evaluate(() => {
+    const field = document.createElement('textarea');
+    field.id = 'test-clipboard';
+    document.body.append(field);
+  });
+  return page;
+}
 
 /** Playwright `test` with the extension fixtures. */
 export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: Playground }>({
@@ -84,15 +105,15 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
   },
 
   readClipboard: async ({ context, extensionId, playground }, use) => {
-    // Read through an extension page, which may paste thanks to the clipboardRead permission.
-    const reader = await context.newPage();
-    await reader.goto(`chrome-extension://${extensionId}/offscreen.html`);
+    // Read through an extension page, which may paste thanks to the clipboardRead permission. (Not
+    // offscreen.html: loaded in a tab it would start a second clipboard watcher.)
+    const reader = await extensionPage(context, extensionId);
     await playground.bringToFront();
     await use(() =>
       reader.evaluate(() => {
-        const field = document.querySelector('textarea');
+        const field = document.querySelector<HTMLTextAreaElement>('#test-clipboard');
         if (!field) {
-          throw new Error('offscreen.html has no textarea');
+          throw new Error('test textarea is missing');
         }
         field.value = '';
         field.focus();
@@ -105,14 +126,13 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
   },
 
   writeClipboardExternally: async ({ context, extensionId, playground }, use) => {
-    const writer = await context.newPage();
-    await writer.goto(`chrome-extension://${extensionId}/offscreen.html`);
+    const writer = await extensionPage(context, extensionId);
     await playground.bringToFront();
     await use(async (text) => {
       await writer.evaluate((value) => {
-        const field = document.querySelector('textarea');
+        const field = document.querySelector<HTMLTextAreaElement>('#test-clipboard');
         if (!field) {
-          throw new Error('offscreen.html has no textarea');
+          throw new Error('test textarea is missing');
         }
         field.value = value;
         field.select();
@@ -121,6 +141,25 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
       }, text);
     });
     await writer.close();
+  },
+
+  waitForWatcher: async ({ serviceWorker }, use) => {
+    await use(async (running) => {
+      await baseExpect
+        .poll(
+          () =>
+            serviceWorker.evaluate(async () => {
+              const contexts = await chrome.runtime.getContexts({
+                contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+              });
+              return contexts.length > 0;
+            }),
+          { timeout: 10_000 },
+        )
+        .toBe(running);
+      // Let a freshly started watcher take its baseline reading of the clipboard.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    });
   },
 
   setSettings: async ({ serviceWorker }, use) => {

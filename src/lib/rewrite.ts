@@ -1,12 +1,21 @@
 import { paramClassifier } from './params';
-import { funnyValue, isAlreadyRandomized } from './randomizer';
+import { replacementValue } from './values';
 
-/** `randomize` swaps tracking values for nonsense; `strip` removes tracking parameters entirely. */
-export type Mode = 'randomize' | 'strip';
+/**
+ * `decoy` swaps tracking values for believable fakes, `silly` for obvious nonsense, and `strip`
+ * removes tracking parameters entirely.
+ */
+export type Mode = 'decoy' | 'silly' | 'strip';
 
 /** How to rewrite, and how to interpret relative links. */
 export interface RewriteOptions {
   mode: Mode;
+  /**
+   * Secret per-install key that seeds replacement values. Replacements are a function of the key and
+   * the link, so rewriting a rewritten link returns it unchanged, and nobody without the key can
+   * tell replacements from real values.
+   */
+  key?: string;
   /** Resolves relative links (`/path?utm_source=x`) so site-specific rules can apply. */
   baseUrl?: string;
 }
@@ -100,32 +109,48 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
 
   const classify = paramClassifier(url.hostname, url.pathname);
   const queryEnd = fragmentStart === -1 ? link.length : fragmentStart;
-  const segments = link.slice(queryStart + 1, queryEnd).split('&');
+  const segments = link
+    .slice(queryStart + 1, queryEnd)
+    .split('&')
+    .map((segment) => {
+      const separator = segment.indexOf('=');
+      const rawKey = separator === -1 ? segment : segment.slice(0, separator);
+      return {
+        segment,
+        rawKey,
+        rawValue: separator === -1 ? '' : segment.slice(separator + 1),
+        category: rawKey ? classify(safeDecode(rawKey)) : null,
+      };
+    });
+
+  // Replacements are seeded by everything the rewrite leaves alone, so they come out the same
+  // when a rewritten link is rewritten again.
+  const untouched = segments.filter(({ category }) => !category).map(({ segment }) => segment);
+  const trackingKeys = segments.filter(({ category }) => category).map(({ rawKey }) => rawKey);
+  const seedBase = [options.key ?? '', url.host, url.pathname, untouched.join('&'), trackingKeys.join('&')].join('|');
+
   const kept: string[] = [];
   let changed = 0;
-
-  for (const segment of segments) {
-    const separator = segment.indexOf('=');
-    const rawKey = separator === -1 ? segment : segment.slice(0, separator);
-    const category = rawKey ? classify(safeDecode(rawKey)) : null;
+  let index = 0;
+  for (const { segment, rawKey, rawValue, category } of segments) {
     if (!category) {
       kept.push(segment);
       continue;
     }
-
+    index += 1;
     if (options.mode === 'strip') {
       changed += 1;
       continue;
     }
-
-    const rawValue = separator === -1 ? '' : segment.slice(separator + 1);
-    const value = safeDecode(rawValue);
-    if (!value || isAlreadyRandomized(value)) {
+    if (!rawValue) {
       kept.push(segment);
       continue;
     }
-    kept.push(`${rawKey}=${funnyValue(category, value)}`);
-    changed += 1;
+    const replacement = replacementValue(options.mode, category, rawValue, `${seedBase}|${String(index)}`);
+    kept.push(`${rawKey}=${replacement}`);
+    if (replacement !== rawValue) {
+      changed += 1;
+    }
   }
 
   if (changed === 0) {
@@ -216,6 +241,14 @@ export function rewriteText(text: string, options: RewriteOptions & { embedded?:
     return rewritten.url + trailing;
   });
   return urls > 0 ? { text: result, urls, params } : null;
+}
+
+/**
+ * `text` with all tracking parameters removed: two texts with the same result carry the same links,
+ * whatever their tracking values. The watchers use this to avoid rewriting a link they just handled.
+ */
+export function withoutTracking(text: string, baseUrl?: string): string {
+  return rewriteText(text, { mode: 'strip', embedded: true, baseUrl })?.text ?? text;
 }
 
 /** Whether a link carries parameters this extension would rewrite. */

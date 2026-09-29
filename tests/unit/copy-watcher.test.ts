@@ -46,15 +46,18 @@ let watcher: CopyWatcher | undefined;
 let settings: Settings;
 let rewrites: RewriteEvent[];
 let now: number;
+let key: string | null;
 
-/** Starts a watcher in Remove mode (deterministic output) with a controllable clock; records rewrites. */
+/** Starts a watcher in Remove mode (simple expected output) with a controllable clock; records rewrites. */
 function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {}, isContextValid = () => true) {
   settings = { ...DEFAULT_SETTINGS, mode: 'strip', ...overrides };
   rewrites = [];
   now = 100_000;
+  key = 'test-key';
   watcher = startCopyWatcher({
     clipboard,
     getSettings: () => settings,
+    getKey: () => key,
     onRewrite: (event) => rewrites.push(event),
     isContextValid,
     now: () => now,
@@ -196,8 +199,8 @@ describe('copy events', () => {
     expect(rewrites).toHaveLength(0);
   });
 
-  it('uses randomize mode when configured', () => {
-    start(new FakeClipboard(true), { mode: 'randomize' });
+  it('uses decoys when configured', () => {
+    start(new FakeClipboard(true), { mode: 'decoy' });
     document.body.innerHTML = `<p id="link">${TRACKED}</p>`;
     const paragraph = document.getElementById('link');
     if (!paragraph) throw new Error('missing fixture');
@@ -210,6 +213,25 @@ describe('copy events', () => {
     expect(copied.searchParams.get('id')).toBe('7');
     expect(copied.searchParams.get('utm_source')).not.toBe('newsletter');
     expect(copied.searchParams.get('fbclid')).not.toBe('IwAR3abc');
+    expect(copied.searchParams.get('fbclid')).toHaveLength('IwAR3abc'.length);
+  });
+
+  it('waits for the key before producing decoys, but removes without it', () => {
+    start(new FakeClipboard(true), { mode: 'decoy' });
+    key = null;
+    document.body.innerHTML = `<p id="link">${TRACKED}</p>`;
+    const paragraph = document.getElementById('link');
+    if (!paragraph) throw new Error('missing fixture');
+    selectText(paragraph);
+
+    const decoyEvent = copyEvent();
+    paragraph.dispatchEvent(decoyEvent);
+    expect(decoyEvent.defaultPrevented).toBe(false);
+
+    settings = { ...settings, mode: 'strip' };
+    const stripEvent = copyEvent();
+    paragraph.dispatchEvent(stripEvent);
+    expect(stripEvent.clipboardData?.getData('text/plain')).toBe(CLEAN);
   });
 });
 
@@ -278,6 +300,30 @@ describe('clipboardchange', () => {
 
     expect(clipboard.text).toBe(TRACKED);
     expect(rewrites).toHaveLength(1);
+  });
+
+  it('tells other watchers about Undo before restoring the original', async () => {
+    const clipboard = new FakeClipboard(true);
+    const order: string[] = [];
+    watcher = startCopyWatcher({
+      clipboard,
+      getSettings: () => ({ ...DEFAULT_SETTINGS, mode: 'strip' }),
+      getKey: () => 'test-key',
+      onRewrite: () => undefined,
+      beforeRestore: (text) => {
+        order.push(`ignore ${text}`);
+        return Promise.resolve();
+      },
+    });
+    const write = clipboard.writeText.bind(clipboard);
+    clipboard.writeText = (text) => {
+      order.push(`write ${text}`);
+      return write(text);
+    };
+
+    await watcher.restore(TRACKED);
+
+    expect(order).toEqual([`ignore ${TRACKED}`, `write ${TRACKED}`]);
   });
 
   it('shuts down once the extension context is gone', async () => {

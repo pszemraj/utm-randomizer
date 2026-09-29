@@ -10,7 +10,7 @@
  * privacy-removeparam list, ClearURLs rules, and Firefox query stripping.
  */
 
-/** The kind of value a parameter carries; picks the flavor of replacement in randomize mode. */
+/** The kind of value a parameter carries; picks the kind of replacement value. */
 export type Category = 'source' | 'medium' | 'campaign' | 'term' | 'content' | 'generic' | 'id';
 
 // Shared suffix vocabulary of analytics parameter families (utm_source, pk_kwd, mtm_cid, ...).

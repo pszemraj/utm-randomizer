@@ -1,20 +1,38 @@
+import { startAddressBarCleaner, type AddressBarCleaner } from './lib/address-bar';
 import { startCopyWatcher, type WatchedClipboard } from './lib/copy-watcher';
 import { isExtensionMessage, type ExtensionMessage, type ToastPayload } from './lib/messages';
-import { DEFAULT_SETTINGS, describeMode, loadSettings, watchSettings, type Settings } from './lib/settings';
+import {
+  DEFAULT_SETTINGS,
+  describeMode,
+  loadSettings,
+  requestSecret,
+  watchSecret,
+  watchSettings,
+  type Settings,
+} from './lib/settings';
 import { showToast } from './lib/toast';
 
 let settings: Settings = DEFAULT_SETTINGS;
-void loadSettings().then((loaded) => {
-  settings = loaded;
-});
-const unwatchSettings = watchSettings((updated) => {
-  settings = updated;
-});
+let key: string | null = null;
+let addressBar: AddressBarCleaner | null = null;
 
 const isTopFrame = window === window.top;
 // The async Clipboard API only exists in secure contexts; copy events still work without it.
 const clipboard: WatchedClipboard | null =
   window.isSecureContext && 'clipboard' in navigator ? navigator.clipboard : null;
+
+void Promise.all([loadSettings(), requestSecret().catch(() => null)]).then(([loadedSettings, loadedKey]) => {
+  settings = loadedSettings;
+  key ??= loadedKey;
+  addressBar?.clean();
+});
+const unwatchSettings = watchSettings((updated) => {
+  settings = updated;
+  addressBar?.clean();
+});
+const unwatchSecret = watchSecret((updated) => {
+  key = updated;
+});
 
 /** False once the extension was reloaded, updated, or removed (`chrome.runtime.id` disappears). */
 function isContextValid(): boolean {
@@ -48,11 +66,17 @@ function toast(payload: ToastPayload): void {
 const watcher = startCopyWatcher({
   clipboard,
   getSettings: () => settings,
+  getKey: () => key,
   isContextValid,
+  beforeRestore: async (text) => {
+    // The background clipboard watcher would otherwise rewrite the restored link right away.
+    const message: ExtensionMessage = { type: 'ignore-clipboard', text };
+    await chrome.runtime.sendMessage(message).catch(() => undefined);
+  },
   onRewrite: ({ original, urls }) => {
-    const { emoji, verb } = describeMode(settings.mode);
+    const { emoji, done } = describeMode(settings.mode);
     const payload: ToastPayload | undefined = settings.notify
-      ? { message: `${emoji} Tracking ${verb}${urls > 1 ? ` in ${urls} links` : ''}`, undoText: original }
+      ? { message: `${emoji} Tracking ${done}${urls > 1 ? ` in ${urls} links` : ''}`, undoText: original }
       : undefined;
     if (payload && isTopFrame) {
       toast(payload);
@@ -62,6 +86,13 @@ const watcher = startCopyWatcher({
 });
 
 if (isTopFrame) {
+  // Only the top frame's URL is shown in the address bar.
+  addressBar = startAddressBarCleaner({
+    isContextValid,
+    getOptions: () =>
+      settings.enabled && settings.cleanAddressBar && key !== null ? { mode: settings.mode, key } : null,
+  });
+
   const onMessage = (
     message: unknown,
     _sender: chrome.runtime.MessageSender,
@@ -70,6 +101,7 @@ if (isTopFrame) {
     if (!isContextValid()) {
       chrome.runtime.onMessage.removeListener(onMessage);
       unwatchSettings();
+      unwatchSecret();
       return;
     }
     if (isExtensionMessage(message) && message.type === 'toast') {
