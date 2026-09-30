@@ -4,8 +4,9 @@
 //
 // Offscreen documents never have focus, so navigator.clipboard is unusable here; execCommand with
 // the extension's clipboardRead/clipboardWrite permissions works regardless of focus.
+import { createLoopGuard } from './lib/loop-guard';
 import { isExtensionMessage, type ExtensionMessage, type WatchConfig } from './lib/messages';
-import { rewriteText, withoutTracking } from './lib/rewrite';
+import { rewriteText } from './lib/rewrite';
 import { describeMode } from './lib/settings';
 
 /** How often the clipboard is checked while watching. */
@@ -34,10 +35,7 @@ let lastSeen: string | null = null;
 let ignored: string | null = null;
 /** New clipboard text waiting out the grace period. */
 let candidate: string | null = null;
-/** The last link this watcher rewrote (without tracking parameters) and when; see SAME_LINK_MS. */
-let lastLink: { text: string; at: number } | null = null;
-/** The same link is not rewritten twice within this window, so disagreeing watchers cannot loop. */
-const SAME_LINK_MS = 5_000;
+const loopGuard = createLoopGuard(() => Date.now());
 
 /** The editable element pastes and copies go through. */
 function field(): HTMLTextAreaElement {
@@ -121,8 +119,7 @@ function check(): void {
     return;
   }
   candidate = null;
-  const link = withoutTracking(snapshot.text);
-  if (lastLink && Date.now() - lastLink.at < SAME_LINK_MS && link === lastLink.text) {
+  if (loopGuard.blocks(snapshot.text)) {
     return;
   }
   // Formatted copies would lose their formatting, so only a lone link is rewritten there.
@@ -130,7 +127,7 @@ function check(): void {
   if (!result || !writeClipboard(result.text)) {
     return;
   }
-  lastLink = { text: link, at: Date.now() };
+  loopGuard.record(snapshot.text, result.text);
   const { emoji, done } = describeMode(config.mode);
   send({
     type: 'rewritten',

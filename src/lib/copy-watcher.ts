@@ -1,4 +1,5 @@
-import { rewriteText, rewriteUrl, withoutTracking, type RewriteOptions } from './rewrite';
+import { createLoopGuard } from './loop-guard';
+import { rewriteText, rewriteUrl, type RewriteOptions } from './rewrite';
 import type { Settings } from './settings';
 
 /** The subset of `navigator.clipboard` the watcher uses. */
@@ -48,11 +49,6 @@ export interface CopyWatcher {
 
 /** A clipboard change this soon after the user interacted with the page is attributed to the page. */
 const INTENT_WINDOW_MS = 10_000;
-/**
- * The same link (ignoring tracking values) is not rewritten twice within this window, so watchers
- * that disagree (a stale key, another extension) can never keep rewriting each other's output.
- */
-const SAME_LINK_WINDOW_MS = 5_000;
 // Clipboard checks (ms after the gesture) for browsers without the `clipboardchange` event (Chrome < 144).
 const SWEEP_AFTER_COPY = [40, 150, 400];
 const SWEEP_AFTER_CLICK = [120, 350, 800, 1600, 2800];
@@ -159,8 +155,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   let lastIntent = Number.NEGATIVE_INFINITY;
   /** The last text this watcher put on the clipboard; never rewritten again. */
   let lastWritten: string | null = null;
-  /** `lastWritten` without tracking parameters, and when it was written (see SAME_LINK_WINDOW_MS). */
-  let lastLink: { text: string; at: number } | null = null;
+  const loopGuard = createLoopGuard(now, () => location.href);
   let restoring = false;
   let sweep: AbortController | null = null;
   const listeners = new AbortController();
@@ -256,14 +251,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       return;
     }
     const options = rewriteOptions();
-    if (!text || text === lastWritten || !options || !active()) {
-      return;
-    }
-    if (
-      lastLink &&
-      now() - lastLink.at < SAME_LINK_WINDOW_MS &&
-      withoutTracking(text, location.href) === lastLink.text
-    ) {
+    if (!text || text === lastWritten || !options || !active() || loopGuard.blocks(text)) {
       return;
     }
     const result = rewriteText(text, { ...options, embedded });
@@ -276,7 +264,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       return;
     }
     lastWritten = result.text;
-    lastLink = { text: withoutTracking(result.text, location.href), at: now() };
+    loopGuard.record(text, result.text);
     onRewrite({ original: text, rewritten: result.text, urls: result.urls });
   }
 

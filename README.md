@@ -80,7 +80,7 @@ On web pages, copy events (Ctrl+C, `execCommand('copy')`, and pages that fill `c
 
 The address bar is cleaned with `history.replaceState` once the page's `load` event has fired, so the page has already done its own work with the URL, and again 300 ms after each in-page navigation.
 
-The background watcher runs in an offscreen document, because service workers have no DOM and offscreen documents are the only extension page that can read the clipboard without focus. When it sees new clipboard text containing a tracked link, it waits 250 ms so a page's content script can handle copies made on that page first, then rewrites what is left. Because rewriting is idempotent, the watcher and the content scripts never fight over a link. As a safety net, neither rewrites the same link twice within 5 seconds, and Undo tells the watcher to leave the restored link alone.
+The background watcher runs in an offscreen document, because service workers have no DOM and offscreen documents are the only extension page that can read the clipboard without focus. When it sees new clipboard text containing a tracked link, it waits 250 ms so a page's content script can handle copies made on that page first, then rewrites what is left. Because rewriting is idempotent, the watcher and the content scripts never fight over a link. As a safety net against anything that disagrees, for 5 seconds after rewriting a link neither rewrites a different tracked version of it; copying the original link again still gets it rewritten. Undo tells the watcher to leave the restored link alone.
 
 ## Permissions
 

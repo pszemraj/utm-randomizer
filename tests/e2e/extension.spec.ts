@@ -200,6 +200,10 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
     expect(gclid.slice(0, 4)).toBe('Cj0K');
     await expect(playground.locator('utm-randomizer-toast')).toContainText('Tracking swapped for decoys');
     expect(await expectStable(readClipboard, 2000)).toBe(copied);
+
+    // Copying the same tracked link again a moment later gets it cleaned again, the same way.
+    await writeClipboardExternally(OUTSIDE);
+    await expect.poll(readClipboard).toBe(copied);
   });
 
   test('leaves text and links without tracking alone', async ({

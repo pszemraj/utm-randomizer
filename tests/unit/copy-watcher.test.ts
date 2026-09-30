@@ -274,6 +274,31 @@ describe('clipboardchange', () => {
     expect(clipboard.writes).toEqual([CLEAN]);
   });
 
+  it("rewrites a fresh copy of the same link, but not another watcher's rewrite of it", async () => {
+    const clipboard = new FakeClipboard(true);
+    start(clipboard);
+    interact();
+    clipboard.change(TRACKED);
+    await flush();
+    // The copy button is clicked again right away: the original is back and is cleaned again.
+    interact();
+    clipboard.change(TRACKED);
+    await flush();
+    expect(clipboard.writes).toEqual([CLEAN, CLEAN]);
+
+    // Another tracked version of the link, as a watcher that disagrees would write it, is left alone...
+    const otherRewrite = 'https://example.com/page?id=7&utm_source=reddit&fbclid=IwAR9xyz';
+    clipboard.change(otherRewrite);
+    await flush();
+    expect(clipboard.text).toBe(otherRewrite);
+
+    // ...until the loop guard's window has passed.
+    now += 6_000;
+    clipboard.change(otherRewrite);
+    await flush();
+    expect(clipboard.text).toBe(CLEAN);
+  });
+
   it('only rewrites links embedded in text when the clipboard holds plain text', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard);
