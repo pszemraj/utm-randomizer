@@ -21,7 +21,7 @@ npm ci
 npm run build
 ```
 
-Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select the `dist/` folder (not the repository root). After pulling changes, run `npm run build` again and click the reload icon on the extension's card. Chrome 116 or newer is required; any Chromium-based browser with Manifest V3 support should work.
+Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select the `dist/` folder (not the repository root). After pulling changes, run `npm run build` again and click the reload icon on the extension's card. Chrome 116 or newer is required, including for changing settings and using the context-menu actions; any Chromium-based browser with Manifest V3 support should work.
 
 ## Usage
 

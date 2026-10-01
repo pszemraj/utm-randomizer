@@ -213,7 +213,8 @@ chrome.runtime.onStartup.addListener(() => {
 watchSettings((settings) => {
   const titles = menuTitles(settings.mode);
   for (const [id, title] of Object.entries(titles)) {
-    chrome.contextMenus.update(id, { title }).catch(() => undefined);
+    // Callback support predates Chrome 123's Promise API; menu errors must not interrupt settings changes.
+    chrome.contextMenus.update(id, { title }, () => chrome.runtime.lastError);
   }
   void syncWatcher();
 });
