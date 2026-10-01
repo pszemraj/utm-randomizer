@@ -40,7 +40,7 @@ Every new rule needs a test in `tests/unit/rewrite.test.ts`: a case under "site-
 
 Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve the [stable per-link behavior](README.md#replacement-values) when editing the lists or generators.
 
-- **Decoy lists** (`DECOY_SOURCES`, `DECOY_MEDIUMS`, and the parts campaign names, terms, and placements are composed from) should read like values real marketing tools and teams produce, including real platform names (`google`, `newsletter`, `paid_social`). Nothing in them should be distinctive enough to filter on. Every value must pass `isWordy`: start with a letter or digit, use only letters, digits, `_`, `.`, `+`, and `-`, contain a letter, and not look like a hexadecimal ID. Otherwise the next copy would treat it as an identifier and change it again.
+- **Decoy lists** (`DECOY_SOURCES`, `DECOY_MEDIUMS`, and the parts used to compose campaigns, terms, and placements) should read like values real marketing tools produce (`google`, `newsletter`, `paid_social`). Every value must pass `isWordy` after percent-decoding and converting `+` to a space: start with a Unicode letter or number, contain a letter, use only letters, combining marks, numbers, spaces, `_`, `.`, and `-`, and not look like a hexadecimal ID. Otherwise the next copy would treat it as an identifier and change it again.
 - **Silly lists** (`FUNNY`, `FUNNY_TOKEN_PHRASES`) should be lowercase and hyphenated, humorous but not offensive, obviously fake, and free of real company or brand names.
 
 `npm run check` runs property tests (`tests/unit/values.test.ts` and the idempotency cases in `tests/unit/rewrite.test.ts`) that fail if a value would be rewritten again or is not URL-safe.
