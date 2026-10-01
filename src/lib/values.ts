@@ -472,8 +472,8 @@ const DIGITS = '0123456789';
 const LOWER = 'abcdefghijklmnopqrstuvwxyz';
 const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 /** Values that look like words a person or marketing tool wrote, as opposed to encoded identifiers. */
-const WORDY = /^[A-Za-z0-9][A-Za-z0-9_.+-]*$/;
-const HAS_LETTER = /[A-Za-z]/;
+const WORDY = /^[\p{L}\p{N}][\p{L}\p{M}\p{N}_. -]*$/u;
+const HAS_LETTER = /\p{L}/u;
 /** Long hexadecimal strings are identifiers even though they are made of letters and digits. */
 const HEX_ID = /^(?=[0-9a-fA-F]*[0-9])(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{8,}$/;
 const PERCENT_ESCAPE = /^%[0-9A-Fa-f]{2}/;
@@ -487,12 +487,20 @@ type ShapeToken = { literal: string } | { alphabet: string; code: string };
  * turns an identifier into a wordy value, so rewriting stays idempotent.
  */
 export function isWordy(raw: string): boolean {
-  return WORDY.test(raw) && HAS_LETTER.test(raw) && !HEX_ID.test(raw);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw.replace(/\+/g, ' '));
+  } catch {
+    return false;
+  }
+  return WORDY.test(decoded) && HAS_LETTER.test(decoded) && !HEX_ID.test(decoded);
 }
 
 /** `lower`/`upper` when the letters and digits of `raw` form a hexadecimal string of that case. */
 function hexCase(raw: string): 'lower' | 'upper' | null {
-  const alnum = raw.replace(/%[0-9A-Fa-f]{2}/g, '').replace(/[^0-9A-Za-z]/g, '');
+  const alnum = raw
+    .replace(/%([0-9A-Fa-f]{2})/g, (_escape, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(/[^0-9A-Za-z]/g, '');
   if (!/[0-9]/.test(alnum)) {
     return null;
   }
@@ -674,7 +682,8 @@ export function replacementValue(style: Style, category: Category, raw: string, 
     return category === 'id' ? sillyToken(random) : pick(random, FUNNY[category]);
   }
   if (category !== 'id' && isWordy(raw)) {
-    return decoyWord(category, seededRandom(`${seed}|word`));
+    const word = decoyWord(category, seededRandom(`${seed}|word`));
+    return raw.includes('%') ? encodeURIComponent(word.replace(/\+/g, ' ')) : word;
   }
   const shape = shapeOf(raw);
   return scrambleLike(raw, seededRandom(`${seed}|${shapeSignature(shape)}`));

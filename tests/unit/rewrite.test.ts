@@ -42,6 +42,14 @@ describe('rewriteUrl (decoy)', () => {
     expect(result?.url).toMatch(/^https:\/\/www\.youtube\.com\/watch\?v=x&pp=ygUE[A-Za-z]{6}%3D%3D$/);
   });
 
+  it('replaces an encoded non-Latin source without touching other query values', () => {
+    const result = rewriteUrl('https://example.com/?utm_source=%E6%96%B0%E9%97%BB&keep=%2F', decoy);
+    expect(result?.params).toBe(1);
+    expect(result?.url).toMatch(/^https:\/\/example\.com\/\?utm_source=[^&]+&keep=%2F$/);
+    expect(result?.url).not.toContain('%E6%96%B0%E9%97%BB');
+    expect(rewriteUrl(result?.url ?? '', decoy)).toBeNull();
+  });
+
   it('only touches tracking values and keeps every other byte', () => {
     const original =
       'https://example.com/a%20b/?q=a,b&redirect=/x/y&utm_source=weekly_digest_42&amp&empty=&sp=a+b&x=%E2%9C%93#frag?utm_medium=x';

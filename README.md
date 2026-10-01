@@ -41,7 +41,7 @@ The toolbar popup switches between Decoy, Silly, Hybrid, and Remove, turns each 
 
 **Decoy** (the default) produces values that look exactly like real ones, so analysts cannot filter them out:
 
-- sources and mediums from the vocabulary real campaigns use (`bing`, `linkedin`, `newsletter`, `paid_social`, `referral`, …);
+- sources and mediums from the vocabulary real campaigns use (`bing`, `linkedin`, `newsletter`, `paid_social`, `referral`, …), including when the original words are percent-encoded or use non-Latin letters;
 - campaign names, search terms, and ad placements composed the way marketers write them (`retargeting_2024`, `black_friday_uk_2025`, `best+standing+desk`, `video_15s`);
 - identifiers such as click IDs and share tokens rewritten character by character, keeping their exact length, alphabet, issuer prefix, separators, and percent-encoding (`IwAR3xYz…` stays a plausible `IwAR…` value, a 32-character hex `msclkid` stays 32 hex characters).
 

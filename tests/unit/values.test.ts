@@ -71,6 +71,38 @@ describe('replacementValue', () => {
     expect(replacementValue('decoy', 'id', 'abcdef', 'seed')).toMatch(/^[a-z]{6}$/);
   });
 
+  it.each(['%E6%96%B0%E9%97%BB', 'новости', '%6E%65%77%73', 'spring%20sale', 'cafe%CC%81'])(
+    'replaces encoded and non-Latin word values and keeps fixed points (%s)',
+    (raw) => {
+      expect(isWordy(raw)).toBe(true);
+      for (const category of ['source', 'campaign', 'term'] as const) {
+        for (const style of ['decoy', 'hybrid'] as const) {
+          for (let i = 0; i < 50; i += 1) {
+            const seed = `word-${String(i)}`;
+            const once = replacementValue(style, category, raw, seed);
+            expect(once).not.toBe(raw);
+            expect(isWordy(once)).toBe(true);
+            expect(replacementValue(style, category, once, seed)).toBe(once);
+          }
+        }
+      }
+    },
+  );
+
+  it('keeps percent-encoded word separators and identifier punctuation', () => {
+    const term = replacementValue('decoy', 'term', 'running%20shoes', 'seed');
+    expect(term).toContain('%20');
+    expect(term).not.toContain('+');
+    expect(replacementValue('decoy', 'term', term, 'seed')).toBe(term);
+    const token = replacementValue('decoy', 'id', 'IwAR3xYz_123-AbC%3D%3D', 'seed');
+    expect(token).toMatch(/^IwAR[0-9][a-z][A-Z][a-z]_[0-9]{3}-[A-Z][a-z][A-Z]%3D%3D$/);
+    expect(replacementValue('decoy', 'id', token, 'seed')).toBe(token);
+    expect(isWordy('IwAR3%3D')).toBe(false);
+    const hex = replacementValue('decoy', 'campaign', '%31%32%33%34abce', 'seed-0');
+    expect(hex).toMatch(/^%31%32%33%34[a-f]{4}$/);
+    expect(replacementValue('decoy', 'campaign', hex, 'seed-0')).toBe(hex);
+  });
+
   it('only produces URL-safe values', () => {
     for (let i = 0; i < 2000; i += 1) {
       for (const category of CATEGORIES) {
