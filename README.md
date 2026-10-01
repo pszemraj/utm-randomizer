@@ -28,8 +28,8 @@ Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**,
 Copy links the way you normally do; there is nothing to click. Three layers catch them:
 
 - **On web pages**, copies are rewritten the moment they happen: selecting a link and pressing Ctrl+C / ⌘C (including in text fields), a site's own "Copy link" or "Share" button (whether it uses `navigator.clipboard`, `execCommand('copy')`, or a copy-event handler, including inside iframes), and right-click → **Copy link address**.
-- **In the address bar**, tracking parameters are replaced once the page has loaded and after every in-page navigation, without reloading. Copying the address, sharing the tab, bookmarking, and sending it to your phone all pick up the cleaned link.
-- **Everywhere else**, a background watcher checks the clipboard about every 0.75 s and rewrites any tracked link that lands on it: copied in another app, on a browser page like `chrome://history`, or on a site where extensions cannot run.
+- **In the address bar**, tracking parameters are replaced without reloading. Copying the address, sharing the tab, bookmarking, and sending it to your phone all pick up the cleaned link.
+- **Everywhere else**, a background watcher catches tracked links copied in another app, on a browser page like `chrome://history`, or on a site where extensions cannot run.
 
 After a rewrite, a small notification appears in the bottom-left corner of the page you are looking at, with an **Undo** button that puts the original link back and keeps it there until the clipboard changes to something else. A fresh copy after that change is cleaned again.
 
@@ -67,34 +67,24 @@ flowchart LR
   subgraph page["Web page (content script in every frame)"]
     copy["copy / cut event"] -->|"rewrite clipboardData before it is written"| clip[("Clipboard")]
     other["writeText() button,<br/>Copy link address"] --> clip
-    clip -->|"clipboardchange (Chrome 144+)<br/>or polling after a click (older Chrome)"| fix["read, rewrite, write back"]
+    clip -->|"clipboardchange<br/>or legacy polling"| fix["read, rewrite, write back"]
     load["page load,<br/>in-page navigation"] -->|"history.replaceState"| bar["Address bar"]
   end
   apps["Other apps,<br/>browser pages"] --> clip
   worker["Service worker"] -->|"starts, configures"| offscreen["Offscreen document"]
-  offscreen -->|"check every 0.75 s,<br/>rewrite after 0.25 s grace"| clip
+  offscreen -->|"watch clipboard"| clip
   menu["Context menu,<br/>Alt+Shift+U"] --> worker
 ```
 
-On web pages, copy events (Ctrl+C, `execCommand('copy')`, and pages that fill `clipboardData` themselves) are rewritten synchronously, after the page's own handlers have run. If a page stops a copy or cut event from reaching the extension's final listener, older Chrome versions check the resulting clipboard asynchronously. Other writes are caught when the clipboard changes: Chrome 144 and later fire a `clipboardchange` event, and a change counts only if you clicked, typed, or right-clicked on that page within the previous 10 seconds. On older Chrome versions the content script checks the clipboard a few times in the seconds after a click on a button or link, or after a right-click on a link. These checks compare against the clipboard before the gesture, so an unrelated click leaves an existing link alone.
+On web pages, copy events are rewritten synchronously after the page's own handlers have run. If a page stops a copy or cut event from reaching the extension's final listener, older Chrome versions check the resulting clipboard asynchronously. Other writes are caught when the clipboard changes: Chrome 144 and later fire a `clipboardchange` event, and a change counts only if you clicked, typed, or right-clicked on that page within the previous 10 seconds. On older Chrome versions the content script checks the clipboard a few times in the seconds after a click on a button or link, or after a right-click on a link. These checks compare against the clipboard before the gesture, so an unrelated click leaves an existing link alone.
 
 The address bar is cleaned with `history.replaceState` once the page's `load` event has fired, so the page has already done its own work with the URL, and again 300 ms after each in-page navigation.
 
-The background watcher runs in an offscreen document, because service workers have no DOM and offscreen documents are the only extension page that can read the clipboard without focus. When it sees new clipboard text containing a tracked link, it waits 250 ms so a page's content script can handle copies made on that page first, then rewrites what is left. Because rewriting is idempotent, the watcher and the content scripts never fight over a link. As a safety net against anything that disagrees, for 5 seconds after rewriting a link neither rewrites a different tracked version of it; copying the original link again still gets it rewritten. Undo tells the watcher to leave the restored link alone.
+The background watcher runs in an offscreen document, because service workers have no DOM and the document can read the clipboard without focus. It checks every 0.75 seconds and waits 250 ms after detecting a new tracked link so a page's content script can handle its copies first. The [stable replacement values](#replacement-values) keep the watchers from fighting over a link. For 5 seconds after rewriting, both leave a different tracked version of that link alone as a safeguard against another extension or a stale configuration; copying the original link again still gets it rewritten.
 
 ## Permissions
 
-| Permission                          | Used for                                                                           |
-| ----------------------------------- | ---------------------------------------------------------------------------------- |
-| Content script on all http(s) pages | Detecting copies on any site and cleaning the address bar                          |
-| `clipboardRead`                     | Reading a link a page just copied, and the background watcher's clipboard checks   |
-| `clipboardWrite`                    | Writing the rewritten link back                                                    |
-| `contextMenus`                      | The "Copy link with … tracking" menu entries                                       |
-| `offscreen`                         | The background clipboard watcher, and clipboard writes from the service worker     |
-| `activeTab`                         | Reading the current tab's address when you use the shortcut, menu, or popup button |
-| `storage`                           | Settings, the rewrite counter, and the per-install key for decoys                  |
-
-Chrome summarizes these at install time as reading and changing data on all websites and reading and modifying data you copy and paste. See [PRIVACY.md](PRIVACY.md) for exactly what the extension does with that access. Apple has announced, but not yet turned on by default, macOS prompts for apps that read the clipboard in the background; if your system ever asks whether Chrome may paste, that is the background watcher, and switching off **Watch the whole clipboard** stops it.
+The [privacy policy](PRIVACY.md) describes data handling and lists the [permissions and their uses](PRIVACY.md#permissions). Apple has announced, but not yet turned on by default, macOS prompts for apps that read the clipboard in the background; if your system ever asks whether Chrome may paste, that is the background watcher, and switching off **Watch the whole clipboard** stops it.
 
 ## Development
 
@@ -109,7 +99,7 @@ npm run icons        # re-render assets/icons/*.png from assets/icon.svg
 
 The end-to-end tests load `dist/` into Playwright's Chromium, copy links on a local test page through every path listed above, copy links from outside the page to exercise the background watcher, check the address bar, and read the clipboard back, including checks that the clipboard stays stable (no watcher ping-pong) and that Undo sticks. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. `HEADED=1` shows the browser while the tests run. Each test runs twice: once with the `clipboardchange` event enabled and once with it disabled, which exercises the polling fallback for older Chrome.
 
-To try changes by hand, build and load `dist/`, run `npm run playground`, and open `http://127.0.0.1:5173`. The page has one control for each way sites copy links, a link that reloads it with tracking parameters (watch the address bar), a tracked link to copy from another app, links for right-click testing, look-alike functional links that must paste unchanged, an embedded iframe, and a box to paste into and inspect the result.
+The playground has one control for each copy path, a tracked address-bar link, a link to copy from another app, right-click test links, functional links that must paste unchanged, an iframe, and a box to inspect pasted text. Open it in the browser where `dist/` is loaded.
 
 | Path                             | Contents                                                                             |
 | -------------------------------- | ------------------------------------------------------------------------------------ |

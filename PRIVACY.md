@@ -4,11 +4,9 @@ UTM Randomizer does not collect, store, or transmit personal data. It makes no n
 
 ## What the extension reads
 
-- **Links you copy on web pages.** When a page copies something (you press Ctrl+C / ⌘C, click a site's share button, or use Copy link address), the extension inspects the copied text to see whether it contains a link with tracking parameters. If it does, the extension writes back the same text with those parameters replaced or removed.
-- **The clipboard, on web pages, right after such a copy.** A page's content script reads the clipboard only when the clipboard changes while you are using that page (within 10 seconds of clicking, typing, or right-clicking on it), or, on Chrome versions before 144, for a few seconds after you copy, click a button or link, or right-click a link.
-- **The clipboard, in the background, while "Watch the whole clipboard" is on.** An offscreen extension page checks the clipboard's text about every 0.75 seconds so links copied from the address bar, other apps, or pages where extensions cannot run are cleaned too. It only looks for links with tracking parameters; images and files on the clipboard are never read or changed. Switching the setting off, or pausing the extension, stops these checks and closes the offscreen page.
-- **The address of the page you are on**, while "Clean the address bar" is on, so tracking parameters can be replaced in the address bar after the page loads. The page is not reloaded and nothing is sent anywhere.
-- **The current tab's address**, when you use the keyboard shortcut, the context menu, or the popup's "Copy this page's link" button, to put a cleaned copy of it on the clipboard.
+- **Copied text and HTML on web pages**, from copy events and clipboard reads after relevant interactions. The [copy detection paths](README.md#how-it-works) limit when a page reads the clipboard.
+- **Clipboard text in the background**, while "Watch the whole clipboard" is on. It only looks for links with tracking parameters; images and files on the clipboard are never read or changed. Switching the setting off, or pausing the extension, stops these checks and closes the offscreen page.
+- **The page address**, while "Clean the address bar" is on, and the current tab's address when you use an [explicit copy action](README.md#usage).
 
 Clipboard contents and addresses are used only for these checks. They are never stored, logged, or sent anywhere.
 
@@ -36,7 +34,7 @@ The notification's Undo button keeps the original link in memory until the notif
 
 ## Open source
 
-The full source code is public, so every statement above can be verified: <https://github.com/pszemraj/utm-randomizer>.
+The [source code](src/) is public and available for inspection.
 
 ## Contact
 

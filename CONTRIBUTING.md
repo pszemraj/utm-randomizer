@@ -2,27 +2,11 @@
 
 ## Setup
 
-Node 22.13+ or 24 is required (`.nvmrc` pins 24).
-
-```bash
-git clone https://github.com/pszemraj/utm-randomizer.git
-cd utm-randomizer
-npm ci
-npm run dev
-```
-
-`npm run dev` rebuilds `dist/` on every change. Load `dist/` once via `chrome://extensions` → Developer mode → **Load unpacked**, then click the reload icon on the extension's card after each rebuild. Pages that were open before a reload keep the old content script until they are refreshed.
+Use the [installation steps](README.md#install) to load the extension and the [development commands](README.md#development) to rebuild it. Refresh open web pages after reloading the extension so they receive the new content script.
 
 ## Checks
 
-```bash
-npm run check      # lint (including required doc comments), format check, typecheck, unit tests
-npm run test:e2e   # build, then Playwright tests with the extension loaded in Chromium
-```
-
-Both must pass before a pull request is merged; CI runs them on every pull request. For end-to-end tests, run `npx playwright install chromium` once, or point `CHROMIUM_PATH` at an existing Chromium binary. `npm run format` fixes formatting.
-
-For manual testing, run `npm run playground` and open `http://127.0.0.1:5173` in the browser where `dist/` is loaded. The page covers every way sites copy links and includes look-alike functional links that must paste unchanged.
+Run the [source checks and end-to-end tests](README.md#development) before submitting changes. Both must pass before a pull request is merged. `npm run format` fixes formatting.
 
 ## Code style
 
@@ -48,13 +32,13 @@ Parameters are defined in `src/lib/params.ts`. Pick the narrowest rule that cove
 - `GLOBAL_PARAMS` or `GLOBAL_PREFIXES` only for names that mean tracking on every site, such as a vendor's click ID. Cite the vendor with a trailing comment.
 - A `SITE_RULES` entry for names that are functional somewhere else (`ref`, `source`, `si`, `t`, ...). Add a `path` pattern if the name is functional on other pages of the same site.
 
-Each rule declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which picks the kind of replacement value. In Decoy mode, word values get a believable word of that category and anything that looks like an encoded identifier is scrambled in its own format; `id` always scrambles. In Silly mode, `id` produces word-salad tokens. Hybrid mode picks Decoy or Silly per value.
+Each rule declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](README.md#replacement-values). Use `id` for click IDs and share tokens; it always takes the identifier path.
 
 Every new rule needs a test in `tests/unit/rewrite.test.ts`: a case under "site-specific tracking" showing the link being cleaned, and, for any name that is ambiguous in general, a case under "functional links stay intact" showing an ordinary link that uses the same name and must not change.
 
 ## Adding replacement values
 
-Replacement values live in `src/lib/values.ts`. Values are picked with a generator seeded by the per-install key and the link, so no list needs to be recognizable later: an already-rewritten link gets the same values again.
+Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve the [stable per-link behavior](README.md#replacement-values) when editing the lists or generators.
 
 - **Decoy lists** (`DECOY_SOURCES`, `DECOY_MEDIUMS`, and the parts campaign names, terms, and placements are composed from) should read like values real marketing tools and teams produce, including real platform names (`google`, `newsletter`, `paid_social`). Nothing in them should be distinctive enough to filter on. Every value must pass `isWordy`: start with a letter or digit, use only letters, digits, `_`, `.`, `+`, and `-`, contain a letter, and not look like a hexadecimal ID. Otherwise the next copy would treat it as an identifier and change it again.
 - **Silly lists** (`FUNNY`, `FUNNY_TOKEN_PHRASES`) should be lowercase and hyphenated, humorous but not offensive, obviously fake, and free of real company or brand names.
@@ -65,7 +49,7 @@ Replacement values live in `src/lib/values.ts`. Values are picked with a generat
 
 1. Create a branch named with a Conventional Commits type, for example `feat/threads-share-params` or `fix/amazon-variant-links`.
 2. Write commit messages in the same style: `feat: strip Threads share tracking`, `fix(params): keep Amazon variant selection`.
-3. Run `npm run check` and `npm run test:e2e`.
+3. Complete the [checks](#checks).
 4. If behavior changes, update `README.md` and add an entry to `CHANGELOG.md`.
 5. Open a pull request describing what changed and how you tested it.
 
