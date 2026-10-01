@@ -27,7 +27,7 @@ Notifications and clipboard watchers keep recent clipboard text and links in mem
 | Content script on http(s) pages | Copy detection and address-bar cleaning on supported pages                         |
 | `clipboardRead`                 | Reading a link a page just copied, and the background watcher's clipboard checks   |
 | `clipboardWrite`                | Writing the cleaned link back to the clipboard                                     |
-| `contextMenus`                  | The "Copy link with … tracking" menu entries                                       |
+| `contextMenus`                  | The "Copy link with ... tracking" menu entries                                     |
 | `offscreen`                     | The background clipboard watcher, and clipboard writes from the service worker     |
 | `activeTab`                     | Reading the current tab's address when you use the shortcut, menu, or popup button |
 | `storage`                       | Saving settings, the rewrite counter, and the key for decoys                       |

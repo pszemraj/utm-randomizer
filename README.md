@@ -43,9 +43,9 @@ The toolbar popup controls the mode, cleaning layers, notifications, and pause s
 
 **Decoy** (the default) uses vocabulary and identifier formats from real campaigns:
 
-- sources and mediums from the vocabulary real campaigns use (`bing`, `linkedin`, `newsletter`, `paid_social`, `referral`, …), including when the original words are percent-encoded or use non-Latin letters;
+- sources and mediums from the vocabulary real campaigns use (`bing`, `linkedin`, `newsletter`, `paid_social`, `referral`, ...), including when the original words are percent-encoded or use non-Latin letters;
 - campaign names, search terms, and ad placements composed the way marketers write them (`retargeting_2024`, `black_friday_uk_2025`, `best+standing+desk`, `video_15s`);
-- identifiers such as click IDs and share tokens rewritten character by character, keeping their exact length, alphabet, issuer prefix, separators, and percent-encoding (`IwAR3xYz…` stays a plausible `IwAR…` value, a 32-character hex `msclkid` stays 32 hex characters).
+- identifiers such as click IDs and share tokens rewritten character by character, keeping their exact length, alphabet, issuer prefix, separators, and percent-encoding (`IwAR3xYz...` stays a plausible `IwAR...` value, a 32-character hex `msclkid` stays 32 hex characters).
 
 Values are derived from a per-install key, the link, and the value's format. An already-cleaned link stays unchanged when copied or processed again: rewriting is idempotent. The original value contributes its format rather than its contents, so a decoy occasionally matches it, especially for one-character values such as `gad_source=1`. That value is already in its decoy form and stays unchanged.
 

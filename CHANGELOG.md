@@ -21,7 +21,7 @@
 
 ### Changed
 
-- Links are edited in place: only tracking values change, while parameter order, duplicate keys, encoding, valueless flags, fragments, and scheme-less or relative forms are preserved. Previously every link was re-serialized, which re-encoded untouched parameters (`a,b` → `a%2Cb`, `%20` → `+`), dropped duplicate keys, and turned `www.example.com/…` into `https://www.example.com/…`.
+- Links are edited in place: only tracking values change, while parameter order, duplicate keys, encoding, valueless flags, fragments, and scheme-less or relative forms are preserved. Previously every link was re-serialized, which re-encoded untouched parameters (`a,b` → `a%2Cb`, `%20` → `+`), dropped duplicate keys, and turned `www.example.com/...` into `https://www.example.com/...`.
 - Content scripts no longer read the clipboard after every click on any link or button (on Chrome 144+), and read nothing unless you interacted with the page within the last 10 seconds. Watching the clipboard outside pages is the separate, switchable background watcher.
 - The "this session" counter now resets with the browser session.
 - The notification is isolated from page styles in a shadow root, sits in the top layer above modal dialogs, is announced to screen readers, and respects reduced motion.
@@ -35,7 +35,7 @@
 - Legacy clipboard polling catches copy and cut events even when a page stops their propagation.
 - Undo suppression expires when different clipboard contents are observed, allowing fresh copies of the original link to be cleaned again.
 - Legacy clipboard polling leaves pre-existing links alone after unrelated clicks and context menus.
-- Settings changes stop or reconfigure the clipboard watcher on Chrome 116–122, where context-menu updates use callbacks.
+- Settings changes stop or reconfigure the clipboard watcher on Chrome 116-122, where context-menu updates use callbacks.
 - Decoy mode replaces percent-encoded and non-Latin tracking words while keeping repeated rewrites stable.
 - Standalone Markdown links in plain clipboard text are cleaned even when the text contains no whitespace.
 - Tokens containing `magic-8-ball` were randomized again on the next copy; stable replacements remove the need to detect previously randomized values.
