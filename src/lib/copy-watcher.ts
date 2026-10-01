@@ -239,8 +239,9 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
    * Reads the clipboard and writes back a rewritten version if it holds tracked links.
    *
    * @param embedded Also rewrite links inside longer text (only safe for plain-text clipboard contents).
+   * @param baseline Clipboard text before a polling gesture; unchanged contents are left alone.
    */
-  async function rewriteClipboard(embedded: boolean): Promise<void> {
+  async function rewriteClipboard(embedded: boolean, baseline?: string): Promise<void> {
     if (!clipboard || document.hidden || !document.hasFocus()) {
       return;
     }
@@ -251,7 +252,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       return;
     }
     const options = rewriteOptions();
-    if (!text || text === lastWritten || !options || !active() || loopGuard.blocks(text)) {
+    if (!text || text === baseline || text === lastWritten || !options || !active() || loopGuard.blocks(text)) {
       return;
     }
     const result = rewriteText(text, { ...options, embedded });
@@ -268,12 +269,18 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     onRewrite({ original: text, rewritten: result.text, urls: result.urls });
   }
 
-  /** Checks the clipboard at each offset (ms after the gesture); a newer gesture cancels the sweep. */
-  function runSweep(offsets: number[]): void {
+  /** Checks after a gesture; an optional pre-gesture read distinguishes a new copy from existing text. */
+  function runSweep(offsets: number[], baseline?: Promise<string>): void {
     sweep?.abort();
     const controller = new AbortController();
     sweep = controller;
     void (async () => {
+      let previous: string | undefined;
+      try {
+        previous = await baseline;
+      } catch {
+        return;
+      }
       let elapsed = 0;
       for (const offset of offsets) {
         await new Promise((resolve) => setTimeout(resolve, offset - elapsed));
@@ -281,7 +288,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
         if (controller.signal.aborted) {
           return;
         }
-        await rewriteClipboard(false);
+        await rewriteClipboard(false, previous);
       }
     })();
   }
@@ -338,7 +345,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       'click',
       (event) => {
         if (active() && looksLikeCopyControl(event.target)) {
-          runSweep(SWEEP_AFTER_CLICK);
+          runSweep(SWEEP_AFTER_CLICK, clipboard.readText());
         }
       },
       options,
@@ -347,7 +354,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       'contextmenu',
       (event) => {
         if (active() && event.target instanceof Element && event.target.closest('a[href], img')) {
-          runSweep(SWEEP_AFTER_CONTEXT_MENU);
+          runSweep(SWEEP_AFTER_CONTEXT_MENU, clipboard.readText());
         }
       },
       options,

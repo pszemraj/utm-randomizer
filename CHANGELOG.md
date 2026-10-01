@@ -43,6 +43,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Legacy clipboard polling leaves pre-existing links alone after unrelated clicks and context menus.
 - Settings changes stop or reconfigure the clipboard watcher on Chrome 116–122, where context-menu updates use callbacks.
 - Decoy mode replaces percent-encoded and non-Latin tracking words while keeping repeated rewrites stable.
 - Standalone Markdown links in plain clipboard text are cleaned even when the text contains no whitespace.

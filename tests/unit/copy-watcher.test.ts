@@ -369,6 +369,54 @@ describe('clipboardchange', () => {
 });
 
 describe('without clipboardchange (Chrome < 144)', () => {
+  it.each(['click', 'contextmenu'])('leaves an existing clipboard link alone after an unrelated %s', async (type) => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    clipboard.text = TRACKED;
+    start(clipboard, { watchClipboard: false });
+    document.body.innerHTML = `<a id="control" href="${TRACKED}">article</a>`;
+    document.getElementById('control')?.dispatchEvent(new MouseEvent(type, { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(8500);
+
+    expect(clipboard.text).toBe(TRACKED);
+    expect(clipboard.writes).toHaveLength(0);
+  });
+
+  it('captures the baseline before a button immediately writes a link', async () => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    start(clipboard);
+    document.body.innerHTML = '<button id="share">Copy link</button>';
+    const button = document.getElementById('share');
+    if (!button) throw new Error('missing fixture');
+    button.addEventListener('click', () => void clipboard.writeText(TRACKED));
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(clipboard.text).toBe(CLEAN);
+    expect(clipboard.writes).toEqual([TRACKED, CLEAN]);
+  });
+
+  it('catches delayed writes and a fresh copy of the same link', async () => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    start(clipboard);
+    document.body.innerHTML = '<button id="share">Copy link</button>';
+    const button = document.getElementById('share');
+    if (!button) throw new Error('missing fixture');
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(1000);
+    clipboard.text = TRACKED;
+    await vi.advanceTimersByTimeAsync(2000);
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    clipboard.text = TRACKED;
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(clipboard.writes).toEqual([CLEAN, CLEAN]);
+  });
+
   it('polls the clipboard after a click on a copy button', async () => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(false);
