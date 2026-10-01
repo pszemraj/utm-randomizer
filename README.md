@@ -31,7 +31,7 @@ Copy links the way you normally do; there is nothing to click. Three layers catc
 - **In the address bar**, tracking parameters are replaced once the page has loaded and after every in-page navigation, without reloading. Copying the address, sharing the tab, bookmarking, and sending it to your phone all pick up the cleaned link.
 - **Everywhere else**, a background watcher checks the clipboard about every 0.75 s and rewrites any tracked link that lands on it: copied in another app, on a browser page like `chrome://history`, or on a site where extensions cannot run.
 
-After a rewrite, a small notification appears in the bottom-left corner of the page you are looking at, with an **Undo** button that puts the original link back and keeps it there.
+After a rewrite, a small notification appears in the bottom-left corner of the page you are looking at, with an **Undo** button that puts the original link back and keeps it there until the clipboard changes to something else. A fresh copy after that change is cleaned again.
 
 Three explicit actions copy a cleaned link on demand: right-click a link → **Copy link with decoy tracking**; right-click a page → **Copy page link with decoy tracking**; and **Alt+Shift+U** or the popup's **Copy this page's link** button for the current page. The shortcut can be changed at `chrome://extensions/shortcuts`.
 

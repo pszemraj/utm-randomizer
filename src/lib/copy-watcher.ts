@@ -153,7 +153,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   const supportsChangeEvent = clipboard !== null && 'onclipboardchange' in clipboard;
 
   let lastIntent = Number.NEGATIVE_INFINITY;
-  /** The last text this watcher put on the clipboard; never rewritten again. */
+  /** The last text this watcher wrote; left alone until different clipboard contents are observed. */
   let lastWritten: string | null = null;
   const loopGuard = createLoopGuard(now, () => location.href);
   let restoring = false;
@@ -235,6 +235,16 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     return true;
   }
 
+  /** Reads clipboard text and expires suppression on a change, without clearing a newer write. */
+  async function readClipboard(source: WatchedClipboard): Promise<string> {
+    const written = lastWritten;
+    const text = await source.readText();
+    if (lastWritten === written && text !== written) {
+      lastWritten = null;
+    }
+    return text;
+  }
+
   /**
    * Reads the clipboard and writes back a rewritten version if it holds tracked links.
    *
@@ -247,7 +257,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     }
     let text: string;
     try {
-      text = await clipboard.readText();
+      text = await readClipboard(clipboard);
     } catch {
       return;
     }
@@ -333,6 +343,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
           return;
         }
         if (types && types.length > 0 && !types.includes('text/plain')) {
+          lastWritten = null;
           return;
         }
         // Rich clipboard content would lose its formatting, so embedded links are only rewritten in plain text.
@@ -345,7 +356,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       'click',
       (event) => {
         if (active() && looksLikeCopyControl(event.target)) {
-          runSweep(SWEEP_AFTER_CLICK, clipboard.readText());
+          runSweep(SWEEP_AFTER_CLICK, readClipboard(clipboard));
         }
       },
       options,
@@ -354,7 +365,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       'contextmenu',
       (event) => {
         if (active() && event.target instanceof Element && event.target.closest('a[href], img')) {
-          runSweep(SWEEP_AFTER_CONTEXT_MENU, clipboard.readText());
+          runSweep(SWEEP_AFTER_CONTEXT_MENU, readClipboard(clipboard));
         }
       },
       options,

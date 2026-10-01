@@ -327,6 +327,37 @@ describe('clipboardchange', () => {
     expect(rewrites).toHaveLength(1);
   });
 
+  it.each(['ordinary text', ''])(
+    'cleans a fresh copy after Undo and a different clipboard value (%s)',
+    async (text) => {
+      const clipboard = new FakeClipboard(true);
+      const copyWatcher = start(clipboard, { watchClipboard: false });
+      interact();
+      clipboard.change(TRACKED);
+      await flush();
+      await copyWatcher.restore(TRACKED);
+      clipboard.change(text);
+      await flush();
+      clipboard.change(TRACKED);
+      await flush();
+
+      expect(clipboard.text).toBe(CLEAN);
+      expect(clipboard.writes).toEqual([CLEAN, TRACKED, CLEAN]);
+    },
+  );
+
+  it('clears Undo suppression after copying non-text content', async () => {
+    const clipboard = new FakeClipboard(true);
+    const copyWatcher = start(clipboard, { watchClipboard: false });
+    interact();
+    await copyWatcher.restore(TRACKED);
+    clipboard.change('', ['image/png']);
+    clipboard.change(TRACKED);
+    await flush();
+
+    expect(clipboard.writes).toEqual([TRACKED, CLEAN]);
+  });
+
   it('tells other watchers about Undo before restoring the original', async () => {
     const clipboard = new FakeClipboard(true);
     const order: string[] = [];
@@ -369,6 +400,36 @@ describe('clipboardchange', () => {
 });
 
 describe('without clipboardchange (Chrome < 144)', () => {
+  it('expires Undo suppression when the next gesture observes different clipboard text', async () => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    const copyWatcher = start(clipboard, { watchClipboard: false });
+    await copyWatcher.restore(TRACKED);
+    clipboard.text = 'ordinary text';
+    document.body.innerHTML = '<button id="share">Copy link</button>';
+    document.getElementById('share')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    clipboard.text = TRACKED;
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(clipboard.writes).toEqual([TRACKED, CLEAN]);
+  });
+
+  it('does not let an earlier gesture baseline clear a newer Undo', async () => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    const copyWatcher = start(clipboard, { watchClipboard: false });
+    clipboard.text = CLEAN;
+    document.body.innerHTML = '<button id="undo">Undo</button>';
+    const button = document.getElementById('undo');
+    if (!button) throw new Error('missing fixture');
+    button.addEventListener('click', () => void copyWatcher.restore(TRACKED));
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(clipboard.writes).toEqual([TRACKED]);
+    expect(clipboard.text).toBe(TRACKED);
+  });
+
   it.each(['click', 'contextmenu'])('leaves an existing clipboard link alone after an unrelated %s', async (type) => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(false);
