@@ -214,14 +214,13 @@ export function rewriteText(text: string, options: RewriteOptions & { embedded?:
     ) ?? ['', ''];
     const [link, trailing] = trimLinkEnd(core.slice(open.length, core.length - close.length));
     const rewritten = rewriteUrl(link, options);
-    if (!rewritten) {
-      return null;
+    if (rewritten) {
+      return {
+        text: text.slice(0, start) + open + rewritten.url + trailing + close + text.slice(end),
+        urls: 1,
+        params: rewritten.params,
+      };
     }
-    return {
-      text: text.slice(0, start) + open + rewritten.url + trailing + close + text.slice(end),
-      urls: 1,
-      params: rewritten.params,
-    };
   }
 
   if (!options.embedded) {

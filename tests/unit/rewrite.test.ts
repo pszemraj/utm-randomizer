@@ -265,6 +265,16 @@ describe('rewriteText', () => {
     });
   });
 
+  it('rewrites a standalone Markdown link when embedded links are allowed', () => {
+    const text = '[link](https://example.com/?utm_source=x)';
+    expect(rewriteText(text, strip)).toBeNull();
+    expect(rewriteText(text, { ...strip, embedded: true })).toEqual({
+      text: '[link](https://example.com/)',
+      urls: 1,
+      params: 1,
+    });
+  });
+
   it('ignores text without tracked links, empty text, and huge text', () => {
     expect(rewriteText('just some words', { ...strip, embedded: true })).toBeNull();
     expect(rewriteText('   ', strip)).toBeNull();

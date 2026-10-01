@@ -58,7 +58,7 @@ Only parameters known to be tracking are touched, in two tiers:
 
 Ambiguous names like `ref`, `source`, `src`, `campaign`, `keywords`, `cid`, and `session_id` are left alone everywhere else, because they carry real meaning on many sites: YouTube searches (`search_query`), LinkedIn job searches (`keywords`), Google Maps places (`cid`), and New York Times gift links (`unlocked_article_code`) all keep working. The complete list, with the sources it was curated from, is in [`src/lib/params.ts`](src/lib/params.ts).
 
-Only the tracking values change. Parameter order, duplicate keys, percent-encoding, fragments, and scheme-less forms such as `www.example.com/page?utm_source=x` stay byte-for-byte identical. When the clipboard holds longer text rather than a lone link, links inside it are rewritten only when the text is plain (from a text field, a site's copy button, or another app); formatted text is left as it is so its formatting survives, and images and files on the clipboard are never touched.
+Only the tracking values change. Parameter order, duplicate keys, percent-encoding, fragments, and scheme-less forms such as `www.example.com/page?utm_source=x` stay byte-for-byte identical. When the clipboard holds longer text rather than a lone link, links inside it are rewritten only when the text is plain (from a text field, a site's copy button, or another app), including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`; formatted text is left as it is so its formatting survives, and images and files on the clipboard are never touched.
 
 ## How it works
 

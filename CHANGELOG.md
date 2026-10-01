@@ -43,6 +43,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Standalone Markdown links in plain clipboard text are cleaned even when the text contains no whitespace.
 - About 2.5% of randomized links were randomized again on the next copy: tokens containing `magic-8-ball` escaped the already-randomized check. Replacement values are now deterministic per link, so an already-rewritten link is never changed again and no detection is needed.
 - HubSpot's `__hssc`, `__hstc`, and `__hsfp` were never matched.
 
