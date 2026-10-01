@@ -76,7 +76,7 @@ flowchart LR
   menu["Context menu,<br/>Alt+Shift+U"] --> worker
 ```
 
-On web pages, copy events (Ctrl+C, `execCommand('copy')`, and pages that fill `clipboardData` themselves) are rewritten synchronously, after the page's own handlers have run. Other writes are caught when the clipboard changes: Chrome 144 and later fire a `clipboardchange` event, and a change counts only if you clicked, typed, or right-clicked on that page within the previous 10 seconds. On older Chrome versions the content script checks the clipboard a few times in the seconds after a click on a button or link, or after a right-click on a link. These checks compare against the clipboard before the gesture, so an unrelated click leaves an existing link alone.
+On web pages, copy events (Ctrl+C, `execCommand('copy')`, and pages that fill `clipboardData` themselves) are rewritten synchronously, after the page's own handlers have run. If a page stops a copy or cut event from reaching the extension's final listener, older Chrome versions check the resulting clipboard asynchronously. Other writes are caught when the clipboard changes: Chrome 144 and later fire a `clipboardchange` event, and a change counts only if you clicked, typed, or right-clicked on that page within the previous 10 seconds. On older Chrome versions the content script checks the clipboard a few times in the seconds after a click on a button or link, or after a right-click on a link. These checks compare against the clipboard before the gesture, so an unrelated click leaves an existing link alone.
 
 The address bar is cleaned with `history.replaceState` once the page's `load` event has fired, so the page has already done its own work with the URL, and again 300 ms after each in-page navigation.
 

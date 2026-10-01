@@ -400,6 +400,47 @@ describe('clipboardchange', () => {
 });
 
 describe('without clipboardchange (Chrome < 144)', () => {
+  it.each(['copy', 'cut'] as const)('polls after a page stops %s propagation', async (type) => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    start(clipboard, { watchClipboard: false });
+    document.body.innerHTML = `<textarea id="field">${TRACKED}</textarea>`;
+    const field = document.getElementById('field');
+    if (!(field instanceof HTMLTextAreaElement)) throw new Error('missing fixture');
+    field.focus();
+    field.select();
+    field.addEventListener(type, (event) => event.stopPropagation());
+    const event = copyEvent(type);
+    field.dispatchEvent(event);
+    // The browser's default copy/cut action writes after event dispatch.
+    clipboard.text = TRACKED;
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(clipboard.writes).toEqual([CLEAN]);
+    expect(rewrites).toHaveLength(1);
+  });
+
+  it('does not start a delayed propagation fallback after the watcher stops', async () => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    const copyWatcher = start(clipboard);
+    const read = vi.spyOn(clipboard, 'readText');
+    document.body.innerHTML = '<textarea id="field"></textarea>';
+    const field = document.getElementById('field');
+    if (!field) throw new Error('missing fixture');
+    field.addEventListener('copy', (event) => event.stopPropagation());
+    field.dispatchEvent(copyEvent());
+    clipboard.text = TRACKED;
+    copyWatcher.stop();
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(read).not.toHaveBeenCalled();
+    expect(clipboard.writes).toHaveLength(0);
+  });
+
   it('expires Undo suppression when the next gesture observes different clipboard text', async () => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(false);

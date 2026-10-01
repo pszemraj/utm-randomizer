@@ -90,6 +90,30 @@ test.describe('copying on web pages', () => {
     expect(copied.trim()).toMatch(/^https:\/\/example\.com\/deal\?id=9&utm_source=[^&]+&msclkid=[0-9a-f]{9}$/);
   });
 
+  for (const action of ['copy', 'cut'] as const) {
+    test(`rewrites a keyboard ${action} when the page stops propagation`, async ({
+      playground,
+      readClipboard,
+      setSettings,
+      waitForWatcher,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false });
+      await waitForWatcher(false);
+      const textarea = playground.getByTestId('select-textarea');
+      await textarea.evaluate((field, text) => {
+        (field as HTMLTextAreaElement).value = text;
+        field.addEventListener('copy', (event) => event.stopPropagation());
+        field.addEventListener('cut', (event) => event.stopPropagation());
+      }, ARTICLE);
+      await textarea.focus();
+      await textarea.press('ControlOrMeta+A');
+      await textarea.press(action === 'copy' ? 'ControlOrMeta+C' : 'ControlOrMeta+X');
+
+      await expect.poll(readClipboard).toBe('https://example.com/article?id=42');
+      await expect(textarea).toHaveValue(action === 'copy' ? ARTICLE : '');
+    });
+  }
+
   test('rewrites links inside text copied from a text area', async ({ playground, readClipboard, setSettings }) => {
     await setSettings({ mode: 'strip' });
     const textarea = playground.getByTestId('select-textarea');

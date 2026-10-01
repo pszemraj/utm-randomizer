@@ -43,6 +43,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Legacy clipboard polling catches copy and cut events even when a page stops their propagation.
 - Undo suppression expires when different clipboard contents are observed, allowing fresh copies of the original link to be cleaned again.
 - Legacy clipboard polling leaves pre-existing links alone after unrelated clicks and context menus.
 - Settings changes stop or reconfigure the clipboard watcher on Chrome 116–122, where context-menu updates use callbacks.

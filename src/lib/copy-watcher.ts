@@ -319,16 +319,30 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       type,
       (event) => {
         markIntent();
+        let reachedBubble = false;
         // A window listener added now runs last in this event's bubble phase, after every page handler
         // (including page listeners on window) has put its data on the clipboard.
         const late = (lateEvent: ClipboardEvent) => {
           if (lateEvent === event) {
+            reachedBubble = true;
             afterPageHandlers(event);
           }
         };
         window.addEventListener(type, late, { once: true, signal: listeners.signal });
-        // Propagation may be stopped before the bubble phase; drop the listener once dispatch is over.
-        setTimeout(() => window.removeEventListener(type, late), 0);
+        // A stopped event still has a default copy/cut action; check its result once dispatch is over.
+        setTimeout(() => {
+          window.removeEventListener(type, late);
+          if (
+            !reachedBubble &&
+            !supportsChangeEvent &&
+            clipboard &&
+            !restoring &&
+            !listeners.signal.aborted &&
+            active()
+          ) {
+            runSweep(SWEEP_AFTER_COPY);
+          }
+        }, 0);
       },
       options,
     );
