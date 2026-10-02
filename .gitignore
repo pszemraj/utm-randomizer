@@ -27,3 +27,5 @@ Thumbs.db
 *.log
 .tmp/
 .cache/
+local-scratch/
+.claude/
