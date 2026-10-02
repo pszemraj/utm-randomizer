@@ -18,6 +18,14 @@ afterEach(() => {
 });
 
 describe('address bar cleaning', () => {
+  it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('preserves signed page addresses in %s mode', (mode) => {
+    const link = '/report.pdf?utm_source=email&Expires=2000000000&Signature=abc%2Bdef&Key-Pair-Id=K123';
+    history.replaceState({ page: 1 }, '', link);
+    start({ mode, key: 'signed-key' }).clean();
+    expect(location.pathname + location.search).toBe(link);
+    expect(history.state).toEqual({ page: 1 });
+  });
+
   it('removes tracking parameters from the current URL without navigating', () => {
     history.replaceState({ page: 1 }, '', '/article?id=5&utm_source=newsletter&fbclid=IwAR3abc#top');
     start({ mode: 'strip' });

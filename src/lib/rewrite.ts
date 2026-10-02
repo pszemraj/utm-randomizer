@@ -1,4 +1,5 @@
 import { paramClassifier } from './params';
+import { compactSeed } from './prng';
 import { replacementValue } from './values';
 
 /**
@@ -39,7 +40,7 @@ export interface TextRewrite {
 }
 
 const WHITESPACE = /[\s\u200B-\u200D\uFEFF]/;
-/** Longer clipboard text is left alone; nobody shares a link inside a novel. */
+/** Bounds synchronous processing of both clipboard text and directly rewritten URLs. */
 const MAX_TEXT_LENGTH = 100_000;
 const BARE_HOST = /^[a-z0-9.-]+\.[a-z]{2,}(?:[/?#:]|$)/i;
 const EMBEDDED_URL = /\bhttps?:\/\/[^\s<>"'`\u200B-\u200D\uFEFF]+/gi;
@@ -88,6 +89,33 @@ function parseLink(link: string, baseUrl?: string): URL | null {
   return null;
 }
 
+/** Recognizable signatures that authenticate a URL's query bytes. */
+function isSignedUrl(url: URL): boolean {
+  const names = new Set([...url.searchParams.keys()].map((name) => name.toLowerCase()));
+  return (
+    (names.has('signature') && names.has('key-pair-id') && (names.has('expires') || names.has('policy'))) ||
+    (names.has('x-amz-signature') && (names.has('x-amz-algorithm') || names.has('x-amz-credential'))) ||
+    (names.has('x-goog-signature') && (names.has('x-goog-algorithm') || names.has('x-goog-credential'))) ||
+    ((names.has('googleaccessid') || names.has('awsaccesskeyid')) && names.has('signature') && names.has('expires')) ||
+    (names.has('sig') &&
+      names.has('sv') &&
+      (names.has('sp') || names.has('si')) &&
+      (names.has('sr') || names.has('ss')))
+  );
+}
+
+/** Why a standalone link is intentionally left untouched, for explicit copy actions to explain. */
+export function getRewriteSkipReason(
+  input: string,
+  options: Pick<RewriteOptions, 'baseUrl'> = {},
+): 'signed' | 'too-long' | null {
+  if (input.length > MAX_TEXT_LENGTH) {
+    return 'too-long';
+  }
+  const url = parseLink(input, options.baseUrl);
+  return url && isSignedUrl(url) ? 'signed' : null;
+}
+
 /**
  * Rewrites the tracking parameters of a single link, editing the query string in place so
  * everything else (encoding, parameter order, duplicate keys, valueless flags, fragment, and
@@ -96,6 +124,9 @@ function parseLink(link: string, baseUrl?: string): URL | null {
  * @returns The rewritten link, or null when it is not a link or has nothing to rewrite.
  */
 export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | null {
+  if (link.length > MAX_TEXT_LENGTH) {
+    return null;
+  }
   const queryStart = link.indexOf('?');
   const fragmentStart = link.indexOf('#');
   if (queryStart === -1 || (fragmentStart !== -1 && fragmentStart < queryStart)) {
@@ -103,7 +134,7 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
   }
 
   const url = parseLink(link, options.baseUrl);
-  if (!url) {
+  if (!url || isSignedUrl(url)) {
     return null;
   }
 
@@ -128,6 +159,7 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
   const untouched = segments.filter(({ category }) => !category).map(({ segment }) => segment);
   const trackingKeys = segments.filter(({ category }) => category).map(({ rawKey }) => rawKey);
   const seedBase = [options.key ?? '', url.host, url.pathname, untouched.join('&'), trackingKeys.join('&')].join('|');
+  const linkSeed = compactSeed(seedBase);
 
   const kept: string[] = [];
   let changed = 0;
@@ -146,7 +178,7 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
       kept.push(segment);
       continue;
     }
-    const replacement = replacementValue(options.mode, category, rawValue, `${seedBase}|${String(index)}`);
+    const replacement = replacementValue(options.mode, category, rawValue, `${linkSeed}|${String(index)}`);
     kept.push(`${rawKey}=${replacement}`);
     if (replacement !== rawValue) {
       changed += 1;
@@ -212,14 +244,17 @@ export function rewriteText(text: string, options: RewriteOptions & { embedded?:
     const [open, close] = WRAPPERS.find(
       ([opener, closer]) => core.length > 2 && core.startsWith(opener) && core.endsWith(closer),
     ) ?? ['', ''];
-    const [link, trailing] = trimLinkEnd(core.slice(open.length, core.length - close.length));
+    const link = core.slice(open.length, core.length - close.length);
     const rewritten = rewriteUrl(link, options);
     if (rewritten) {
       return {
-        text: text.slice(0, start) + open + rewritten.url + trailing + close + text.slice(end),
+        text: text.slice(0, start) + open + rewritten.url + close + text.slice(end),
         urls: 1,
         params: rewritten.params,
       };
+    }
+    if (parseLink(link, options.baseUrl)) {
+      return null;
     }
   }
 

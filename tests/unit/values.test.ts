@@ -4,7 +4,7 @@ import { createSecret, pick, seededRandom } from '../../src/lib/prng';
 import { isWordy, replacementValue, scrambleLike } from '../../src/lib/values';
 
 const CATEGORIES: Category[] = ['source', 'medium', 'campaign', 'term', 'content', 'generic', 'id'];
-const PIECES = ['a', 'Z', '7', '0', 'f', 'B', '-', '_', '.', '%3D', '%2C', '~', 'q', 'X9'];
+const PIECES = ['a', 'Z', '7', '0', 'f', 'B', '-', '_', '.', '%3D', '%2C', '%61', '%6a', '%4A', '%31', '~', 'q', 'X9'];
 
 /** A random raw value built from letters, digits, separators, and percent-escapes. */
 function randomRaw(random: () => number): string {
@@ -61,9 +61,44 @@ describe('scrambleLike', () => {
       expect(scrambleLike('2X9Z', random)).not.toMatch(/^[0-9A-F]+$/);
     }
   });
+
+  it.each([
+    '%61%62%63%31%32%33',
+    '%6a%6b%6c%31%32%33',
+    '%4A%4B%4C%31%32%33',
+    '%33%66%32%61%39%63%30%62%31%64%34%65%35%66%36%30%37%31%38%32%39%33%61%34%62%35%63%36%64%37%65%38',
+  ])('scrambles encoded identifier characters and preserves their spelling (%s)', (raw) => {
+    const spelling = (value: string): string =>
+      value.replace(/[0-9]/g, '#').replace(/[a-f]/g, 'l').replace(/[A-F]/g, 'u');
+    for (let i = 0; i < 100; i += 1) {
+      const seed = `encoded-${String(i)}`;
+      const once = replacementValue('decoy', 'id', raw, seed);
+      expect(once).not.toBe(raw);
+      expect(spelling(once)).toBe(spelling(raw));
+      expect(replacementValue('decoy', 'id', once, seed)).toBe(once);
+    }
+  });
 });
 
 describe('replacementValue', () => {
+  it('keeps fully encoded non-hexadecimal identifiers stable in decoy and hybrid modes', () => {
+    for (const raw of ['%32%41%39%58', '%32%61%39%78']) {
+      let hybridDecoys = 0;
+      for (let i = 0; i < 200; i += 1) {
+        const seed = `encoded-nonhex-${String(i)}`;
+        const decoy = replacementValue('decoy', 'id', raw, seed);
+        const hybrid = replacementValue('hybrid', 'id', raw, seed);
+        if (hybrid === decoy) {
+          hybridDecoys += 1;
+        }
+        expect(decodeURIComponent(decoy)).not.toMatch(/^[0-9a-f]+$/i);
+        expect(replacementValue('decoy', 'id', decoy, seed)).toBe(decoy);
+        expect(replacementValue('hybrid', 'id', hybrid, seed)).toBe(hybrid);
+      }
+      expect(hybridDecoys).toBeGreaterThan(0);
+    }
+  });
+
   it('gives believable words for word values and scrambles identifiers', () => {
     expect(isWordy(replacementValue('decoy', 'source', 'newsletter', 'seed'))).toBe(true);
     expect(isWordy(replacementValue('decoy', 'campaign', 'spring_sale', 'seed'))).toBe(true);
@@ -99,7 +134,7 @@ describe('replacementValue', () => {
     expect(replacementValue('decoy', 'id', token, 'seed')).toBe(token);
     expect(isWordy('IwAR3%3D')).toBe(false);
     const hex = replacementValue('decoy', 'campaign', '%31%32%33%34abce', 'seed-0');
-    expect(hex).toMatch(/^%31%32%33%34[a-f]{4}$/);
+    expect(hex).toMatch(/^%31%32%3[0-9]%3[0-9][a-f]{4}$/);
     expect(replacementValue('decoy', 'campaign', hex, 'seed-0')).toBe(hex);
   });
 

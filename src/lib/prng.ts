@@ -34,6 +34,13 @@ function hash128(input: string): [number, number, number, number] {
   return [h1 >>> 0, h2 >>> 0, h3 >>> 0, h4 >>> 0];
 }
 
+/** Compacts a link invariant once, before deriving the seeds for its individual parameters. */
+export function compactSeed(input: string): string {
+  return hash128(input)
+    .map((word) => word.toString(16).padStart(8, '0'))
+    .join('');
+}
+
 /** A generator (sfc32) whose sequence depends only on `seed`. */
 export function seededRandom(seed: string): Random {
   let [a, b, c, d] = hash128(seed);

@@ -32,11 +32,14 @@
 
 ### Fixed
 
+- Recognized signed CloudFront, AWS, Google Cloud, and Azure links remain byte-for-byte unchanged in every mode.
+- Standalone URL punctuation stays in its original query value or fragment, and text and URL entry points agree on replacements.
+- URL rewriting bounds input size and hashes each link's stable seed once, avoiding quadratic work for many tracking parameters.
 - Legacy clipboard polling catches copy and cut events even when a page stops their propagation.
 - Undo suppression expires when different clipboard contents are observed, allowing fresh copies of the original link to be cleaned again.
 - Legacy clipboard polling leaves pre-existing links alone after unrelated clicks and context menus.
 - Settings changes stop or reconfigure the clipboard watcher on Chrome 116-122, where context-menu updates use callbacks.
-- Decoy mode replaces percent-encoded and non-Latin tracking words while keeping repeated rewrites stable.
+- Decoy mode replaces percent-encoded ASCII identifiers and percent-encoded or non-Latin tracking words while preserving encoding and repeated-rewrite stability.
 - Standalone Markdown links in plain clipboard text are cleaned even when the text contains no whitespace.
 - Tokens containing `magic-8-ball` were randomized again on the next copy; stable replacements remove the need to detect previously randomized values.
 - HubSpot's `__hssc`, `__hstc`, and `__hsfp` were never matched.

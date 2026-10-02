@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { hasTrackingParams, rewriteText, rewriteUrl } from '../../src/lib/rewrite';
+import { getRewriteSkipReason, hasTrackingParams, rewriteText, rewriteUrl } from '../../src/lib/rewrite';
 
 const decoy = { mode: 'decoy', key: 'test-key' } as const;
 const silly = { mode: 'silly', key: 'test-key' } as const;
 const strip = { mode: 'strip' } as const;
+
+const SIGNED_LINKS = [
+  'https://cdn.example/report.pdf?utm_source=email&Expires=2000000000&Signature=abc%2Bdef&Key-Pair-Id=K123',
+  'https://cdn.example/report.pdf?utm_source=email&Policy=abc&Signature=xyz&Key-Pair-Id=K123',
+  'https://storage.example/file?utm_source=email&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=abc',
+  'https://storage.example/file?utm_source=email&X-Goog-Credential=account&X-Goog-Signature=abc',
+  'https://storage.example/file?utm_source=email&GoogleAccessId=account&Expires=2000000000&Signature=abc',
+  'https://storage.example/file?utm_source=email&AWSAccessKeyId=account&Expires=2000000000&Signature=abc',
+  'https://storage.example/file?utm_source=email&sv=2025-01-05&sp=r&sr=b&sig=abc%2Bdef',
+  'https://storage.example/file?utm_source=email&sv=2025-01-05&si=policy&sr=b&sig=abc%2Bdef',
+];
 
 /** Query parameters of an absolute URL. */
 function params(url: string): URLSearchParams {
@@ -178,6 +189,52 @@ describe('rewriteUrl (strip)', () => {
   });
 });
 
+describe('signed URLs', () => {
+  it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('preserves signed resources in %s mode', (mode) => {
+    for (const link of SIGNED_LINKS) {
+      expect(rewriteUrl(link, { mode, key: 'signed-key' }), link).toBeNull();
+      expect(rewriteText(link, { mode, key: 'signed-key', embedded: true }), link).toBeNull();
+      expect(rewriteText(`Read ${link}`, { mode, key: 'signed-key', embedded: true }), link).toBeNull();
+    }
+  });
+
+  it('reports signed exclusions while allowing ordinary signature-named query parameters', () => {
+    for (const link of SIGNED_LINKS) {
+      expect(getRewriteSkipReason(link)).toBe('signed');
+      expect(hasTrackingParams(link)).toBe(false);
+    }
+    expect(
+      getRewriteSkipReason('/report?utm_source=email&Signature=abc&Key-Pair-Id=K&Expires=1', {
+        baseUrl: 'https://cdn.example/',
+      }),
+    ).toBe('signed');
+    expect(getRewriteSkipReason('https://example.com/?utm_source=email&Signature=abc')).toBeNull();
+    expect(rewriteUrl('https://example.com/?utm_source=email&Signature=abc', strip)?.url).toBe(
+      'https://example.com/?Signature=abc',
+    );
+  });
+});
+
+describe('core URL work limits', () => {
+  it('bounds direct URL calls, including calls made for HTML anchors', () => {
+    const link = `https://example.com/?utm_source=${'x'.repeat(100_000)}`;
+    expect(rewriteUrl(link, decoy)).toBeNull();
+    expect(rewriteUrl(link, strip)).toBeNull();
+    expect(getRewriteSkipReason(link)).toBe('too-long');
+  });
+
+  it('processes many tracking parameters within a practical synchronous budget', () => {
+    for (const count of [1000, 5000, 10_000]) {
+      const link = 'https://example.com/?' + Array.from({ length: count }, () => 'utm_a=x').join('&');
+      const started = performance.now();
+      const result = rewriteUrl(link, decoy);
+      const elapsed = performance.now() - started;
+      expect(result?.params).toBe(count);
+      expect(elapsed, `${String(count)} parameters took ${String(elapsed)}ms`).toBeLessThan(500);
+    }
+  });
+});
+
 describe('site-specific tracking', () => {
   it.each([
     ['https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123456', 'https://youtu.be/dQw4w9WgXcQ'],
@@ -257,10 +314,25 @@ describe('rewriteText', () => {
     expect(result).toEqual({ text: '  https://example.com/\n', urls: 1, params: 1 });
   });
 
-  it('keeps wrappers and trailing punctuation around a lone link', () => {
+  it('keeps explicit wrappers around a lone link', () => {
     expect(rewriteText('<https://example.com/?utm_source=x>', strip)?.text).toBe('<https://example.com/>');
     expect(rewriteText('"https://example.com/?a=1&utm_source=x"', strip)?.text).toBe('"https://example.com/?a=1"');
-    expect(rewriteText('https://example.com/?a=1&fbclid=x.', strip)?.text).toBe('https://example.com/?a=1.');
+    expect(rewriteText('https://example.com/?a=1&fbclid=x.', strip)?.text).toBe('https://example.com/?a=1');
+  });
+
+  it('preserves standalone URL semantics and matches direct URL rewrites', () => {
+    for (const link of [
+      'https://example.com/?id=42&utm_source=newsletter;',
+      'https://example.com/?utm_source=newsletter&keep=one;',
+      'https://example.com/?id=42&utm_source=newsletter)',
+    ]) {
+      for (const options of [strip, decoy, silly, { mode: 'hybrid', key: 'test-key' } as const]) {
+        expect(rewriteText(link, options)?.text).toBe(rewriteUrl(link, options)?.url);
+        expect(rewriteText(link, { ...options, embedded: true })?.text).toBe(rewriteUrl(link, options)?.url);
+        const once = rewriteUrl(link, options)?.url ?? link;
+        expect(rewriteText(once, { ...options, embedded: true })).toBeNull();
+      }
+    }
   });
 
   it('only rewrites links inside longer text when allowed', () => {

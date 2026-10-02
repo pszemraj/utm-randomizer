@@ -479,7 +479,7 @@ const HEX_ID = /^(?=[0-9a-fA-F]*[0-9])(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{8,}$/;
 const PERCENT_ESCAPE = /^%[0-9A-Fa-f]{2}/;
 
 /** One position of an identifier's shape: a literal to keep, or a character class to redraw. */
-type ShapeToken = { literal: string } | { alphabet: string; code: string };
+type ShapeToken = { literal: string } | { alphabet: readonly string[]; code: string };
 
 /**
  * Whether a raw value reads like words (`spring_sale`, `newsletter`, `x`) rather than an encoded
@@ -524,24 +524,39 @@ function shapeOf(raw: string): ShapeToken[] {
   const tokens: ShapeToken[] = [];
   for (let i = 0; i < raw.length;) {
     const escape = PERCENT_ESCAPE.exec(raw.slice(i));
-    if (escape) {
+    const char = escape ? String.fromCharCode(Number.parseInt(escape[0].slice(1), 16)) : raw.charAt(i);
+    if (escape && (!/[A-Za-z0-9]/.test(char) || i < prefixLength)) {
       tokens.push({ literal: escape[0] });
       i += escape[0].length;
       continue;
     }
-    const char = raw.charAt(i);
+    let token: ShapeToken;
     if (i < prefixLength) {
-      tokens.push({ literal: char });
+      token = { literal: char };
     } else if (DIGITS.includes(char)) {
-      tokens.push({ alphabet: DIGITS, code: 'd' });
+      token = { alphabet: DIGITS.split(''), code: 'd' };
     } else if (LOWER.includes(char)) {
-      tokens.push(hex === 'lower' ? { alphabet: 'abcdef', code: 'x' } : { alphabet: LOWER, code: 'l' });
+      token = hex === 'lower' ? { alphabet: 'abcdef'.split(''), code: 'x' } : { alphabet: LOWER.split(''), code: 'l' };
     } else if (UPPER.includes(char)) {
-      tokens.push(hex === 'upper' ? { alphabet: 'ABCDEF', code: 'X' } : { alphabet: UPPER, code: 'u' });
+      token = hex === 'upper' ? { alphabet: 'ABCDEF'.split(''), code: 'X' } : { alphabet: UPPER.split(''), code: 'u' };
     } else {
-      tokens.push({ literal: char });
+      token = { literal: char };
     }
-    i += 1;
+    if (escape && 'alphabet' in token) {
+      // Keep the escape's digit/letter spelling stable so its output has the same seed shape.
+      const spelling = escape[0].replace(/[0-9]/g, '#').replace(/[a-f]/g, 'l').replace(/[A-F]/g, 'u');
+      const alphabet = token.alphabet
+        .map((candidate) => {
+          const encoded = candidate.charCodeAt(0).toString(16);
+          return '%' + (/[a-f]/.test(escape[0]) ? encoded : encoded.toUpperCase());
+        })
+        .filter(
+          (candidate) => candidate.replace(/[0-9]/g, '#').replace(/[a-f]/g, 'l').replace(/[A-F]/g, 'u') === spelling,
+        );
+      token = { alphabet, code: token.code + spelling };
+    }
+    tokens.push(token);
+    i += escape ? escape[0].length : 1;
   }
   return tokens;
 }
@@ -553,18 +568,24 @@ function shapeSignature(tokens: ShapeToken[]): string {
 
 /**
  * Redraws every letter and digit of `raw` from the same class, keeping the prefix, separators,
- * percent-escapes, and length, so the result has exactly the original's format. A value that was
+ * percent-encoding, and length, so the result has exactly the original's format. A value that was
  * not hexadecimal never comes out looking hexadecimal, which keeps its shape (and so the rewrite)
  * stable when it is scrambled again.
  */
 export function scrambleLike(raw: string, random: Random): string {
   const tokens = shapeOf(raw);
-  const chars = tokens.map((token) => ('literal' in token ? token.literal : pick(random, token.alphabet.split(''))));
+  const chars = tokens.map((token) => ('literal' in token ? token.literal : pick(random, token.alphabet)));
   if (hexCase(raw) === null && hexCase(chars.join('')) !== null) {
-    const index = tokens.findIndex((token) => 'code' in token && (token.code === 'l' || token.code === 'u'));
+    const index = tokens.findIndex(
+      (token) =>
+        'alphabet' in token && token.alphabet.some((candidate) => /[g-z]/i.test(decodeURIComponent(candidate))),
+    );
     const token = tokens[index];
     if (token && 'code' in token) {
-      chars[index] = pick(random, (token.code === 'l' ? LOWER : UPPER).slice(6).split(''));
+      chars[index] = pick(
+        random,
+        token.alphabet.filter((candidate) => /[g-z]/i.test(decodeURIComponent(candidate))),
+      );
     }
   }
   return chars.join('');
