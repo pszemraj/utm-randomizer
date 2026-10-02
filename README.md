@@ -37,7 +37,7 @@ Automatic plain-text rewrites show an **Undo** notification on supported web pag
 
 Explicit actions copy a cleaned link on demand: right-click a link → **Copy link with decoy tracking**; right-click a page → **Copy page link with decoy tracking**; and **Alt+Shift+U** or the popup's **Copy this page's link** button for the current page. These actions use the selected mode and still work while automatic cleaning is paused. The shortcut can be changed at `chrome://extensions/shortcuts`.
 
-The toolbar popup controls the mode, cleaning layers, notifications, and pause setting. Automatic cleaning and notifications are enabled by default. Turning off **Watch the whole clipboard** stops background checks; page copy handling stays active. The counters track rewritten clipboard links in total and in the current browser session, excluding address-bar changes.
+The toolbar popup controls the mode, cleaning layers, notifications, and pause setting. Automatic cleaning and notifications are enabled by default. Turning off **Watch the whole clipboard** stops background checks; page copy handling stays active. The counters track rewritten clipboard links in total and in the current browser session, excluding address-bar changes. Rich copies include rewritten anchor destinations, counting each link once across its text and HTML representations.
 
 ## Replacement values
 

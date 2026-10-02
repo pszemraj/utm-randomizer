@@ -32,6 +32,7 @@
 
 ### Fixed
 
+- Rich-copy statistics include rewritten HTML links without counting their visible URL labels or plain-text representation twice.
 - Amazon store-search selectors (`srs`) remain unchanged while tracking parameters are cleaned.
 - Browser tests explicitly select and verify the clipboard-event and polling paths instead of relying on Chromium feature flags.
 - Recognized signed CloudFront, AWS, Google Cloud, and Azure links remain byte-for-byte unchanged in every mode.

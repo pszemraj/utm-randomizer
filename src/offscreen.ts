@@ -133,15 +133,15 @@ function reconcile(
     return true;
   }
   const result = rewriteText(snapshot.text, { ...options, embedded: embedded || snapshot.html !== null });
-  const html = snapshot.html === null ? null : rewriteHtml(snapshot.html, options);
-  if (!result && html === null) return true;
-  const rewritten = { ...snapshot, text: result?.text ?? snapshot.text, html: html ?? snapshot.html };
+  const rewrittenHtml = snapshot.html === null ? null : rewriteHtml(snapshot.html, options);
+  if (!result && rewrittenHtml === null) return true;
+  const rewritten = { ...snapshot, text: result?.text ?? snapshot.text, html: rewrittenHtml?.html ?? snapshot.html };
   const current = readClipboard();
   if (!current || identity(current) !== identity(snapshot)) return true;
   if (!writeClipboard(rewritten)) return false;
   candidate = null;
   loopGuard.record(snapshot.text, rewritten.text);
-  const urls = result?.urls ?? 1;
+  const urls = Math.max(result?.urls ?? 0, rewrittenHtml?.urls ?? 0);
   const { emoji, done } = describeMode(options.mode);
   sendNotification({
     type: 'rewritten',

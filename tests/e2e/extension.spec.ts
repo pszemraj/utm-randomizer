@@ -813,6 +813,98 @@ test.describe('copying on web pages', () => {
     });
   }
 
+  for (const method of ['native selection', 'page handler'] as const) {
+    test(`counts each rich copied link once through ${method}`, async ({
+      playground,
+      context,
+      serviceWorker,
+      setSettings,
+      waitForWatcher,
+      readClipboard,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false });
+      await waitForWatcher(false);
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: new URL(playground.url()).origin,
+      });
+      const before = await serviceWorker.evaluate(async () => ({
+        total: Number((await chrome.storage.local.get('totalCount')).totalCount ?? 0),
+        session: Number((await chrome.storage.session.get('sessionCount')).sessionCount ?? 0),
+      }));
+      await playground.evaluate((copyMethod) => {
+        const paragraph = document.createElement('p');
+        for (const [index, label] of ['https://example.com/first?utm_source=email', 'Alpha', 'Beta'].entries()) {
+          const anchor = document.createElement('a');
+          anchor.href = `https://example.com/${['first', 'second', 'third'][index]}?utm_source=email`;
+          const bold = document.createElement('b');
+          bold.textContent = label;
+          anchor.append(bold);
+          if (index > 0) paragraph.append(' ');
+          paragraph.append(anchor);
+        }
+        document.body.append(paragraph);
+        if (copyMethod === 'native selection') {
+          const range = document.createRange();
+          range.selectNodeContents(paragraph);
+          const selection = getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        } else {
+          document.addEventListener(
+            'copy',
+            (event) => {
+              event.preventDefault();
+              event.clipboardData?.setData('text/plain', paragraph.textContent);
+              event.clipboardData?.setData('text/html', paragraph.innerHTML);
+            },
+            { once: true },
+          );
+          const button = document.createElement('button');
+          button.id = 'copy-counted-rich-links';
+          button.textContent = 'Copy rich links';
+          button.onclick = () => {
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises a native ClipboardEvent
+            document.execCommand('copy');
+          };
+          document.body.append(button);
+        }
+      }, method);
+      if (method === 'native selection') {
+        await playground.keyboard.press('ControlOrMeta+C');
+      } else {
+        await playground.locator('#copy-counted-rich-links').click();
+      }
+
+      await expect.poll(readClipboard).toBe('https://example.com/first Alpha Beta');
+      const copied = await playground.evaluate(async () => {
+        const [item] = await navigator.clipboard.read();
+        const html = item?.types.includes('text/html') ? await (await item.getType('text/html')).text() : '';
+        const document = new DOMParser().parseFromString(html, 'text/html');
+        return {
+          types: item?.types,
+          targets: [...document.querySelectorAll('a')].map((anchor) => anchor.getAttribute('href')),
+          labels: [...document.querySelectorAll('b')].map((bold) => bold.textContent),
+        };
+      });
+      expect(copied.types).toEqual(['text/plain', 'text/html']);
+      expect(copied.targets).toEqual([
+        'https://example.com/first',
+        'https://example.com/second',
+        'https://example.com/third',
+      ]);
+      expect(copied.labels).toEqual(['https://example.com/first', 'Alpha', 'Beta']);
+      await expect(playground.locator('utm-randomizer-toast')).toContainText('in 3 links');
+      await expect
+        .poll(() =>
+          serviceWorker.evaluate(async () => ({
+            total: (await chrome.storage.local.get('totalCount')).totalCount,
+            session: (await chrome.storage.session.get('sessionCount')).sessionCount,
+          })),
+        )
+        .toEqual({ total: before.total + 3, session: before.session + 3 });
+    });
+  }
+
   for (const action of ['copy', 'cut'] as const) {
     test(`rewrites a keyboard ${action} when the page stops propagation`, async ({
       playground,

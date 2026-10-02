@@ -229,6 +229,26 @@ describe('copy events', () => {
     expect(event.clipboardData?.getData('text/html')).toBe(`<a href="${CLEAN}">Share</a>`);
   });
 
+  it.each([false, true])('counts rewritten HTML anchors once with visible URLs %s', (visibleUrls) => {
+    start(new FakeClipboard(true));
+    const labels = visibleUrls ? [TRACKED, TRACKED, TRACKED] : ['Alpha', 'Beta', 'Gamma'];
+    const original = labels.join(' ');
+    const event = copyEvent();
+    event.preventDefault();
+    event.clipboardData?.setData('text/plain', original);
+    event.clipboardData?.setData(
+      'text/html',
+      labels.map((label) => `<a href="${TRACKED}"><b>${label}</b></a>`).join(' '),
+    );
+
+    document.body.dispatchEvent(event);
+
+    const cleaned = visibleUrls ? [CLEAN, CLEAN, CLEAN].join(' ') : original;
+    expect(event.clipboardData?.getData('text/plain')).toBe(cleaned);
+    expect(event.clipboardData?.getData('text/html')).not.toContain('utm_source');
+    expect(rewrites).toEqual([{ original, rewritten: cleaned, urls: 3, undoable: false }]);
+  });
+
   it.each([
     { type: 'application/x-example', payload: 'opaque payload' },
     { type: 'text/html', payload: '' },

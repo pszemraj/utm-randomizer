@@ -238,12 +238,12 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       lastWritten = result.text;
     }
     if (rewrittenHtml) {
-      data.setData('text/html', rewrittenHtml);
+      data.setData('text/html', rewrittenHtml.html);
     }
     onRewrite({
       original,
       rewritten: result?.text ?? original,
-      urls: result?.urls ?? 1,
+      urls: Math.max(result?.urls ?? 0, rewrittenHtml?.urls ?? 0),
       ...(data.types.some((type) => type !== 'text/plain') ? { undoable: false } : {}),
     });
     return true;

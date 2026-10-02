@@ -453,6 +453,45 @@ it.each([
   expect(notification.relayToast?.undoText).toBeUndefined();
 });
 
+it.each([false, true])('counts rewritten HTML anchors once with visible URLs %s', async (visibleUrls) => {
+  const { clipboard, sendMessage, message, readEpoch } = await start();
+  const labels = visibleUrls ? [TRACKED, TRACKED, TRACKED] : ['Alpha', 'Beta', 'Gamma'];
+  clipboard.text = labels.join(' ');
+  clipboard.html = labels.map((label) => `<a href="${TRACKED}"><b>${label}</b></a>`).join(' ');
+  clipboard.types = ['text/plain', 'text/html'];
+  message({
+    type: 'offscreen-reconcile',
+    epoch: readEpoch(),
+    types: clipboard.types,
+    text: clipboard.text,
+    embedded: true,
+    config: CONFIG,
+  });
+  expect(clipboard.text).toBe(visibleUrls ? [CLEAN, CLEAN, CLEAN].join(' ') : labels.join(' '));
+  expect(clipboard.html).not.toContain('utm_source');
+  expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rewritten', urls: 3 }));
+});
+
+it('counts rewritten HTML prose and URL labels with unchanged destinations', async () => {
+  const { clipboard, sendMessage, message, readEpoch } = await start();
+  clipboard.text = '';
+  clipboard.html = `<a href="${TRACKED}"><b>${TRACKED}</b></a> Read ${TRACKED} <a href="https://example.com/other">${TRACKED}</a>`;
+  clipboard.types = ['text/html'];
+  message({
+    type: 'offscreen-reconcile',
+    epoch: readEpoch(),
+    types: clipboard.types,
+    text: '',
+    embedded: true,
+    config: CONFIG,
+  });
+  expect(clipboard.html).toBe(
+    `<a href="${CLEAN}"><b>${CLEAN}</b></a> Read ${CLEAN} <a href="https://example.com/other">${CLEAN}</a>`,
+  );
+  expect(clipboard.types).toEqual(['text/html']);
+  expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rewritten', urls: 3 }));
+});
+
 it('detects an HTML-only payload change during polling', async () => {
   const { clipboard } = await start();
   clipboard.text = 'baseline';
