@@ -376,6 +376,45 @@ function pendingRead() {
 }
 
 describe('clipboard reconciliation', () => {
+  it('keeps ordinary typing local and advances intent only when its custom hotkey changes the clipboard', async () => {
+    const clipboard = new FakeClipboard(true);
+    start(clipboard);
+    for (const key of ['h', 'e', 'l', 'l', 'o', 'ArrowLeft', 'Shift', 'Tab']) {
+      document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { key, bubbles: true })));
+    }
+    expect(invalidateReads).not.toHaveBeenCalled();
+    expect(beginRead).not.toHaveBeenCalled();
+    invalidateReads.mockResolvedValue('00000000-0000-4000-8000-000000000002');
+    clipboard.change(TRACKED);
+    await flush();
+    expect(invalidateReads).toHaveBeenCalledOnce();
+    expect(reconcile).toHaveBeenCalledWith(
+      TRACKED,
+      true,
+      undefined,
+      ['text/plain'],
+      '00000000-0000-4000-8000-000000000002',
+      true,
+    );
+    expect(beginRead).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { key: 'c', ctrlKey: true },
+    { key: 'x', metaKey: true },
+    { key: 'u', altKey: true },
+    { key: 'Enter' },
+    { key: ' ' },
+    { key: 'ContextMenu' },
+    { key: 'F10', shiftKey: true },
+  ])('advances each copy-capable key gesture even while an older intent awaits acknowledgement: $key', (init) => {
+    start(new FakeClipboard(true));
+    invalidateReads.mockReturnValue(new Promise(() => undefined));
+    document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { ...init, bubbles: true })));
+    document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { ...init, bubbles: true })));
+    expect(invalidateReads).toHaveBeenCalledTimes(2);
+  });
+
   it('binds page reads to their acknowledged intent instead of adopting a newer shared generation', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard, { watchClipboard: false });
@@ -581,23 +620,29 @@ describe('clipboard reconciliation', () => {
     expect(reconcile.mock.calls).toEqual([[newer, true, undefined, ['text/plain'], EPOCH, true]]);
   });
 
-  it.each(['Undo', 'stop', 'settings', 'new intent'])('invalidates a pending read on %s', async (action) => {
-    const clipboard = new FakeClipboard(true);
-    const current = start(clipboard);
-    interact();
-    const read = pendingRead();
-    vi.spyOn(clipboard, 'readText').mockReturnValueOnce(read.promise);
-    clipboard.change(TRACKED);
-    await flush();
-    if (action === 'Undo') await current.restore(TRACKED);
-    else if (action === 'stop') current.stop();
-    else if (action === 'settings') current.invalidate();
-    else interact();
-    read.resolve(TRACKED);
-    await flush();
-    expect(reconcile).not.toHaveBeenCalled();
-    expect(clipboard.writes).toEqual([]);
-  });
+  it.each(['Undo', 'stop', 'settings', 'new intent', 'ordinary typing'])(
+    'invalidates a pending read on %s',
+    async (action) => {
+      const clipboard = new FakeClipboard(true);
+      const current = start(clipboard);
+      interact();
+      const read = pendingRead();
+      vi.spyOn(clipboard, 'readText').mockReturnValueOnce(read.promise);
+      clipboard.change(TRACKED);
+      await flush();
+      if (action === 'Undo') await current.restore(TRACKED);
+      else if (action === 'stop') current.stop();
+      else if (action === 'settings') current.invalidate();
+      else if (action === 'ordinary typing') {
+        document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { key: 'a', bubbles: true })));
+        expect(invalidateReads).toHaveBeenCalledOnce();
+      } else interact();
+      read.resolve(TRACKED);
+      await flush();
+      expect(reconcile).not.toHaveBeenCalled();
+      expect(clipboard.writes).toEqual([]);
+    },
+  );
 
   it('fails Undo when the coordinator does not acknowledge it', async () => {
     const clipboard = new FakeClipboard(true);

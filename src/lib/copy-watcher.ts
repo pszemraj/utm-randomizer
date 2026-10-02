@@ -187,10 +187,21 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     if (!event.isTrusted) return;
     invalidate();
     lastIntent = now();
-    if (active()) {
-      pendingIntent = deps.invalidateReads();
-      void pendingIntent.catch(() => undefined);
+    if (!active()) return;
+    if (
+      event instanceof KeyboardEvent &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !['Enter', ' ', 'ContextMenu'].includes(event.key) &&
+      !(event.key === 'F10' && event.shiftKey)
+    ) {
+      // Custom unmodified copy hotkeys advance the shared epoch if they actually change the clipboard.
+      pendingIntent = null;
+      return;
     }
+    pendingIntent = deps.invalidateReads();
+    void pendingIntent.catch(() => undefined);
   }
 
   /**
@@ -294,7 +305,8 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     let snapshot: ClipboardSnapshot | null;
     let epoch: string;
     try {
-      epoch = await (pageCopy && pendingIntent ? pendingIntent : deps.beginRead());
+      // A custom unmodified hotkey needs its own epoch, rather than adopting another frame's intent.
+      epoch = await (pageCopy ? (pendingIntent ??= deps.invalidateReads()) : deps.beginRead());
       if (generation !== job || listeners.signal.aborted || !active()) return false;
       snapshot = await readClipboard(clipboard, job);
     } catch {

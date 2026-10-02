@@ -101,7 +101,7 @@ The address bar is cleaned with `history.replaceState` once the page's `load` ev
 
 ### Clipboard coordination
 
-The offscreen document coordinates all post-copy writes. It remains available while automatic cleaning is enabled, even with whole-clipboard watching off. Pause closes it; explicit copies create it temporarily when needed. Trusted new intent invalidates older reads across pages and frames, including when the new copy has identical text. Settings changes, Undo, and shutdown also cancel pending page reads and worker reconciliation; pause/resume cannot make an older request valid again. The writer checks current text and formats before committing, and Undo succeeds only after acknowledgement. Clipboard read and write operations are not atomic with arbitrary external apps.
+The offscreen document coordinates all post-copy writes. It remains available while automatic cleaning is enabled, even with whole-clipboard watching off. Pause closes it; explicit copies create it temporarily when needed. Copy-capable gestures and page clipboard changes invalidate older reads across pages and frames, including when the new copy has identical text. Ordinary typing cancels pending reads in that page without contacting the service worker. Settings changes, Undo, and shutdown also cancel pending page reads and worker reconciliation; pause/resume cannot make an older request valid again. The writer checks current text and formats before committing, and Undo succeeds only after acknowledgement. Clipboard read and write operations are not atomic with arbitrary external apps.
 
 ### Background watching
 

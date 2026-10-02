@@ -792,11 +792,64 @@ test.describe('copying on web pages', () => {
     expect(copied).not.toContain('AbCdEf123456');
   });
 
-  test('rewrites a selected link copied with the keyboard', async ({ playground, readClipboard }) => {
+  test('keeps ordinary typing local and rewrites keyboard copies', async ({
+    playground,
+    readClipboard,
+    serviceWorker,
+    setSettings,
+    waitForWatcher,
+    clipboardChange,
+  }) => {
+    await setSettings({ watchClipboard: false });
+    await waitForWatcher(false);
+    await serviceWorker.evaluate(() => {
+      const state = globalThis as typeof globalThis & { clipboardIntents: number };
+      state.clipboardIntents = 0;
+      chrome.runtime.onMessage.addListener((message: unknown) => {
+        if (
+          typeof message === 'object' &&
+          message !== null &&
+          'type' in message &&
+          message.type === 'clipboard-intent'
+        ) {
+          state.clipboardIntents += 1;
+        }
+      });
+    });
+    const field = playground.getByTestId('select-input');
+    await field.focus();
+    await playground.keyboard.type('ordinaryletters');
+    expect(
+      await serviceWorker.evaluate(
+        () => (globalThis as typeof globalThis & { clipboardIntents: number }).clipboardIntents,
+      ),
+    ).toBe(0);
+
+    if (clipboardChange) {
+      const original = 'https://example.com/custom?id=5&utm_source=keyboard';
+      await field.evaluate((element, text) => {
+        element.addEventListener('keydown', (event) => {
+          if ((event as KeyboardEvent).key !== 'y') return;
+          event.preventDefault();
+          void navigator.clipboard.writeText(text);
+        });
+      }, original);
+      await field.press('y');
+      const copied = await waitForClipboard(
+        readClipboard,
+        (text) => text.startsWith('https://example.com/custom?') && text !== original,
+      );
+      expectReplaced(copied, original);
+      expect(new URL(copied).searchParams.get('id')).toBe('5');
+    }
+
     const code = playground.getByTestId('select-code');
     await code.click({ clickCount: 3 });
     await playground.keyboard.press('ControlOrMeta+C');
-    const copied = await waitForClipboard(readClipboard, (text) => !text.includes('msclkid=abc123def'));
+    const copied = await waitForClipboard(
+      readClipboard,
+      (text) => text.trim().startsWith('https://example.com/deal?') && !text.includes('msclkid=abc123def'),
+    );
     // Triple-click selects the whole block, including its line break; whitespace is preserved.
     expect(copied.trim()).toMatch(/^https:\/\/example\.com\/deal\?id=9&utm_source=[^&]+&msclkid=[0-9a-f]{9}$/);
   });
