@@ -204,12 +204,12 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       embedded = true;
     } else if (event.type === 'copy') {
       const selection = selectedText();
-      if (!selection) {
+      // Native rich copies must create their full payload before format-aware reconciliation.
+      if (!selection?.plain) {
         return false;
       }
       original = selection.text;
-      // Replacing a rich selection would drop its formatting, so only lone links are rewritten there.
-      embedded = selection.plain;
+      embedded = true;
     } else {
       // Canceling a native cut would also cancel the deletion; leave it to the async path.
       return false;

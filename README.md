@@ -29,7 +29,7 @@ To verify the installation, copy the example's `Copied` URL from a web page and 
 
 Copy links the way you normally do; there is nothing to click. Three layers catch them:
 
-- **On web pages**, copy detection covers selecting a link and pressing Ctrl+C / Cmd+C (including in text fields), a site's "Copy link" or "Share" button (using `navigator.clipboard`, `execCommand('copy')`, or a copy-event handler, including inside iframes), and right-click → **Copy link address**.
+- **On web pages**, copy detection covers selecting a link and pressing Ctrl+C / Cmd+C (including in text fields), a site's "Copy link" or "Share" button (using `navigator.clipboard`, `execCommand('copy')`, or a copy-event handler, including inside iframes), and right-click → **Copy link address**. Rich selections retain formatting and functional anchor destinations.
 - **In the address bar**, tracking parameters are replaced without reloading. Copying the address, sharing the tab, bookmarking, and sending it to your phone all pick up the cleaned link.
 - **In other apps**, a background watcher detects copies and asks a focused web page to inspect all clipboard formats before rewriting. If no focused page can inspect them, the clipboard is left untouched until one is available.
 

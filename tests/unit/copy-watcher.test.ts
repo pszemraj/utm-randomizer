@@ -93,8 +93,13 @@ function copyEvent(type: 'copy' | 'cut' = 'copy'): ClipboardEvent {
   return trusted(new ClipboardEvent(type, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }));
 }
 
-/** Selects the whole text content of `element`. */
+/** Selects the whole text content of an element or text field. */
 function selectText(element: Element): void {
+  if (element instanceof HTMLTextAreaElement) {
+    element.focus();
+    element.setSelectionRange(0, element.value.length);
+    return;
+  }
   const range = document.createRange();
   range.selectNodeContents(element);
   const selection = window.getSelection();
@@ -124,9 +129,9 @@ afterEach(() => {
 });
 
 describe('copy events', () => {
-  it('rewrites a selected link synchronously', () => {
+  it('rewrites a selected text-field link synchronously', () => {
     start(new FakeClipboard(true));
-    document.body.innerHTML = `<p id="link">${TRACKED}</p>`;
+    document.body.innerHTML = `<textarea id="link">${TRACKED}</textarea>`;
     const paragraph = document.getElementById('link');
     if (!paragraph) throw new Error('missing fixture');
     selectText(paragraph);
@@ -137,6 +142,28 @@ describe('copy events', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(event.clipboardData?.getData('text/plain')).toBe(CLEAN);
     expect(rewrites).toEqual([{ original: TRACKED, rewritten: CLEAN, urls: 1 }]);
+  });
+
+  it.each([true, false])('reconciles a native rich lone link after copy (clipboardchange %s)', async (modern) => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(modern);
+    start(clipboard);
+    document.body.innerHTML = `<a id="link" href="https://destination.example/item"><b>${TRACKED}</b></a>`;
+    const anchor = document.getElementById('link');
+    if (!anchor) throw new Error('missing fixture');
+    selectText(anchor);
+
+    const event = copyEvent();
+    anchor.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(event.clipboardData?.types).toEqual([]);
+    expect(rewrites).toHaveLength(0);
+
+    clipboard.html = anchor.outerHTML;
+    clipboard.change(TRACKED, ['text/plain', 'text/html']);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain', 'text/html'], 0, true);
+    expect(clipboard.html).toBe(anchor.outerHTML);
   });
 
   it('leaves rich selections with embedded links to the browser', () => {
@@ -225,7 +252,7 @@ describe('copy events', () => {
 
   it('uses decoys when configured', () => {
     start(new FakeClipboard(true), { mode: 'decoy' });
-    document.body.innerHTML = `<p id="link">${TRACKED}</p>`;
+    document.body.innerHTML = `<textarea id="link">${TRACKED}</textarea>`;
     const paragraph = document.getElementById('link');
     if (!paragraph) throw new Error('missing fixture');
     selectText(paragraph);
@@ -243,7 +270,7 @@ describe('copy events', () => {
   it('waits for the key before producing decoys, but removes without it', () => {
     start(new FakeClipboard(true), { mode: 'decoy' });
     key = null;
-    document.body.innerHTML = `<p id="link">${TRACKED}</p>`;
+    document.body.innerHTML = `<textarea id="link">${TRACKED}</textarea>`;
     const paragraph = document.getElementById('link');
     if (!paragraph) throw new Error('missing fixture');
     selectText(paragraph);
