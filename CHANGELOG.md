@@ -33,7 +33,7 @@
 - [Copy detection](README.md#page-copies) handles shadow-root text fields, stopped propagation, late page handlers, and interrupted baseline reads.
 - [Clipboard formats](README.md#clipboard-formats) survive rich-copy cleaning; changed HTML is detected even with unchanged text, and plain-text Undo no longer discards formatting.
 - [Clipboard coordination](README.md#clipboard-coordination) rejects stale reads after newer copies, settings changes, Undo, and coordinator recreation. Undo suppression survives cross-frame work and worker restarts; lost acknowledgements report failure.
-- [Background watching](README.md#background-watching) retries unavailable readers and custom-format removal, and settings updates no longer depend on context-menu updates.
+- [Background watching](README.md#background-watching) skips unrelated clipboard contents and retries tracked links after unavailable readers or custom-format removal. Page copies without rewritable links skip writer reconciliation; settings updates no longer depend on context-menu updates.
 - Synthetic copy, gesture, and Undo events and malformed or forged runtime messages are rejected.
 - [URL rewriting](README.md#what-gets-rewritten) preserves Bing Maps collections, Amazon store selectors, signed links, standalone punctuation, and relative page-link forms, and handles standalone Markdown links.
 - [Replacement values](README.md#replacement-values) stay stable for encoded, mixed-case hexadecimal, non-Latin, malformed-percent, and `magic-8-ball` inputs. HubSpot's `__hssc`, `__hstc`, and `__hsfp` are matched.

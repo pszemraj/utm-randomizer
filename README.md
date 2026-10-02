@@ -93,6 +93,8 @@ flowchart LR
 
 Selected text-field copies and data supplied by page copy/cut handlers are rewritten synchronously during event dispatch. Open shadow-root text fields are supported, including on HTTP pages without the async Clipboard API. Native rich selections and native cuts are checked after copying; cuts keep their normal deletion behavior. On [Chrome 144 and later](https://developer.chrome.com/release-notes/144#the-clipboardchange-event), `clipboardchange` catches other writes within 10 seconds of interaction with the page; plain-text changes can include embedded links.
 
+Page clipboard snapshots without rewritable links are not forwarded to the shared writer.
+
 Chrome 123-143 polls after copy and cut events, including events whose propagation the page stops or whose data a later page handler overwrites. Button or link clicks and right-clicks on links also start a pre-gesture clipboard read followed by short polling. Comparing text and HTML against that baseline leaves existing clipboard contents alone after unrelated gestures; polling continues if a new copy interrupts the baseline read. Legacy polling rewrites lone plain-text links and both representations of rich copies. Only trusted browser events authorize these page checks; synthetic copy events and programmatic Undo clicks are ignored. If the async Clipboard API is unavailable, synchronous copy handling still works, but that page cannot inspect asynchronous copies.
 
 The address bar is cleaned with `history.replaceState` once the page's `load` event has fired, so the page has already done its own work with the URL, and again 300 ms after each in-page navigation.
@@ -103,7 +105,7 @@ The offscreen document coordinates all post-copy writes. It remains available wh
 
 ### Background watching
 
-The background watcher leaves existing contents alone when starting, checks every 0.75 seconds, and waits 250 ms after detecting a change. A focused page then uses the Clipboard API to inspect the [format inventory](#clipboard-formats): offscreen synthetic paste alone cannot see web custom formats. Without that inspection, no automatic write occurs. Inspection retries until a reader and supported formats are available, even if a later copy removes a custom format without changing the text. Competing tracked versions of the same link are skipped for 5 seconds after a rewrite.
+The background watcher leaves existing contents alone when starting and checks every 0.75 seconds. Only changed payloads with rewritable text or HTML links are staged for inspection; unrelated contents stay in the offscreen document. After a 250 ms grace period, a focused page uses the Clipboard API to inspect the [format inventory](#clipboard-formats): offscreen synthetic paste alone cannot see web custom formats. Without that inspection, no automatic write occurs. Inspection retries until a reader and supported formats are available, even if a later copy removes a custom format without changing the text. Competing tracked versions of the same link are skipped for 5 seconds after a rewrite.
 
 ## Permissions
 

@@ -194,6 +194,11 @@ function check(): void {
     candidate = null;
     window.clearTimeout(graceTimer);
     if (previous === null || isIgnored(snapshot) || !supported(snapshot)) return;
+    if (
+      !rewriteText(snapshot.text, { mode: 'strip', embedded: true }) &&
+      (snapshot.html === null || !rewriteHtml(snapshot.html, { mode: 'strip' }))
+    )
+      return;
     candidate = snapshot;
     graceTimer = window.setTimeout(check, GRACE_MS);
     return;

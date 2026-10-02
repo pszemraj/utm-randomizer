@@ -1248,8 +1248,23 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
     readClipboard,
     writeClipboardExternally,
     waitForWatcher,
+    serviceWorker,
   }) => {
     await waitForWatcher(true);
+    await serviceWorker.evaluate(() => {
+      const state = globalThis as typeof globalThis & { inspectionRequests: number };
+      state.inspectionRequests = 0;
+      chrome.runtime.onMessage.addListener((message: unknown) => {
+        if (
+          typeof message === 'object' &&
+          message !== null &&
+          'type' in message &&
+          message.type === 'inspect-clipboard'
+        ) {
+          state.inspectionRequests += 1;
+        }
+      });
+    });
     for (const text of [
       'hello world?',
       'https://example.com/?id=1&page=2',
@@ -1259,6 +1274,11 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
       await writeClipboardExternally(text);
       expect(await expectStable(readClipboard, 1500)).toBe(text);
     }
+    expect(
+      await serviceWorker.evaluate(
+        () => (globalThis as typeof globalThis & { inspectionRequests: number }).inspectionRequests,
+      ),
+    ).toBe(0);
   });
 
   test('can be switched off', async ({ readClipboard, setSettings, writeClipboardExternally, waitForWatcher }) => {

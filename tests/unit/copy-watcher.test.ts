@@ -8,6 +8,7 @@ import {
   type WatcherDeps,
 } from '../../src/lib/copy-watcher';
 import { DEFAULT_SETTINGS, type Settings } from '../../src/lib/settings';
+import { rewriteUrl } from '../../src/lib/rewrite';
 
 const EPOCH = '00000000-0000-4000-8000-000000000001';
 const TRACKED = 'https://example.com/page?id=7&utm_source=newsletter&fbclid=IwAR3abc';
@@ -441,6 +442,22 @@ describe('clipboard reconciliation', () => {
     expect(await current.inspect()).toBe(false);
     expect(reconcile).not.toHaveBeenCalled();
   });
+  it.each([
+    { text: 'private message without links', html: '' },
+    { text: 'https://example.com/item?id=42', html: '' },
+    { text: 'A product', html: '<a href="https://example.com/item?id=42">A product</a>' },
+  ])('does not send unrelated page clipboard payloads: $text', async ({ text, html }) => {
+    const clipboard = new FakeClipboard(true);
+    const current = start(clipboard);
+    interact();
+    clipboard.html = html;
+    clipboard.change(text, html ? ['text/plain', 'text/html'] : ['text/plain']);
+    await flush();
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(await current.inspect()).toBe(true);
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
   it('delegates current clipboard text without writing from the page', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard);
@@ -450,6 +467,38 @@ describe('clipboard reconciliation', () => {
     expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], EPOCH, true);
     expect(clipboard.writes).toEqual([]);
     expect(rewrites).toEqual([]);
+  });
+
+  it('keeps tracked links eligible before the key loads and after decoy rewriting', async () => {
+    const clipboard = new FakeClipboard(true);
+    start(clipboard, { mode: 'decoy' });
+    key = null;
+    interact();
+    clipboard.change(TRACKED);
+    await flush();
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], EPOCH, true);
+    const decoy = rewriteUrl(TRACKED, { mode: 'decoy', key: 'test-key' })?.url;
+    if (!decoy) throw new Error('Missing decoy link');
+    clipboard.change(decoy);
+    await flush();
+    expect(reconcile).toHaveBeenLastCalledWith(decoy, true, undefined, ['text/plain'], EPOCH, true);
+  });
+
+  it('retains page context for relative candidates without attributing background relative links', async () => {
+    const clipboard = new FakeClipboard(true);
+    const current = start(clipboard);
+    vi.stubGlobal('location', { href: 'https://example.com/page' });
+    try {
+      interact();
+      clipboard.change('/item?utm_source=email');
+      await flush();
+      expect(reconcile).toHaveBeenCalledWith('/item?utm_source=email', true, undefined, ['text/plain'], EPOCH, true);
+      reconcile.mockClear();
+      expect(await current.inspect()).toBe(true);
+      expect(reconcile).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it.each(['image/png', 'Files', 'application/custom'])('leaves mixed %s formats alone', async (type) => {
@@ -468,6 +517,7 @@ describe('clipboard reconciliation', () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard);
     interact();
+    clipboard.html = `<a href="${TRACKED}">A product</a>`;
     clipboard.change('A product', ['text/plain', 'text/html']);
     await flush();
     expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain', 'text/html'], EPOCH, true);
@@ -522,12 +572,13 @@ describe('clipboard reconciliation', () => {
     vi.spyOn(clipboard, 'readText').mockReturnValueOnce(old.promise).mockReturnValueOnce(recent.promise);
     clipboard.change(TRACKED);
     await flush();
-    clipboard.change('newer contents');
-    recent.resolve('newer contents');
+    const newer = 'https://example.com/newer?utm_source=email';
+    clipboard.change(newer);
+    recent.resolve(newer);
     await flush();
     old.resolve(TRACKED);
     await flush();
-    expect(reconcile.mock.calls).toEqual([['newer contents', true, undefined, ['text/plain'], EPOCH, true]]);
+    expect(reconcile.mock.calls).toEqual([[newer, true, undefined, ['text/plain'], EPOCH, true]]);
   });
 
   it.each(['Undo', 'stop', 'settings', 'new intent'])('invalidates a pending read on %s', async (action) => {
@@ -640,9 +691,9 @@ describe('gesture reconciliation', () => {
     if (!field) throw new Error('missing fixture');
     field.addEventListener('copy', (event) => event.stopImmediatePropagation());
     field.dispatchEvent(copyEvent());
-    clipboard.text = 'A product';
+    clipboard.text = TRACKED;
     await vi.advanceTimersByTimeAsync(500);
-    expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain'], EPOCH, true);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain'], EPOCH, true);
   });
 
   it('never starts reconciliation from a synthetic click', async () => {

@@ -183,6 +183,21 @@ it('atomically restores and suppresses Undo across reconfiguration, then expires
   expect(clipboard.text).toBe(CLEAN);
 });
 
+it.each([
+  { text: 'private message without links', html: null },
+  { text: 'https://example.com/item?id=42', html: null },
+  { text: 'A product', html: '<a href="https://example.com/item?id=42">A product</a>' },
+])('does not inspect unrelated clipboard payloads: $text', async ({ text, html }) => {
+  const { clipboard, sendMessage, writes, inspector } = await start();
+  inspector.enabled = false;
+  clipboard.text = text;
+  clipboard.html = html;
+  clipboard.types = html === null ? ['text/plain'] : ['text/plain', 'text/html'];
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(sendMessage).not.toHaveBeenCalled();
+  expect(writes).not.toHaveBeenCalled();
+});
+
 it('rewrites a pending candidate normally', async () => {
   const { clipboard, sendMessage } = await start();
   clipboard.text = TRACKED;
