@@ -78,6 +78,36 @@ test.describe('copying on web pages', () => {
     await expect.poll(readClipboard).toBe(ARTICLE);
   });
 
+  for (const hover of [false, true]) {
+    test(`resumes notification expiry after keyboard focus leaves${hover ? ' after hovering' : ''}`, async ({
+      playground,
+      readClipboard,
+      setSettings,
+      waitForWatcher,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false });
+      await waitForWatcher(false);
+      await playground.getByTestId('copy-writetext').click();
+      await expect.poll(readClipboard).toBe('https://example.com/article?id=42');
+      const toast = playground.locator('utm-randomizer-toast');
+      const undo = toast.getByRole('button', { name: 'Undo' });
+      const close = toast.getByRole('button', { name: 'Dismiss' });
+      await undo.focus();
+      await playground.keyboard.press('Tab');
+      await expect(close).toBeFocused();
+      if (hover) {
+        await close.hover();
+        await playground.mouse.move(0, 0);
+      }
+      await playground.waitForTimeout(1800);
+      await expect(close).toBeVisible();
+      await expect(close).toBeFocused();
+      await playground.keyboard.press('Tab');
+      await expect(close).not.toBeFocused();
+      await expect(toast).toHaveCount(0);
+    });
+  }
+
   for (const stop of ['stopPropagation', 'stopImmediatePropagation'] as const) {
     test(`preserves and cleans HTML-only tracked links after ${stop}`, async ({
       playground,

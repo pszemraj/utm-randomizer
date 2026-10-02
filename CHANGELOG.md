@@ -32,6 +32,7 @@
 
 ### Fixed
 
+- Notification expiry resumes when keyboard focus leaves, while hovering or focus keeps it open.
 - Selected text fields inside open shadow roots are cleaned synchronously, including on HTTP pages without the async Clipboard API.
 - Rich-copy statistics include rewritten HTML links without counting their visible URL labels or plain-text representation twice.
 - Amazon store-search selectors (`srs`) remain unchanged while tracking parameters are cleaned.

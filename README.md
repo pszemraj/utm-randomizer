@@ -33,7 +33,7 @@ Copy links the way you normally do; there is nothing to click. Three layers catc
 - **In the address bar**, tracking parameters are replaced without reloading. Copying the address, sharing the tab, bookmarking, and sending it to your phone all pick up the cleaned link.
 - **In other apps**, a background watcher detects copies and asks a focused web page to inspect all clipboard formats before rewriting. If no focused page can inspect them, the clipboard is left untouched until one is available. Copies with custom formats remain untouched; cleaning resumes if a later copy removes those formats, even when its text stays the same.
 
-Automatic plain-text rewrites show an **Undo** notification on supported web pages when notifications are enabled. Undo restores the original clipboard text until different contents are observed; a later fresh copy is cleaned again. Copies with HTML or custom formats and address-bar changes have no Undo button.
+Automatic plain-text rewrites show an **Undo** notification on supported web pages when notifications are enabled. Hovering or keyboard focus keeps the notification open; its countdown resumes after both leave. Undo restores the original clipboard text until different contents are observed; a later fresh copy is cleaned again. Copies with HTML or custom formats and address-bar changes have no Undo button.
 
 Explicit actions copy a cleaned link on demand: right-click a link → **Copy link with decoy tracking**; right-click a page → **Copy page link with decoy tracking**; and **Alt+Shift+U** or the popup's **Copy this page's link** button for the current page. These actions use the selected mode and still work while automatic cleaning is paused. The shortcut can be changed at `chrome://extensions/shortcuts`.
 

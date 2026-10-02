@@ -139,10 +139,14 @@ export function showToast({ message, onUndo, durationMs = onUndo ? 4500 : 2500 }
   close.addEventListener('click', hide, { once: true });
   toast.append(close);
 
-  // Hovering or focusing the toast keeps it open.
+  /** Resumes dismissal after both hover and keyboard focus leave. */
+  const resume = () => {
+    if (!toast.matches(':hover, :focus-within')) schedule(1500);
+  };
   toast.addEventListener('pointerenter', () => window.clearTimeout(state.timer));
-  toast.addEventListener('pointerleave', () => schedule(1500));
+  toast.addEventListener('pointerleave', resume);
   toast.addEventListener('focusin', () => window.clearTimeout(state.timer));
+  toast.addEventListener('focusout', resume);
 
   root.append(toast);
   document.documentElement.append(host);
