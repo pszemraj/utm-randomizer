@@ -7,7 +7,14 @@ import {
   type WatchConfig,
 } from './lib/messages';
 import { getRewriteSkipReason, hasTrackingParams, rewriteUrl } from './lib/rewrite';
-import { createOrReadSecret, describeMode, loadSettings, watchSettings, type Settings } from './lib/settings';
+import {
+  createOrReadSecret,
+  DEFAULT_SETTINGS,
+  describeMode,
+  loadSettings,
+  watchSettings,
+  type Settings,
+} from './lib/settings';
 
 const MENU_COPY_LINK = 'copy-clean-link';
 const MENU_COPY_PAGE = 'copy-clean-page';
@@ -77,6 +84,8 @@ function countRewrites(urls: number): Promise<void> {
 // open while automatic cleaning is on and is created on demand otherwise. Every
 // operation on it is serialized, because only one offscreen document may exist at a time.
 let offscreenQueue: Promise<unknown> = Promise.resolve();
+/** Cancels automatic work waiting in the worker when settings change. */
+let settingsRevision = 0;
 
 /** Runs `task` after every earlier offscreen operation has finished. */
 function withOffscreen<T>(task: () => Promise<T>): Promise<T> {
@@ -161,12 +170,15 @@ function reconcileClipboard(
   baseline?: string,
   baseUrl?: string,
 ): Promise<void> {
+  const revision = settingsRevision;
   return withOffscreen(async () => {
     const settings = await loadSettings();
     if (!settings.enabled) {
       return;
     }
     await ensureOffscreen();
+    const key = await secret();
+    if (revision !== settingsRevision) return;
     await tellOffscreen({
       type: 'offscreen-reconcile',
       text,
@@ -175,7 +187,7 @@ function reconcileClipboard(
       epoch,
       baseline,
       baseUrl,
-      config: { mode: settings.mode, key: await secret() },
+      config: { mode: settings.mode, key },
       tabId,
     });
   });
@@ -323,6 +335,11 @@ chrome.runtime.onInstalled.addListener(() => {
 // Menus normally persist, but recreating them on startup is cheap insurance (createMenus is idempotent).
 chrome.runtime.onStartup.addListener(() => {
   void createMenus();
+});
+
+// Invalidate before the asynchronous settings reload or queued watcher update can finish.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) settingsRevision += 1;
 });
 
 watchSettings((settings) => {

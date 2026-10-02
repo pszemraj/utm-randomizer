@@ -915,6 +915,45 @@ test.describe('copying on web pages', () => {
     expect(await readClipboard()).toBe(ARTICLE);
   });
 
+  test('Pause cancels reconciliation already waiting in the worker', async ({
+    playground,
+    readClipboard,
+    serviceWorker,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    await serviceWorker.evaluate(`(() => {
+      const original = chrome.runtime.getContexts.bind(chrome.runtime);
+      const gate = globalThis.pauseGate = { armed: false, held: false, paused: false };
+      chrome.runtime.getContexts = async (...args) => {
+        const contexts = await original(...args);
+        if (gate.armed) {
+          gate.armed = false;
+          gate.held = true;
+          await new Promise(resolve => { gate.release = resolve; });
+        }
+        return contexts;
+      };
+      chrome.runtime.onMessage.addListener(message => {
+        if (message?.type === 'reconcile-clipboard' && !gate.held) gate.armed = true;
+        return false;
+      });
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.enabled?.newValue === false) gate.paused = true;
+      });
+    })()`);
+    await playground.getByTestId('copy-writetext').click();
+    await expect.poll(() => serviceWorker.evaluate('globalThis.pauseGate.held')).toBe(true);
+    expect(await readClipboard()).toBe(ARTICLE);
+    await setSettings({ enabled: false });
+    await expect.poll(() => serviceWorker.evaluate('globalThis.pauseGate.paused')).toBe(true);
+    await serviceWorker.evaluate('globalThis.pauseGate.release()');
+    await waitForWatcher(false);
+    expect(await readClipboard()).toBe(ARTICLE);
+  });
+
   test('Undo restores the original link, and it stays restored', async ({ playground, readClipboard }) => {
     await playground.getByTestId('copy-writetext').click();
     await waitForClipboard(readClipboard, (text) => text !== ARTICLE);

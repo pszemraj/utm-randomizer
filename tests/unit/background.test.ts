@@ -49,6 +49,8 @@ async function startBackground(settings: Partial<Settings> = {}) {
   const sessionSet = vi.fn().mockResolvedValue(undefined);
   const onInstalled = vi.fn<(listener: () => void) => void>();
   const onMessage = vi.fn<(listener: MessageListener) => void>();
+  const onStorageChanged =
+    vi.fn<(listener: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void) => void>();
   const onClicked = vi.fn<(listener: (info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) => void) => void>();
   const menuCreate = vi.fn();
   vi.stubGlobal('chrome', {
@@ -67,6 +69,7 @@ async function startBackground(settings: Partial<Settings> = {}) {
     commands: { onCommand: { addListener: vi.fn() } },
     offscreen: { createDocument, closeDocument, Reason: { CLIPBOARD: 'CLIPBOARD' } },
     storage: {
+      onChanged: { addListener: onStorageChanged },
       local: {
         get: vi.fn().mockResolvedValue({ totalCount: 0 }),
         set: localSet,
@@ -82,9 +85,10 @@ async function startBackground(settings: Partial<Settings> = {}) {
   await vi.waitFor(() => expect(getContexts).toHaveBeenCalled());
   const listener = onMessage.mock.calls[0]?.[0];
   const settingsListener = vi.mocked(watchSettings).mock.calls[0]?.[0];
+  const storageListener = onStorageChanged.mock.calls[0]?.[0];
   const installListener = onInstalled.mock.calls[0]?.[0];
   const menuListener = onClicked.mock.calls[0]?.[0];
-  if (!listener || !settingsListener || !installListener || !menuListener)
+  if (!listener || !settingsListener || !storageListener || !installListener || !menuListener)
     throw new Error('listeners were not registered');
   return {
     getContexts,
@@ -102,6 +106,7 @@ async function startBackground(settings: Partial<Settings> = {}) {
     installListener,
     menuListener,
     changeSettings(next: Partial<Settings>) {
+      storageListener(Object.fromEntries(Object.entries(next).map(([key, newValue]) => [key, { newValue }])), 'local');
       const changed = { ...DEFAULT_SETTINGS, ...next };
       vi.mocked(loadSettings).mockResolvedValue(changed);
       settingsListener(changed);
@@ -268,6 +273,59 @@ it('forwards page reconciliation with fresh settings and the originating frame U
     tabId: 7,
   });
 });
+
+for (const boundary of ['coordinator lookup', 'key lookup'] as const) {
+  it.each(['Pause', 'mode change', 'Pause and resume'] as const)(
+    `cancels automatic reconciliation after %s during ${boundary}`,
+    async (change) => {
+      const worker = await startBackground({ enabled: true, watchClipboard: false, mode: 'strip' });
+      await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
+      let release: (() => void) | undefined;
+      if (boundary === 'coordinator lookup') {
+        worker.getContexts.mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              release = () => resolve([{}]);
+            }),
+        );
+      } else {
+        vi.mocked(createOrReadSecret).mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              release = () => resolve('test-key');
+            }),
+        );
+      }
+      const response = vi.fn();
+      worker.listener(
+        {
+          type: 'reconcile-clipboard',
+          pageCopy: true,
+          text: 'https://example.com/?utm_source=email',
+          embedded: false,
+          types: ['text/plain'],
+          epoch: EPOCH,
+        },
+        contentSender,
+        response,
+      );
+      await vi.waitFor(() => expect(release).toBeDefined());
+      const settings = { enabled: true, watchClipboard: false, mode: 'strip' as const };
+      worker.changeSettings(
+        change === 'mode change' ? { ...settings, mode: 'silly' } : { ...settings, enabled: false },
+      );
+      if (change === 'Pause and resume') worker.changeSettings(settings);
+      release?.();
+      await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
+      expect(worker.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'offscreen-reconcile' }));
+      // Explicit Copy remains available after the same setting changes.
+      const copied = vi.fn();
+      worker.listener({ type: 'copy-clipboard', text: 'explicit copy' }, popupSender, copied);
+      await vi.waitFor(() => expect(copied).toHaveBeenCalledWith({ ok: true }));
+      expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-copy', text: 'explicit copy' });
+    },
+  );
+}
 
 it('targets offscreen reconciliation notifications and honors notification settings', async () => {
   const worker = await startBackground({ notify: false });

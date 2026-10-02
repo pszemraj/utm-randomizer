@@ -45,6 +45,7 @@
 - Post-copy writes share an offscreen coordinator and retain originating-frame context for relative text and HTML links; newer copies, Undo, and settings changes invalidate older asynchronous reads.
 - New trusted intent advances the shared clipboard generation so older page contexts cannot rewrite newer identical copies using stale link rules.
 - Clipboard generation tokens stay distinct across coordinator recreation, preventing pause/resume from accepting an older in-flight request.
+- Settings changes cancel automatic reconciliation awaiting coordinator or key lookup in the worker, preventing delayed writes after Pause.
 - Automatic writes inspect the complete native format inventory and preserve images, files, and custom payloads. Whole-clipboard cleaning waits for a focused page when that inspection is unavailable.
 - Undo suppression survives cross-frame work and service-worker restart, then expires when different contents or formats are observed. Lost acknowledgements report restoration failure.
 - Synthetic copy, gesture, and Undo events cannot authorize clipboard writes; malformed runtime messages and forged control senders are rejected.
