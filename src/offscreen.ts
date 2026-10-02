@@ -29,7 +29,7 @@ let ignored: ClipboardSnapshot | null = null;
 let candidate: ClipboardSnapshot | null = null;
 let inspectionPending = false;
 /** Invalidates native reads started before newer page intent, Undo, explicit copies, or reconfiguration. */
-let epoch = 0;
+let epoch: string = crypto.randomUUID();
 const loopGuard = createLoopGuard(() => Date.now());
 
 /** The editable element used for clipboard operations. */
@@ -114,7 +114,7 @@ function reconcile(
   embedded: boolean,
   options: RewriteOptions,
   types: string[],
-  readEpoch: number,
+  readEpoch: string,
   tabId?: number,
   baseline?: string,
 ): boolean {
@@ -203,7 +203,7 @@ function check(): void {
 
 /** Starts or stops polling while retaining Undo suppression across worker reconfiguration. */
 function configure(next: WatchConfig | null): void {
-  epoch += 1;
+  epoch = crypto.randomUUID();
   config = next;
   window.clearInterval(timer);
   window.clearTimeout(graceTimer);
@@ -217,7 +217,7 @@ function configure(next: WatchConfig | null): void {
 }
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, sender, sendResponse: (response: { ok: boolean; epoch?: number }) => void) => {
+  (message: unknown, sender, sendResponse: (response: { ok: boolean; epoch?: string }) => void) => {
     if (
       typeof message !== 'object' ||
       message === null ||
@@ -239,12 +239,12 @@ chrome.runtime.onMessage.addListener(
     }
     switch (message.type) {
       case 'offscreen-copy':
-        epoch += 1;
+        epoch = crypto.randomUUID();
         candidate = null;
         sendResponse({ ok: writeClipboard(plainText(message.text)) });
         break;
       case 'offscreen-restore': {
-        epoch += 1;
+        epoch = crypto.randomUUID();
         const restored = plainText(message.text);
         ignored = restored;
         candidate = null;
@@ -269,7 +269,7 @@ chrome.runtime.onMessage.addListener(
         sendResponse({ ok: true, epoch });
         break;
       case 'offscreen-intent':
-        epoch += 1;
+        epoch = crypto.randomUUID();
         sendResponse({ ok: true, epoch });
         break;
       case 'watch-config':

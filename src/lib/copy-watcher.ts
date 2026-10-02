@@ -33,16 +33,16 @@ export interface WatcherDeps {
    */
   restore: (text: string) => Promise<void>;
   /** Current coordinator generation for whole-clipboard inspection without page intent. */
-  beginRead: () => Promise<number>;
+  beginRead: () => Promise<string>;
   /** Advances and returns the shared generation that binds reads to this trusted page intent. */
-  invalidateReads: () => Promise<number>;
+  invalidateReads: () => Promise<string>;
   /** Ask the offscreen writer to reconcile this text with the current, format-aware clipboard snapshot. */
   reconcile: (
     text: string,
     embedded: boolean,
     baseline: string | undefined,
     types: readonly string[],
-    epoch: number,
+    epoch: string,
     pageCopy: boolean,
   ) => Promise<void>;
   /** Called after each rewrite, to show a notification and count it. */
@@ -160,7 +160,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   let generation = 0;
   let restoring = false;
   let sweep: AbortController | null = null;
-  let pendingIntent: Promise<number> | null = null;
+  let pendingIntent: Promise<string> | null = null;
   const listeners = new AbortController();
 
   /** Current rewrite options, or null while replacement values cannot be computed yet. */
@@ -289,7 +289,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       return false;
     }
     let snapshot: ClipboardSnapshot | null;
-    let epoch: number;
+    let epoch: string;
     try {
       epoch = await (pageCopy && pendingIntent ? pendingIntent : deps.beginRead());
       if (generation !== job || listeners.signal.aborted || !active()) return false;

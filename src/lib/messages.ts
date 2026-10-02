@@ -58,7 +58,7 @@ export interface ReconcileClipboardMessage {
   /** Complete MIME inventory observed through the async Clipboard API. */
   types: string[];
   /** Coordinator generation captured before the clipboard read. */
-  epoch: number;
+  epoch: string;
   baseline?: string;
 }
 
@@ -80,7 +80,7 @@ export interface OffscreenReconcileMessage {
   text: string;
   embedded: boolean;
   types: string[];
-  epoch: number;
+  epoch: string;
   baseline?: string;
   /** Originating frame URL for relative page copies; absent for whole-clipboard inspection. */
   baseUrl?: string;
@@ -181,7 +181,7 @@ function isTypes(value: unknown): value is string[] {
   );
 }
 
-/** Whether a tab id or clipboard generation is a nonnegative safe integer. */
+/** Whether a tab id is a nonnegative safe integer. */
 function isNonnegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
@@ -205,6 +205,11 @@ function isWatchConfig(value: unknown): value is WatchConfig {
 /** Validates a notification and its optional Undo text. */
 function isToast(value: unknown): value is ToastPayload {
   return isRecord(value) && isText(value.message) && (value.undoText === undefined || isText(value.undoText));
+}
+
+/** Whether a clipboard generation is an opaque UUID token from the coordinator. */
+export function isClipboardEpoch(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 /** Validates every known runtime message payload before a listener acts on it. */
@@ -237,7 +242,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
         isText(value.text) &&
         typeof value.embedded === 'boolean' &&
         isTypes(value.types) &&
-        isNonnegativeInteger(value.epoch) &&
+        isClipboardEpoch(value.epoch) &&
         (value.baseline === undefined || isText(value.baseline)) &&
         (value.baseUrl === undefined || isText(value.baseUrl)) &&
         isWatchConfig(value.config) &&
@@ -249,7 +254,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
         typeof value.embedded === 'boolean' &&
         typeof value.pageCopy === 'boolean' &&
         isTypes(value.types) &&
-        isNonnegativeInteger(value.epoch) &&
+        isClipboardEpoch(value.epoch) &&
         (value.baseline === undefined || isText(value.baseline))
       );
     case 'offscreen-copy':

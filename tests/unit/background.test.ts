@@ -22,6 +22,7 @@ type MessageListener = (
   respond: (response: { ok: boolean; secret?: string }) => void,
 ) => boolean;
 
+const EPOCH = '00000000-0000-4000-8000-000000000001';
 const extensionId = 'test-extension';
 const popupSender = { id: extensionId, url: `chrome-extension://${extensionId}/popup.html` };
 const offscreenSender = { id: extensionId, url: `chrome-extension://${extensionId}/offscreen.html` };
@@ -173,7 +174,14 @@ it.each([
   { type: 'count', urls: '1000' },
   { type: 'count', urls: -1 },
   { type: 'rewritten', urls: 1.5 },
-  { type: 'reconcile-clipboard', pageCopy: true, text: 5, embedded: true, types: ['text/plain'], epoch: 0 },
+  {
+    type: 'reconcile-clipboard',
+    pageCopy: true,
+    text: 5,
+    embedded: true,
+    types: ['text/plain'],
+    epoch: EPOCH,
+  },
   { type: 'restore-clipboard' },
 ])('rejects malformed commands without side effects %#', async (message) => {
   const worker = await startBackground();
@@ -237,7 +245,7 @@ it('forwards page reconciliation with fresh settings and the originating frame U
       text: 'current',
       embedded: true,
       types: ['text/plain'],
-      epoch: 0,
+      epoch: EPOCH,
       baseline: 'before',
     },
     {
@@ -253,7 +261,7 @@ it('forwards page reconciliation with fresh settings and the originating frame U
     text: 'current',
     embedded: true,
     types: ['text/plain'],
-    epoch: 0,
+    epoch: EPOCH,
     baseline: 'before',
     baseUrl: 'https://www.youtube.com/frame',
     config: { mode: 'strip', key: 'test-key' },
@@ -335,7 +343,7 @@ it('requests native clipboard inspection from the active page without blocking n
             text: 'current',
             embedded: false,
             types: ['text/plain'],
-            epoch: 0,
+            epoch: EPOCH,
           },
           { ...contentSender, tab: { id: 9 } as chrome.tabs.Tab },
           resolve,
@@ -352,7 +360,7 @@ it('requests native clipboard inspection from the active page without blocking n
     text: 'current',
     embedded: false,
     types: ['text/plain'],
-    epoch: 0,
+    epoch: EPOCH,
     baseline: undefined,
     baseUrl: undefined,
     config: { mode: 'decoy', key: 'test-key' },
@@ -393,7 +401,7 @@ it('rejects clipboard inspection from a content script or while global watching 
 it('returns the persistent coordinator generation before a page reads the clipboard', async () => {
   const worker = await startBackground({ enabled: true, watchClipboard: false });
   await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
-  for (const epoch of [12, 13]) {
+  for (const epoch of [EPOCH, '00000000-0000-4000-8000-000000000002']) {
     worker.sendMessage.mockResolvedValueOnce({ ok: true, epoch });
     const response = vi.fn();
     expect(worker.listener({ type: 'clipboard-epoch' }, contentSender, response)).toBe(true);
@@ -408,9 +416,9 @@ it('forwards trusted content intent with whole-clipboard polling disabled', asyn
   const worker = await startBackground({ enabled: true, watchClipboard: false });
   await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
   const response = vi.fn();
-  worker.sendMessage.mockResolvedValueOnce({ ok: true, epoch: 3 });
+  worker.sendMessage.mockResolvedValueOnce({ ok: true, epoch: EPOCH });
   expect(worker.listener({ type: 'clipboard-intent' }, contentSender, response)).toBe(true);
-  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true, epoch: 3 }));
+  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true, epoch: EPOCH }));
   expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-intent' });
   expect(worker.closeDocument).not.toHaveBeenCalled();
 });
@@ -426,9 +434,11 @@ it('does not create a coordinator for automatic intent while paused', async () =
 
 it.each([
   undefined,
-  { ok: false, epoch: 0 },
+  { ok: false, epoch: EPOCH },
   { ok: true },
   { ok: true, epoch: '0' },
+  { ok: true, epoch: '' },
+  { ok: true, epoch: 0 },
   { ok: true, epoch: -1 },
   { ok: true, epoch: 1.5 },
   { ok: true, epoch: Number.MAX_SAFE_INTEGER + 1 },

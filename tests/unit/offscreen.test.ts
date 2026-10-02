@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { ExtensionMessage } from '../../src/lib/messages';
 import { rewriteUrl } from '../../src/lib/rewrite';
 
+const EPOCH = '00000000-0000-4000-8000-000000000001';
 const TRACKED = 'https://example.com/page?utm_source=newsletter';
 const CLEAN = 'https://example.com/page';
 const CONFIG = { mode: 'strip' as const, key: 'test' };
@@ -37,7 +38,7 @@ async function start() {
     | ((
         message: unknown,
         sender: chrome.runtime.MessageSender,
-        respond: (response: { ok: boolean; epoch?: number }) => void,
+        respond: (response: { ok: boolean; epoch?: string }) => void,
       ) => void)
     | undefined;
   const inspector = { enabled: true };
@@ -46,9 +47,9 @@ async function start() {
     if (!inspector.enabled) return Promise.resolve({ ok: false });
     const types = clipboard.nativeTypes ?? clipboard.types;
     if (types.some((type) => type !== 'text/plain' && type !== 'text/html')) return Promise.resolve({ ok: true });
-    let epoch = -1;
+    let epoch = '';
     onMessage?.({ type: 'offscreen-epoch' }, WORKER, (value) => {
-      epoch = value.epoch ?? -1;
+      epoch = value.epoch ?? '';
     });
     let response = { ok: false };
     onMessage?.(
@@ -105,9 +106,9 @@ async function start() {
   };
   message({ type: 'watch-config', config: CONFIG });
   const readEpoch = () => {
-    let epoch = -1;
+    let epoch = '';
     listener({ type: 'offscreen-epoch' }, WORKER, (response) => {
-      epoch = response.epoch ?? -1;
+      epoch = response.epoch ?? '';
     });
     return epoch;
   };
@@ -281,8 +282,8 @@ it('rejects an older page context after newer intent copies identical functional
   const text = '/watch?v=1&si=abcdefgh';
   clipboard.text = text;
   const oldEpoch = readEpoch();
-  expect(message({ type: 'offscreen-intent' })).toHaveBeenCalledWith({ ok: true, epoch: oldEpoch + 1 });
-  expect(readEpoch()).toBeGreaterThan(oldEpoch);
+  expect(message({ type: 'offscreen-intent' })).toHaveBeenCalledWith({ ok: true, epoch: readEpoch() });
+  expect(readEpoch()).not.toBe(oldEpoch);
   message({
     type: 'offscreen-reconcile',
     text,
@@ -385,7 +386,7 @@ it('invalidates pending reads on worker reconfiguration while retaining Undo sup
   const staleEpoch = readEpoch();
   message({ type: 'watch-config', config: null });
   message({ type: 'watch-config', config: CONFIG });
-  expect(readEpoch()).toBeGreaterThan(staleEpoch);
+  expect(readEpoch()).not.toBe(staleEpoch);
   writes.mockClear();
   message({
     type: 'offscreen-reconcile',
@@ -524,8 +525,21 @@ it.each([
   { type: 'offscreen-copy' },
   { type: 'offscreen-restore', text: 1 },
   { type: 'watch-config', config: { mode: 'invalid', key: 'test' } },
-  { type: 'offscreen-reconcile', epoch: 1, types: ['text/plain'], text: TRACKED, embedded: 'true', config: CONFIG },
-  { type: 'offscreen-reconcile', epoch: 1, text: TRACKED, embedded: true, config: CONFIG },
+  {
+    type: 'offscreen-reconcile',
+    epoch: EPOCH,
+    types: ['text/plain'],
+    text: TRACKED,
+    embedded: 'true',
+    config: CONFIG,
+  },
+  {
+    type: 'offscreen-reconcile',
+    epoch: EPOCH,
+    text: TRACKED,
+    embedded: true,
+    config: CONFIG,
+  },
   { type: 'offscreen-reconcile', types: ['text/plain'], text: TRACKED, embedded: true, config: CONFIG },
 ])('rejects malformed control messages without touching the clipboard ($type)', async (payload) => {
   const { clipboard, writes, message } = await start();
@@ -544,4 +558,36 @@ it('rejects tab-origin control messages and leaves unrelated requests unanswered
   ).not.toHaveBeenCalled();
   expect(clipboard.text).toBe('baseline');
   expect(writes).not.toHaveBeenCalled();
+});
+
+it('rejects a delayed page reconciliation after the coordinator is recreated', async () => {
+  const text = '/watch?v=1&si=abcdefgh';
+  const older = await start();
+  older.message({ type: 'offscreen-intent' });
+  older.message({ type: 'offscreen-intent' });
+  const delayed = {
+    type: 'offscreen-reconcile',
+    text,
+    embedded: false,
+    types: ['text/plain'],
+    epoch: older.readEpoch(),
+    config: CONFIG,
+    baseUrl: 'https://www.youtube.com/feed',
+  };
+  // Closing the offscreen document discards its globals; the new one repeats the same actions.
+  vi.clearAllTimers();
+  vi.resetModules();
+  const newer = await start();
+  newer.message({ type: 'offscreen-intent' });
+  newer.message({ type: 'offscreen-intent' });
+  newer.clipboard.text = text;
+  expect(newer.readEpoch()).not.toBe(delayed.epoch);
+  newer.message({ ...delayed, epoch: newer.readEpoch(), baseUrl: 'https://example.com/control' });
+  expect(newer.clipboard.text).toBe(text);
+  expect(newer.message(delayed)).toHaveBeenCalledWith({ ok: true });
+  expect(newer.clipboard.text).toBe(text);
+  expect(newer.writes).not.toHaveBeenCalled();
+  newer.message({ ...delayed, epoch: newer.readEpoch() });
+  expect(newer.clipboard.text).toBe('/watch?v=1');
+  expect(newer.writes).toHaveBeenCalledOnce();
 });

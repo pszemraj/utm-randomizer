@@ -181,38 +181,45 @@ test.describe('copying on web pages', () => {
     expect(html).toContain('<b>');
   });
 
-  test('rejects an older page reconciliation after a newer copy with identical text', async ({
-    context,
-    extensionId,
-    setSettings,
-    waitForWatcher,
-    readClipboard,
-    writeClipboardExternally,
-  }) => {
-    await setSettings({ mode: 'strip', watchClipboard: false });
-    await waitForWatcher(false);
-    await context.route('https://www.youtube.com/**', (route) =>
-      route.fulfill({ contentType: 'text/html', body: '<button id="copy">Copy link</button>' }),
-    );
-    await context.route('https://example.com/**', (route) =>
-      route.fulfill({ contentType: 'text/html', body: '<textarea id="copy-field"></textarea>' }),
-    );
-    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://www.youtube.com' });
-    const older = await context.newPage();
-    await older.goto('https://www.youtube.com/feed');
-    const newer = await context.newPage();
-    await newer.goto('https://example.com/control');
-    const session = await context.newCDPSession(older);
-    const worlds: number[] = [];
-    session.on('Runtime.executionContextCreated', ({ context: world }: { context: { id: number; origin: string } }) => {
-      if (world.origin === `chrome-extension://${extensionId}`) worlds.push(world.id);
-    });
-    await session.send('Runtime.enable');
-    const contextId = worlds[0];
-    expect(contextId).toBeDefined();
-    await session.send('Runtime.evaluate', {
-      contextId,
-      expression: `(() => {
+  for (const recreate of [false, true]) {
+    test(`rejects an older page reconciliation after a newer copy with identical text${recreate ? ' across pause/resume' : ''}`, async ({
+      context,
+      extensionId,
+      setSettings,
+      waitForWatcher,
+      readClipboard,
+      writeClipboardExternally,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false });
+      await waitForWatcher(false);
+      await context.route('https://www.youtube.com/**', (route) =>
+        route.fulfill({ contentType: 'text/html', body: '<button id="copy">Copy link</button>' }),
+      );
+      await context.route('https://example.com/**', (route) =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: '<textarea id="copy-field"></textarea><button id="copy">Copy link</button>',
+        }),
+      );
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://www.youtube.com' });
+      const older = await context.newPage();
+      await older.goto('https://www.youtube.com/feed');
+      const newer = await context.newPage();
+      await newer.goto('https://example.com/control');
+      const session = await context.newCDPSession(older);
+      const worlds: number[] = [];
+      session.on(
+        'Runtime.executionContextCreated',
+        ({ context: world }: { context: { id: number; origin: string } }) => {
+          if (world.origin === `chrome-extension://${extensionId}`) worlds.push(world.id);
+        },
+      );
+      await session.send('Runtime.enable');
+      const contextId = worlds[0];
+      expect(contextId).toBeDefined();
+      await session.send('Runtime.evaluate', {
+        contextId,
+        expression: `(() => {
         const original = chrome.runtime.sendMessage.bind(chrome.runtime);
         globalThis.heldReconciles = [];
         chrome.runtime.sendMessage = (...args) => {
@@ -224,41 +231,64 @@ test.describe('copying on web pages', () => {
           return original(...args);
         };
       })()`,
+      });
+      const relative = '/watch?v=1&si=abcdefgh';
+      await writeClipboardExternally('before the cross-context copies');
+      await older.evaluate((text) => {
+        const button = document.querySelector<HTMLButtonElement>('#copy');
+        if (button) button.onclick = () => void navigator.clipboard.writeText(text);
+      }, relative);
+      await older.bringToFront();
+      await older.locator('#copy').click();
+      await expect
+        .poll(async () => {
+          const { result } = await session.send('Runtime.evaluate', {
+            contextId,
+            expression: 'globalThis.heldReconciles.length',
+            returnByValue: true,
+          });
+          return Number(result.value);
+        })
+        .toBeGreaterThan(0);
+      if (recreate) {
+        await setSettings({ enabled: false });
+        await waitForWatcher(false);
+        await setSettings({ enabled: true });
+        await waitForWatcher(false);
+      }
+      await newer.bringToFront();
+      if (recreate) {
+        await newer.evaluate((text) => {
+          const button = document.querySelector<HTMLButtonElement>('#copy');
+          if (button)
+            button.onclick = () =>
+              void navigator.clipboard.writeText(text).then(() => {
+                button.dataset.copied = String(Number(button.dataset.copied ?? 0) + 1);
+              });
+        }, relative);
+        // Two ordinary gestures reused the old numeric generation after coordinator recreation.
+        for (const count of [1, 2]) {
+          await newer.locator('#copy').click();
+          await expect(newer.locator('#copy')).toHaveAttribute('data-copied', String(count));
+        }
+      } else {
+        const field = newer.locator('#copy-field');
+        await field.fill(relative);
+        await field.press('ControlOrMeta+A');
+        await field.press('ControlOrMeta+C');
+      }
+      expect(await expectStable(readClipboard, 600)).toBe(relative);
+      await session.send('Runtime.evaluate', {
+        contextId,
+        expression: 'Promise.all(globalThis.heldReconciles.map(release => release()))',
+        awaitPromise: true,
+      });
+      expect(await expectStable(readClipboard, 600)).toBe(relative);
+      await session.detach();
+      await older.close();
+      await newer.close();
     });
-    const relative = '/watch?v=1&si=abcdefgh';
-    await writeClipboardExternally('before the cross-context copies');
-    await older.evaluate((text) => {
-      const button = document.querySelector<HTMLButtonElement>('#copy');
-      if (button) button.onclick = () => void navigator.clipboard.writeText(text);
-    }, relative);
-    await older.bringToFront();
-    await older.locator('#copy').click();
-    await expect
-      .poll(async () => {
-        const { result } = await session.send('Runtime.evaluate', {
-          contextId,
-          expression: 'globalThis.heldReconciles.length',
-          returnByValue: true,
-        });
-        return Number(result.value);
-      })
-      .toBeGreaterThan(0);
-    await newer.bringToFront();
-    const field = newer.locator('#copy-field');
-    await field.fill(relative);
-    await field.press('ControlOrMeta+A');
-    await field.press('ControlOrMeta+C');
-    expect(await expectStable(readClipboard, 600)).toBe(relative);
-    await session.send('Runtime.evaluate', {
-      contextId,
-      expression: 'Promise.all(globalThis.heldReconciles.map(release => release()))',
-      awaitPromise: true,
-    });
-    expect(await expectStable(readClipboard, 600)).toBe(relative);
-    await session.detach();
-    await older.close();
-    await newer.close();
-  });
+  }
 
   test('keeps polling when a page copy invalidates the native baseline read', async ({
     playground,

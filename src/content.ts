@@ -1,6 +1,7 @@
 import { startAddressBarCleaner, type AddressBarCleaner } from './lib/address-bar';
 import { startCopyWatcher, type WatchedClipboard } from './lib/copy-watcher';
 import {
+  isClipboardEpoch,
   isExtensionMessage,
   isWorkerSender,
   sendNotification,
@@ -103,7 +104,7 @@ const watcher = startCopyWatcher({
 });
 
 /** Obtains the generation acknowledged for a new trusted intent or a whole-clipboard inspection. */
-async function clipboardEpoch(type: 'clipboard-intent' | 'clipboard-epoch'): Promise<number> {
+async function clipboardEpoch(type: 'clipboard-intent' | 'clipboard-epoch'): Promise<string> {
   const response: unknown = await chrome.runtime.sendMessage({ type } satisfies ExtensionMessage);
   if (!(
     typeof response === 'object' &&
@@ -111,9 +112,7 @@ async function clipboardEpoch(type: 'clipboard-intent' | 'clipboard-epoch'): Pro
     'ok' in response &&
     response.ok === true &&
     'epoch' in response &&
-    typeof response.epoch === 'number' &&
-    Number.isSafeInteger(response.epoch) &&
-    response.epoch >= 0
+    isClipboardEpoch(response.epoch)
   )) {
     throw new Error('Clipboard coordinator did not acknowledge the read');
   }

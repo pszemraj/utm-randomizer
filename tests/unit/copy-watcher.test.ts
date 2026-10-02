@@ -9,6 +9,7 @@ import {
 } from '../../src/lib/copy-watcher';
 import { DEFAULT_SETTINGS, type Settings } from '../../src/lib/settings';
 
+const EPOCH = '00000000-0000-4000-8000-000000000001';
 const TRACKED = 'https://example.com/page?id=7&utm_source=newsletter&fbclid=IwAR3abc';
 const CLEAN = 'https://example.com/page?id=7';
 
@@ -76,8 +77,8 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
   key = 'test-key';
   reconcile = vi.fn<WatcherDeps['reconcile']>().mockResolvedValue(undefined);
   restore = vi.fn<WatcherDeps['restore']>().mockResolvedValue(undefined);
-  invalidateReads = vi.fn<WatcherDeps['invalidateReads']>().mockResolvedValue(0);
-  beginRead = vi.fn<WatcherDeps['beginRead']>().mockResolvedValue(0);
+  invalidateReads = vi.fn<WatcherDeps['invalidateReads']>().mockResolvedValue(EPOCH);
+  beginRead = vi.fn<WatcherDeps['beginRead']>().mockResolvedValue(EPOCH);
   watcher = startCopyWatcher({
     clipboard,
     reconcile,
@@ -167,7 +168,7 @@ describe('copy events', () => {
     clipboard.html = anchor.outerHTML;
     clipboard.change(TRACKED, ['text/plain', 'text/html']);
     await vi.advanceTimersByTimeAsync(500);
-    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain', 'text/html'], 0, true);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain', 'text/html'], EPOCH, true);
     expect(clipboard.html).toBe(anchor.outerHTML);
   });
 
@@ -329,10 +330,10 @@ describe('clipboard reconciliation', () => {
   it('binds page reads to their acknowledged intent instead of adopting a newer shared generation', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard, { watchClipboard: false });
-    let acknowledge!: (epoch: number) => void;
+    let acknowledge!: (epoch: string) => void;
     invalidateReads.mockImplementationOnce(
       () =>
-        new Promise<number>((resolve) => {
+        new Promise<string>((resolve) => {
           acknowledge = resolve;
         }),
     );
@@ -341,10 +342,17 @@ describe('clipboard reconciliation', () => {
     await flush();
     expect(invalidateReads).toHaveBeenCalledOnce();
     expect(beginRead).not.toHaveBeenCalled();
-    beginRead.mockResolvedValue(5);
-    acknowledge(4);
+    beginRead.mockResolvedValue('00000000-0000-4000-8000-000000000005');
+    acknowledge('00000000-0000-4000-8000-000000000004');
     await flush();
-    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], 4, true);
+    expect(reconcile).toHaveBeenCalledWith(
+      TRACKED,
+      true,
+      undefined,
+      ['text/plain'],
+      '00000000-0000-4000-8000-000000000004',
+      true,
+    );
     expect(beginRead).not.toHaveBeenCalled();
   });
 
@@ -391,7 +399,7 @@ describe('clipboard reconciliation', () => {
     interact();
     clipboard.change(TRACKED);
     await flush();
-    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], 0, true);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], EPOCH, true);
     expect(clipboard.writes).toEqual([]);
     expect(rewrites).toEqual([]);
   });
@@ -414,7 +422,7 @@ describe('clipboard reconciliation', () => {
     interact();
     clipboard.change('A product', ['text/plain', 'text/html']);
     await flush();
-    expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain', 'text/html'], 0, true);
+    expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain', 'text/html'], EPOCH, true);
   });
 
   it('reconciles changed HTML even when plain text matches a synchronous rewrite', async () => {
@@ -430,10 +438,10 @@ describe('clipboard reconciliation', () => {
     clipboard.html = '<a href="https://example.com/other?utm_source=email">New target</a>';
     clipboard.change(CLEAN, ['text/plain', 'text/html']);
     await flush();
-    expect(reconcile).toHaveBeenCalledWith(CLEAN, false, undefined, ['text/plain', 'text/html'], 0, true);
+    expect(reconcile).toHaveBeenCalledWith(CLEAN, false, undefined, ['text/plain', 'text/html'], EPOCH, true);
     reconcile.mockClear();
     await current.inspect();
-    expect(reconcile).toHaveBeenCalledWith(CLEAN, true, undefined, ['text/plain', 'text/html'], 0, false);
+    expect(reconcile).toHaveBeenCalledWith(CLEAN, true, undefined, ['text/plain', 'text/html'], EPOCH, false);
   });
 
   it('rejects synthetic copy, gesture and clipboard-change events', async () => {
@@ -471,7 +479,7 @@ describe('clipboard reconciliation', () => {
     await flush();
     old.resolve(TRACKED);
     await flush();
-    expect(reconcile.mock.calls).toEqual([['newer contents', true, undefined, ['text/plain'], 0, true]]);
+    expect(reconcile.mock.calls).toEqual([['newer contents', true, undefined, ['text/plain'], EPOCH, true]]);
   });
 
   it.each(['Undo', 'stop', 'settings', 'new intent'])('invalidates a pending read on %s', async (action) => {
@@ -552,7 +560,7 @@ describe('gesture reconciliation', () => {
     expect(beforeOverwrite).toBe(CLEAN);
     expect(clipboard.text).toBe(TRACKED);
     await vi.advanceTimersByTimeAsync(500);
-    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain'], 0, true);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain'], EPOCH, true);
   });
 
   it('compares HTML as well as text with the pre-gesture baseline', async () => {
@@ -572,7 +580,7 @@ describe('gesture reconciliation', () => {
     await flush();
     clipboard.html = '<a href="https://example.com/new?utm_source=email">A product</a>';
     await vi.advanceTimersByTimeAsync(3000);
-    expect(reconcile).toHaveBeenCalledWith('A product', false, 'A product', ['text/plain', 'text/html'], 0, true);
+    expect(reconcile).toHaveBeenCalledWith('A product', false, 'A product', ['text/plain', 'text/html'], EPOCH, true);
   });
 
   it.each([true, false])('reconciles a trusted copy whose propagation stopped (clipboardchange %s)', async (modern) => {
@@ -586,7 +594,7 @@ describe('gesture reconciliation', () => {
     field.dispatchEvent(copyEvent());
     clipboard.text = 'A product';
     await vi.advanceTimersByTimeAsync(500);
-    expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain'], 0, true);
+    expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain'], EPOCH, true);
   });
 
   it('never starts reconciliation from a synthetic click', async () => {
@@ -609,7 +617,7 @@ describe('gesture reconciliation', () => {
     document.getElementById('copy')?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
     clipboard.text = TRACKED;
     await vi.advanceTimersByTimeAsync(3000);
-    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, 'previous contents', ['text/plain'], 0, true);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, 'previous contents', ['text/plain'], EPOCH, true);
     expect(clipboard.writes).toEqual([]);
   });
 
@@ -632,7 +640,7 @@ describe('gesture reconciliation', () => {
     clipboard.text = TRACKED;
     await vi.advanceTimersByTimeAsync(3000);
     if (changed) {
-      expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain'], 0, true);
+      expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain'], EPOCH, true);
     } else {
       expect(reconcile).not.toHaveBeenCalled();
     }

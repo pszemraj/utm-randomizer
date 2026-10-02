@@ -1,4 +1,5 @@
 import {
+  isClipboardEpoch,
   isExtensionMessage,
   isWorkerSender,
   type ExtensionMessage,
@@ -155,7 +156,7 @@ function reconcileClipboard(
   text: string,
   embedded: boolean,
   types: string[],
-  epoch: number,
+  epoch: string,
   tabId: number | undefined,
   baseline?: string,
   baseUrl?: string,
@@ -181,7 +182,7 @@ function reconcileClipboard(
 }
 
 /** Captures the coordinator generation, advancing it for newer automatic page intent. */
-function clipboardEpoch(intent = false): Promise<number> {
+function clipboardEpoch(intent = false): Promise<string> {
   return withOffscreen(async () => {
     if (intent && !(await loadSettings()).enabled) throw new Error('Automatic cleaning is paused');
     await ensureOffscreen();
@@ -193,9 +194,7 @@ function clipboardEpoch(intent = false): Promise<number> {
       !('ok' in response) ||
       response.ok !== true ||
       !('epoch' in response) ||
-      typeof response.epoch !== 'number' ||
-      !Number.isSafeInteger(response.epoch) ||
-      response.epoch < 0
+      !isClipboardEpoch(response.epoch)
     ) {
       throw new Error('Clipboard generation was not acknowledged');
     }
@@ -349,7 +348,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, sender, sendResponse: (response: { ok: boolean; secret?: string; epoch?: number }) => void) => {
+  (message: unknown, sender, sendResponse: (response: { ok: boolean; secret?: string; epoch?: string }) => void) => {
     if (!isExtensionMessage(message)) {
       // Offscreen controls have their own receiver; do not race its acknowledgement.
       if (

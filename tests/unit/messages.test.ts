@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isExtensionMessage, isWorkerSender } from '../../src/lib/messages';
 
+const EPOCH = '00000000-0000-4000-8000-000000000001';
 const config = { mode: 'strip', key: 'test-key' };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -30,27 +31,42 @@ describe('runtime message payloads', () => {
       text: '',
       embedded: true,
       types: ['text/plain'],
-      epoch: 0,
+      epoch: EPOCH,
       baseline: 'before',
     },
-    { type: 'offscreen-reconcile', text: 'copy', embedded: false, types: ['text/plain'], epoch: 0, config, tabId: 7 },
     {
       type: 'offscreen-reconcile',
       text: 'copy',
       embedded: false,
       types: ['text/plain'],
-      epoch: 0,
+      epoch: EPOCH,
+      config,
+      tabId: 7,
+    },
+    {
+      type: 'offscreen-reconcile',
+      text: 'copy',
+      embedded: false,
+      types: ['text/plain'],
+      epoch: EPOCH,
       config,
       baseUrl: 'https://example.com/',
     },
-    { type: 'reconcile-clipboard', pageCopy: false, text: '', embedded: true, types: ['text/plain'], epoch: 0 },
+    {
+      type: 'reconcile-clipboard',
+      pageCopy: false,
+      text: '',
+      embedded: true,
+      types: ['text/plain'],
+      epoch: EPOCH,
+    },
     {
       type: 'reconcile-clipboard',
       pageCopy: true,
       text: '',
       embedded: true,
       types: ['text/plain', 'web application/custom'],
-      epoch: 0,
+      epoch: EPOCH,
     },
   ])('accepts a valid $type payload', (message) => {
     expect(isExtensionMessage(message)).toBe(true);
@@ -79,14 +95,14 @@ describe('runtime message payloads', () => {
       text: 'x'.repeat(100_001),
       embedded: true,
       types: ['text/plain'],
-      epoch: 0,
+      epoch: EPOCH,
     },
     {
       type: 'offscreen-reconcile',
       text: 'x'.repeat(100_001),
       embedded: false,
       types: ['text/plain'],
-      epoch: 0,
+      epoch: EPOCH,
       config,
     },
     { type: 'restore-clipboard', text: null },
@@ -96,29 +112,77 @@ describe('runtime message payloads', () => {
     { type: 'watch-config', config: { mode: 'strip', key: 'x'.repeat(100_001) } },
     { type: 'toast', toast: { message: 'ok', undoText: 5 } },
     { type: 'toast', toast: { message: 'x'.repeat(100_001) } },
-    { type: 'reconcile-clipboard', pageCopy: true, text: 'copy', embedded: 'true', types: ['text/plain'], epoch: 0 },
+    {
+      type: 'reconcile-clipboard',
+      pageCopy: true,
+      text: 'copy',
+      embedded: 'true',
+      types: ['text/plain'],
+      epoch: EPOCH,
+    },
     {
       type: 'reconcile-clipboard',
       pageCopy: true,
       text: 'copy',
       embedded: true,
       types: ['text/plain'],
-      epoch: 0,
+      epoch: EPOCH,
       baseline: 5,
     },
-    { type: 'offscreen-reconcile', text: 'copy', embedded: false, types: ['text/plain'], epoch: 0 },
-    { type: 'offscreen-reconcile', text: 'copy', embedded: false, types: ['text/plain'], epoch: 0, config, tabId: 1.5 },
-    { type: 'reconcile-clipboard', pageCopy: true, text: 'copy', embedded: true, epoch: 0 },
-    { type: 'reconcile-clipboard', pageCopy: true, text: 'copy', embedded: true, types: ['text/plain', 5], epoch: 0 },
-    { type: 'reconcile-clipboard', pageCopy: true, text: 'copy', embedded: true, types: ['x'.repeat(257)], epoch: 0 },
-    { type: 'reconcile-clipboard', pageCopy: true, text: 'copy', embedded: true, types: [''], epoch: 0 },
+    {
+      type: 'offscreen-reconcile',
+      text: 'copy',
+      embedded: false,
+      types: ['text/plain'],
+      epoch: EPOCH,
+    },
+    {
+      type: 'offscreen-reconcile',
+      text: 'copy',
+      embedded: false,
+      types: ['text/plain'],
+      epoch: EPOCH,
+      config,
+      tabId: 1.5,
+    },
+    {
+      type: 'reconcile-clipboard',
+      pageCopy: true,
+      text: 'copy',
+      embedded: true,
+      epoch: EPOCH,
+    },
+    {
+      type: 'reconcile-clipboard',
+      pageCopy: true,
+      text: 'copy',
+      embedded: true,
+      types: ['text/plain', 5],
+      epoch: EPOCH,
+    },
+    {
+      type: 'reconcile-clipboard',
+      pageCopy: true,
+      text: 'copy',
+      embedded: true,
+      types: ['x'.repeat(257)],
+      epoch: EPOCH,
+    },
+    {
+      type: 'reconcile-clipboard',
+      pageCopy: true,
+      text: 'copy',
+      embedded: true,
+      types: [''],
+      epoch: EPOCH,
+    },
     {
       type: 'reconcile-clipboard',
       pageCopy: true,
       text: 'copy',
       embedded: true,
       types: Array<string>(101).fill('text/plain'),
-      epoch: 0,
+      epoch: EPOCH,
     },
     { type: 'reconcile-clipboard', pageCopy: true, text: 'copy', embedded: true, types: ['text/plain'] },
     { type: 'reconcile-clipboard', pageCopy: true, text: 'copy', embedded: true, types: ['text/plain'], epoch: -1 },
@@ -132,15 +196,36 @@ describe('runtime message payloads', () => {
       epoch: Number.MAX_SAFE_INTEGER + 1,
     },
     { type: 'offscreen-reconcile', text: 'copy', embedded: true, types: ['text/plain'], config, epoch: '0' },
-    { type: 'reconcile-clipboard', text: 'copy', embedded: true, types: ['text/plain'], epoch: 0 },
-    { type: 'reconcile-clipboard', pageCopy: 'true', text: 'copy', embedded: true, types: ['text/plain'], epoch: 0 },
-    { type: 'offscreen-reconcile', text: 'copy', embedded: false, types: ['text/plain'], epoch: 0, config, baseUrl: 5 },
+    {
+      type: 'reconcile-clipboard',
+      text: 'copy',
+      embedded: true,
+      types: ['text/plain'],
+      epoch: EPOCH,
+    },
+    {
+      type: 'reconcile-clipboard',
+      pageCopy: 'true',
+      text: 'copy',
+      embedded: true,
+      types: ['text/plain'],
+      epoch: EPOCH,
+    },
     {
       type: 'offscreen-reconcile',
       text: 'copy',
       embedded: false,
       types: ['text/plain'],
-      epoch: 0,
+      epoch: EPOCH,
+      config,
+      baseUrl: 5,
+    },
+    {
+      type: 'offscreen-reconcile',
+      text: 'copy',
+      embedded: false,
+      types: ['text/plain'],
+      epoch: EPOCH,
       config,
       baseUrl: 'x'.repeat(100_001),
     },
@@ -164,3 +249,29 @@ describe('offscreen worker authorization', () => {
     expect(isWorkerSender({ id: 'test-extension', tab: { id: 7 } as chrome.tabs.Tab })).toBe(false);
   });
 });
+
+it.each([0, '', '0', EPOCH.slice(1), EPOCH.replace('4', 'g')])(
+  'rejects invalid generation tokens on both reconciliation routes %#',
+  (epoch) => {
+    expect(
+      isExtensionMessage({
+        type: 'reconcile-clipboard',
+        pageCopy: true,
+        text: 'copy',
+        embedded: false,
+        types: ['text/plain'],
+        epoch,
+      }),
+    ).toBe(false);
+    expect(
+      isExtensionMessage({
+        type: 'offscreen-reconcile',
+        text: 'copy',
+        embedded: false,
+        types: ['text/plain'],
+        config,
+        epoch,
+      }),
+    ).toBe(false);
+  },
+);
