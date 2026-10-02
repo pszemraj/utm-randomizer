@@ -2,17 +2,19 @@
 
 ## Setup
 
-Use the [installation steps](README.md#install) to load the extension and the [development commands](README.md#development) to rebuild it. Refresh open web pages after reloading the extension so they receive the new content script.
+Use the [installation steps](README.md#install) to load the extension and the [development commands](README.md#development) to rebuild it.
 
 ## Checks
 
-Run the [source checks and end-to-end tests](README.md#development) before submitting changes. Both must pass before a pull request is merged. `npm run format` fixes formatting.
+Run focused regression tests for changed behavior and the applicable [lint, formatting, type, and build checks](README.md#development). For documentation-only changes, check formatting, relative links, and examples against the current code. `npm run format` fixes formatting.
+
+A simulated DOM cannot establish native clipboard permissions, event trust, format preservation, focus behavior, or worker termination behavior. Changes to those paths require a real loaded-extension browser run in both configurations. Exercise real mouse/keyboard input and clipboard data; inject delays or failures when testing races. Cover newer copies, cross-frame Undo, lost acknowledgements, unsupported formats, stopped propagation, and synthetic-event attacks where relevant.
 
 ## Code style
 
 TypeScript runs in strict mode, ESLint uses `typescript-eslint`'s strict type-checked rules, and Prettier owns formatting; `npm run check` enforces all three.
 
-Every function, class, method, interface, type alias, and exported constant needs a `/** ... */` doc comment that says what it is for, not how it is implemented. This covers internal helpers and test helpers too, and `eslint-plugin-jsdoc` fails the lint when one is missing. Types come from TypeScript, so `@param` and `@returns` tags are optional; add them when a parameter or return value needs explanation (units, `null` meaning "no change", and so on). Tags that are present must match the signature, and one blank line separates the description from the first tag:
+Every function, class, method, interface, type alias, and exported constant needs a `/** ... */` doc comment that says what it is for, not how it is implemented. This includes internal and test helpers. The [JSDoc lint configuration](eslint.config.mjs) enforces comments on declarations and exports; function expressions and constructors need manual review. Types come from TypeScript, so `@param` and `@returns` tags are optional; add them when a parameter or return value needs explanation (units, `null` meaning "no change", and so on). Tags that are present must match the signature, and one blank line separates the description from the first tag:
 
 ```ts
 /**
@@ -34,7 +36,7 @@ Parameters are defined in `src/lib/params.ts`. Pick the narrowest rule that cove
 
 Each rule declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](README.md#replacement-values). Use `id` for click IDs and share tokens; it always takes the identifier path.
 
-Every new rule needs a test in `tests/unit/rewrite.test.ts`: a case under "site-specific tracking" showing the link being cleaned, and, for any name that is ambiguous in general, a case under "functional links stay intact" showing an ordinary link that uses the same name and must not change.
+Every new rule needs a regression in [`tests/unit/rewrite.test.ts`](tests/unit/rewrite.test.ts) showing the link being cleaned. For an ambiguous name, also add a functional-link control using the same name that must not change. Put global and site-specific cases in the corresponding test groups.
 
 ## Adding replacement values
 

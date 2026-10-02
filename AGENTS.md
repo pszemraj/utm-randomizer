@@ -1,4 +1,4 @@
-# AGENTS.md — UTM Randomizer
+# AGENTS.md - UTM Randomizer
 
 UTM Randomizer is a Chrome extension that changes or removes known tracking
 parameters from copied links and the address bar. Preserve functional URL bytes
@@ -33,8 +33,7 @@ for file responsibilities.
 
 Keep the manifest, build target, and [minimum Chrome version](README.md#install)
 consistent. Do not add older-browser support unless requested. Both browser-test
-configurations must pass; disabling `clipboardchange` tests the fallback, not an
-older Chrome API version.
+configurations must pass when browser checks apply.
 
 ## Architecture and behavior invariants
 
@@ -72,13 +71,6 @@ older Chrome API version.
 
 ## Validation
 
-Run focused regression tests for changed behavior and the applicable lint,
-formatting, type, and build checks. Follow the [code style](CONTRIBUTING.md#code-style),
-including its doc-comment requirements.
-
-A simulated DOM cannot establish native clipboard permissions, event trust,
-format preservation, focus behavior, or worker termination behavior. Changes
-to those paths require a real loaded-extension browser run. Exercise real
-mouse/keyboard input and clipboard data; inject delays or failures when testing
-races. Cover newer copies, cross-frame Undo, lost acknowledgements, unsupported
-formats, stopped propagation, and synthetic-event attacks where relevant.
+Follow the [validation requirements](CONTRIBUTING.md#checks) and
+[code style](CONTRIBUTING.md#code-style), including doc comments and real browser
+coverage for native clipboard, trust, focus, and worker-lifecycle changes.

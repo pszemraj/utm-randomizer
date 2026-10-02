@@ -21,7 +21,7 @@ npm ci
 npm run build
 ```
 
-Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select the `dist/` folder. Chrome 123 or newer is required. After pulling changes, rebuild and click the reload icon on the extension's card.
+Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select the `dist/` folder. Chrome 123 or newer is required. After rebuilding, reload the extension's card and refresh open web pages so they receive the updated content script.
 
 To verify the installation, copy the example's `Copied` URL from a web page and paste it into a text field. In the default Decoy mode, the tracking values should change while `id=42` stays intact.
 
@@ -37,7 +37,7 @@ Automatic plain-text rewrites show an **Undo** notification on supported web pag
 
 Explicit actions copy a cleaned link on demand: right-click a link → **Copy link with decoy tracking**; right-click a page → **Copy page link with decoy tracking**; and **Alt+Shift+U** or the popup's **Copy this page's link** button for the current page. These actions use the selected mode and still work while automatic cleaning is paused. The shortcut can be changed at `chrome://extensions/shortcuts`.
 
-The toolbar popup controls the mode, cleaning layers, notifications, and pause setting. Automatic cleaning and notifications are enabled by default. Turning off **Watch the whole clipboard** stops background checks; page copy handling stays active. The counters track rewritten clipboard links in total and in the current browser session, excluding address-bar changes. Rich copies include rewritten anchor destinations, counting each link once across its text and HTML representations.
+The toolbar popup controls the mode, cleaning layers, notifications, and pause setting. Decoy mode, all three automatic cleaning layers, and notifications are enabled by default. Turning off **Watch the whole clipboard** stops background checks; page copy handling stays active. The counters track rewritten clipboard links in total and in the current browser session, excluding address-bar changes. Rich copies include rewritten anchor destinations, counting each link once across its text and HTML representations.
 
 ## Replacement values
 
@@ -68,15 +68,15 @@ Standalone URLs retain trailing punctuation as part of the URL; sentence-punctua
 
 ### Clipboard formats
 
-Links inside longer plain text can be cleaned, including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`. Rich copies clean anchor destinations and visible URLs in both plain text and HTML while retaining formatting and functional destinations. New HTML targets are checked even when the plain text is unchanged. Automatic writes require a complete inventory containing only plain text and HTML; images, files, and custom formats are left untouched.
+Links inside longer plain text can be cleaned, including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`. Rich copies clean anchor destinations and visible URLs in both plain text and HTML while retaining formatting and functional destinations. New HTML targets are checked even when the plain text is unchanged. Asynchronous automatic writes require a complete inventory containing only plain text and HTML; images, files, and custom formats prevent those writes. During a page-handled copy event, text and HTML can be edited in place without replacing the other formats.
 
 ## How it works
 
 ```mermaid
 flowchart LR
   subgraph page["Web page (content script in every frame)"]
-    copy["copy event,<br/>page-handled cut"] -->|"rewrite clipboardData before it is written"| clip[("Clipboard")]
-    other["writeText() button, native cut,<br/>Copy link address"] --> clip
+    copy["text-field copy,<br/>page-handled copy/cut"] -->|"rewrite clipboardData before it is written"| clip[("Clipboard")]
+    other["rich selection, writeText() button,<br/>native cut, Copy link address"] --> clip
     clip -->|"clipboardchange<br/>or legacy polling"| fix["inspect all formats"]
     load["page load,<br/>in-page navigation"] -->|"history.replaceState"| bar["Address bar"]
   end
@@ -91,15 +91,15 @@ flowchart LR
 
 ### Page copies
 
-Copy events and page-handled cuts are rewritten synchronously after the page's handlers have run. Selected text fields inside open shadow roots are handled too, including on HTTP pages without the async Clipboard API. Native cuts keep their normal deletion behavior and are checked asynchronously. On [Chrome 144 and later](https://developer.chrome.com/release-notes/144#the-clipboardchange-event), `clipboardchange` catches other writes within 10 seconds of interaction with the page; plain-text changes can include embedded links.
+Selected text-field copies and data supplied by page copy/cut handlers are rewritten synchronously during event dispatch. Open shadow-root text fields are supported, including on HTTP pages without the async Clipboard API. Native rich selections and native cuts are checked after copying; cuts keep their normal deletion behavior. On [Chrome 144 and later](https://developer.chrome.com/release-notes/144#the-clipboardchange-event), `clipboardchange` catches other writes within 10 seconds of interaction with the page; plain-text changes can include embedded links.
 
-Chrome 123–143 polls after copy and cut events, including events whose propagation the page stops or whose data a later page handler overwrites. Button or link clicks and right-clicks on links also start a pre-gesture clipboard read followed by short polling. Comparing text and HTML against that baseline leaves existing clipboard contents alone after unrelated gestures; polling continues if a new copy interrupts the baseline read. Legacy polling rewrites lone plain-text links and both representations of rich copies. Only trusted browser events authorize these page checks; synthetic copy events and programmatic Undo clicks are ignored. If the async Clipboard API is unavailable, synchronous copy handling still works, but that page cannot inspect asynchronous copies.
+Chrome 123-143 polls after copy and cut events, including events whose propagation the page stops or whose data a later page handler overwrites. Button or link clicks and right-clicks on links also start a pre-gesture clipboard read followed by short polling. Comparing text and HTML against that baseline leaves existing clipboard contents alone after unrelated gestures; polling continues if a new copy interrupts the baseline read. Legacy polling rewrites lone plain-text links and both representations of rich copies. Only trusted browser events authorize these page checks; synthetic copy events and programmatic Undo clicks are ignored. If the async Clipboard API is unavailable, synchronous copy handling still works, but that page cannot inspect asynchronous copies.
 
 The address bar is cleaned with `history.replaceState` once the page's `load` event has fired, so the page has already done its own work with the URL, and again 300 ms after each in-page navigation.
 
 ### Clipboard coordination
 
-The offscreen document coordinates all post-copy writes. Trusted new intent invalidates older reads across pages and frames, including when the new copy has identical text. Settings changes, Undo, and shutdown also cancel pending page reads and worker reconciliation; pause/resume cannot make an older request valid again. The writer checks current text and formats before committing, and Undo succeeds only after acknowledgement. Clipboard read and write operations are not atomic with arbitrary external apps.
+The offscreen document coordinates all post-copy writes. It remains available while automatic cleaning is enabled, even with whole-clipboard watching off. Pause closes it; explicit copies create it temporarily when needed. Trusted new intent invalidates older reads across pages and frames, including when the new copy has identical text. Settings changes, Undo, and shutdown also cancel pending page reads and worker reconciliation; pause/resume cannot make an older request valid again. The writer checks current text and formats before committing, and Undo succeeds only after acknowledgement. Clipboard read and write operations are not atomic with arbitrary external apps.
 
 ### Background watching
 
@@ -107,7 +107,7 @@ The background watcher leaves existing contents alone when starting, checks ever
 
 ## Permissions
 
-The [privacy policy](PRIVACY.md) describes data handling and lists the [permissions and their uses](PRIVACY.md#permissions). Background watching can cause system clipboard-access prompts; turning it off stops those background reads.
+The [privacy policy](PRIVACY.md) describes data handling, clipboard-access prompts, and the [permissions and their uses](PRIVACY.md#permissions).
 
 ## Development
 
@@ -120,7 +120,7 @@ npm run package      # build and zip dist/ into release/utm-randomizer-<version>
 npm run icons        # re-render assets/icons/*.png from assets/icon.svg
 ```
 
-The end-to-end tests load `dist/` into Playwright's Chromium, copy links on a local test page through every path listed above, copy links from outside the page to exercise the background watcher, check the address bar, and read the clipboard back, including checks that the clipboard stays stable (no watcher ping-pong) and that Undo sticks. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. `HEADED=1` shows the browser while the tests run. Each test runs twice: with native `clipboardchange` events and with the event capability removed from a temporary extension copy to exercise polling. Both projects verify the capability in the content script's isolated world.
+The end-to-end tests load `dist/` into Playwright's Chromium and exercise page copies, background watching, the address bar, format preservation, and Undo. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser. The suite runs with native `clipboardchange` events and with that capability removed from a temporary extension copy; a polling-specific case skips the event configuration. Both projects verify the capability in the content script's isolated world. This exercises the fallback in current Chromium, not an older Chrome installation. See the [validation requirements](CONTRIBUTING.md#checks) when choosing local checks.
 
 The playground has one control for each copy path, a tracked address-bar link, a link to copy from another app, right-click test links, functional links that must paste unchanged, an iframe, and a box to inspect pasted text. Open it in the browser where `dist/` is loaded.
 

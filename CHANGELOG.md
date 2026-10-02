@@ -14,7 +14,7 @@
 - Decoy, Hybrid, and Remove [replacement modes](README.md#replacement-values).
 - [Automatic cleaning, Undo, and explicit copy actions](README.md#usage), with [page-copy detection](README.md#page-copies) and [background watching](README.md#background-watching).
 - Global and site-specific [tracking rules](README.md#what-gets-rewritten).
-- Popup controls for cleaning layers, notifications, mode, theme, and statistics.
+- Popup controls for cleaning layers, notifications, and mode, with statistics and automatic light/dark styling.
 - [Development tools](README.md#development) for builds, tests, manual checks, icons, and Web Store packaging, with CI artifacts.
 
 ### Changed
