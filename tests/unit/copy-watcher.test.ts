@@ -150,6 +150,34 @@ describe('copy events', () => {
     expect(rewrites).toEqual([{ original: TRACKED, rewritten: CLEAN, urls: 1 }]);
   });
 
+  it.each(['textarea', 'input'])('rewrites a selected shadow %s without the Clipboard API', (tag) => {
+    start(null);
+    const host = document.createElement('div');
+    document.body.append(host);
+    const nested = document.createElement('div');
+    host.attachShadow({ mode: 'open' }).append(nested);
+    const field = document.createElement(tag) as HTMLTextAreaElement | HTMLInputElement;
+    nested.attachShadow({ mode: 'open' }).append(field);
+    field.value = `Read ${TRACKED} today`;
+    field.focus();
+    field.setSelectionRange(0, field.value.length);
+    expect(document.activeElement).toBe(host);
+
+    const event = trusted(
+      new ClipboardEvent('copy', {
+        clipboardData: new DataTransfer(),
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }),
+    );
+    field.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.clipboardData?.getData('text/plain')).toBe(`Read ${CLEAN} today`);
+    expect(rewrites).toEqual([{ original: `Read ${TRACKED} today`, rewritten: `Read ${CLEAN} today`, urls: 1 }]);
+  });
+
   it.each([true, false])('reconciles a native rich lone link after copy (clipboardchange %s)', async (modern) => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(modern);

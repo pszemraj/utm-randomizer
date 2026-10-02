@@ -91,7 +91,10 @@ interface ClipboardChangeLike extends Event {
 
 /** Text the default copy action would put on the clipboard. `plain` is true for form fields (no HTML flavor). */
 function selectedText(): { text: string; plain: boolean } | null {
-  const active = document.activeElement;
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
   if (
     active instanceof HTMLTextAreaElement ||
     (active instanceof HTMLInputElement && SELECTABLE_INPUT_TYPES.has(active.type))

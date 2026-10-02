@@ -905,6 +905,48 @@ test.describe('copying on web pages', () => {
     });
   }
 
+  for (const tag of ['textarea', 'input'] as const) {
+    test(`cleans a shadow ${tag} copy on HTTP without the Clipboard API`, async ({
+      playground,
+      readClipboard,
+      setSettings,
+      waitForWatcher,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false, cleanAddressBar: false });
+      await playground.route('http://probe.test/shadow-copy', (route) =>
+        route.fulfill({ contentType: 'text/html', body: '<div id="shadow-host"></div>' }),
+      );
+      await playground.goto('http://probe.test/shadow-copy');
+      await waitForWatcher(false);
+      expect(
+        await playground.evaluate(() => ({ secure: isSecureContext, clipboard: 'clipboard' in navigator })),
+      ).toEqual({
+        secure: false,
+        clipboard: false,
+      });
+      await playground.evaluate(
+        ({ tag, text }) => {
+          const host = document.querySelector('#shadow-host');
+          if (!host) throw new Error('missing shadow host');
+          const nested = document.createElement('div');
+          host.attachShadow({ mode: 'open' }).append(nested);
+          const field = document.createElement(tag);
+          field.id = 'shadow-field';
+          field.value = `Read ${text} today`;
+          nested.attachShadow({ mode: 'open' }).append(field);
+        },
+        { tag, text: ARTICLE },
+      );
+      const field = playground.locator('#shadow-field');
+      await field.focus();
+      await field.press('ControlOrMeta+A');
+      await field.press('ControlOrMeta+C');
+
+      await expect.poll(readClipboard).toBe('Read https://example.com/article?id=42 today');
+      await expect(field).toHaveValue(`Read ${ARTICLE} today`);
+    });
+  }
+
   for (const action of ['copy', 'cut'] as const) {
     test(`rewrites a keyboard ${action} when the page stops propagation`, async ({
       playground,

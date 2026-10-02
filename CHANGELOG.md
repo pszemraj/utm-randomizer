@@ -32,6 +32,7 @@
 
 ### Fixed
 
+- Selected text fields inside open shadow roots are cleaned synchronously, including on HTTP pages without the async Clipboard API.
 - Rich-copy statistics include rewritten HTML links without counting their visible URL labels or plain-text representation twice.
 - Amazon store-search selectors (`srs`) remain unchanged while tracking parameters are cleaned.
 - Browser tests explicitly select and verify the clipboard-event and polling paths instead of relying on Chromium feature flags.

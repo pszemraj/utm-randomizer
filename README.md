@@ -85,7 +85,7 @@ flowchart LR
   menu["Context menu,<br/>Alt+Shift+U"] --> worker
 ```
 
-Copy events and page-handled cuts are rewritten synchronously after the page's handlers have run. Native cuts keep their normal deletion behavior and are checked asynchronously. On [Chrome 144 and later](https://developer.chrome.com/release-notes/144#the-clipboardchange-event), `clipboardchange` catches other writes within 10 seconds of interaction with the page; plain-text changes can include embedded links.
+Copy events and page-handled cuts are rewritten synchronously after the page's handlers have run. Selected text fields inside open shadow roots are handled too, including on HTTP pages without the async Clipboard API. Native cuts keep their normal deletion behavior and are checked asynchronously. On [Chrome 144 and later](https://developer.chrome.com/release-notes/144#the-clipboardchange-event), `clipboardchange` catches other writes within 10 seconds of interaction with the page; plain-text changes can include embedded links.
 
 Chrome 123–143 polls after copy and cut events, including events whose propagation the page stops or whose data a later page handler overwrites. Button or link clicks and right-clicks on links also start a pre-gesture clipboard read followed by short polling. Comparing against that baseline leaves existing clipboard text alone after unrelated gestures. Legacy polling rewrites lone plain-text links and both representations of rich copies. Only trusted browser events authorize these page checks; synthetic copy events and programmatic Undo clicks are ignored. If the async Clipboard API is unavailable, synchronous copy handling still works, but that page cannot inspect asynchronous copies.
 

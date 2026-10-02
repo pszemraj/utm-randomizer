@@ -82,7 +82,7 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
       const contentPath = path.join(extensionPath, 'content.js');
       await writeFile(
         contentPath,
-        `delete Clipboard.prototype.onclipboardchange;\n${await readFile(contentPath, 'utf8')}`,
+        `if (typeof Clipboard !== 'undefined') delete Clipboard.prototype.onclipboardchange;\n${await readFile(contentPath, 'utf8')}`,
       );
     }
     const context = await chromium.launchPersistentContext('', {
