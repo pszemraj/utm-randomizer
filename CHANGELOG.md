@@ -46,7 +46,7 @@
 - Rich copies clean URLs embedded in prose in both plain-text and HTML representations.
 - Plain-text Undo is offered only for copies containing no other clipboard formats.
 - Explicit Copy accepts generated output and unchanged links beyond the rewrite input bound.
-- Post-copy writes share an offscreen coordinator and retain originating-frame context for relative text and HTML links; newer copies, Undo, and settings changes invalidate older asynchronous reads.
+- Post-copy writes share an offscreen coordinator and retain originating-frame context for relative text and HTML links, including named paths without a leading slash; newer copies, Undo, and settings changes invalidate older asynchronous reads.
 - New trusted intent advances the shared clipboard generation so older page contexts cannot rewrite newer identical copies using stale link rules.
 - Clipboard generation tokens stay distinct across coordinator recreation, preventing pause/resume from accepting an older in-flight request.
 - Settings changes cancel automatic reconciliation awaiting coordinator or key lookup in the worker, preventing delayed writes after Pause.

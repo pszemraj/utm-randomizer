@@ -72,7 +72,8 @@ function parseLink(link: string, baseUrl?: string): URL | null {
     attempts.push(() => new URL(`https:${link}`));
   } else if (BARE_HOST.test(link)) {
     attempts.push(() => new URL(`https://${link}`));
-  } else if (baseUrl && /^(?:\/|\.\.?\/|\?)/.test(link)) {
+  } else if (baseUrl && !/^(?:[^/?#]*:|!?\[)/.test(link)) {
+    // Named relative paths have no scheme; Markdown wrappers use the embedded-link scan instead.
     attempts.push(() => new URL(link, baseUrl));
   }
 

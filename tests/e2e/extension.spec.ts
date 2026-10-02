@@ -166,50 +166,54 @@ test.describe('copying on web pages', () => {
     });
   }
 
-  test('preserves relative link forms in asynchronous text and HTML copies', async ({
-    playground,
-    context,
-    setSettings,
-    waitForWatcher,
-    readClipboard,
-  }) => {
-    await setSettings({ mode: 'strip', watchClipboard: false });
-    await waitForWatcher(false);
-    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
-      origin: new URL(playground.url()).origin,
+  for (const prefix of ['/', '']) {
+    test(`preserves ${prefix ? 'root' : 'named'} relative link forms in asynchronous text and HTML copies`, async ({
+      playground,
+      context,
+      setSettings,
+      waitForWatcher,
+      readClipboard,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false });
+      await waitForWatcher(false);
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: new URL(playground.url()).origin,
+      });
+      await playground.evaluate((pathPrefix) => {
+        const button = document.createElement('button');
+        button.id = 'copy-relative';
+        button.textContent = 'Copy relative links';
+        button.onclick = () => {
+          setTimeout(() => {
+            void navigator.clipboard.write([
+              new ClipboardItem({
+                'text/plain': new Blob([`${pathPrefix}relative-page?keep=a%2Fb&utm_source=email#part`], {
+                  type: 'text/plain',
+                }),
+                'text/html': new Blob(
+                  [`<b><a href="${pathPrefix}relative-target?utm_campaign=spring&keep=a%2Fb#section">Target</a></b>`],
+                  {
+                    type: 'text/html',
+                  },
+                ),
+              }),
+            ]);
+          }, 100);
+        };
+        document.body.append(button);
+      }, prefix);
+      await playground.locator('#copy-relative').click();
+      await expect.poll(readClipboard).toBe(`${prefix}relative-page?keep=a%2Fb#part`);
+      const html = await playground.evaluate(async () => {
+        const [item] = await navigator.clipboard.read();
+        return item ? (await item.getType('text/html')).text() : '';
+      });
+      // Chromium resolves relative HTML hrefs when it creates the native clipboard payload.
+      const target = new URL(`${prefix}relative-target?keep=a%2Fb#section`, playground.url()).href;
+      expect(html).toContain(`href="${target}"`);
+      expect(html).toContain('<b>');
     });
-    await playground.evaluate(() => {
-      const button = document.createElement('button');
-      button.id = 'copy-relative';
-      button.textContent = 'Copy relative links';
-      button.onclick = () => {
-        setTimeout(() => {
-          void navigator.clipboard.write([
-            new ClipboardItem({
-              'text/plain': new Blob(['/relative-page?keep=a%2Fb&utm_source=email#part'], { type: 'text/plain' }),
-              'text/html': new Blob(
-                ['<b><a href="./relative-target?utm_campaign=spring&keep=a%2Fb#section">Target</a></b>'],
-                {
-                  type: 'text/html',
-                },
-              ),
-            }),
-          ]);
-        }, 100);
-      };
-      document.body.append(button);
-    });
-    await playground.locator('#copy-relative').click();
-    await expect.poll(readClipboard).toBe('/relative-page?keep=a%2Fb#part');
-    const html = await playground.evaluate(async () => {
-      const [item] = await navigator.clipboard.read();
-      return item ? (await item.getType('text/html')).text() : '';
-    });
-    // Chromium resolves relative HTML hrefs when it creates the native clipboard payload.
-    const target = new URL('./relative-target?keep=a%2Fb#section', playground.url()).href;
-    expect(html).toContain(`href="${target}"`);
-    expect(html).toContain('<b>');
-  });
+  }
 
   for (const recreate of [false, true]) {
     test(`rejects an older page reconciliation after a newer copy with identical text${recreate ? ' across pause/resume' : ''}`, async ({

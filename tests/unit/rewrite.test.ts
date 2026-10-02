@@ -116,6 +116,27 @@ describe('rewriteUrl (decoy)', () => {
       expect(rewriteUrl(input, decoy), input).toBeNull();
     }
   });
+
+  it('resolves named relative paths only with an originating page', () => {
+    const baseUrl = 'https://www.youtube.com/feed';
+    for (const path of ['watch', 'folder/watch', 'folder/watch:detail']) {
+      const link = `${path}?v=abc&si=secret&keep=a%2Fb#part`;
+      expect(rewriteUrl(link, { ...strip, baseUrl })?.url).toBe(`${path}?v=abc&keep=a%2Fb#part`);
+      expect(rewriteUrl(link, strip)).toBeNull();
+      expect(rewriteUrl(link, { ...strip, baseUrl: 'https://example.com/' })).toBeNull();
+    }
+    expect(rewriteUrl('article?utm_source=email&next=https://example.com', { ...strip, baseUrl })?.url).toBe(
+      'article?next=https://example.com',
+    );
+    for (const link of [
+      'mailto:a@example.com?utm_source=x',
+      'javascript:alert(1)?utm_source=x',
+      'ftp://example.com/?utm_source=x',
+    ]) {
+      expect(rewriteUrl(link, { ...strip, baseUrl })).toBeNull();
+    }
+    expect(rewriteText('read more?utm_source=email', { ...strip, baseUrl, embedded: true })).toBeNull();
+  });
 });
 
 describe('rewriteUrl (silly)', () => {
@@ -384,6 +405,14 @@ describe('rewriteText', () => {
       urls: 1,
       params: 1,
     });
+  });
+
+  it.each(['[docs/api]', '[docs?api]', '![docs/api]'])('keeps Markdown wrappers with a page base (%s)', (label) => {
+    const options = { ...strip, baseUrl: 'https://example.com/page', embedded: true };
+    expect(rewriteText(`${label}(https://example.com/?utm_source=x)`, options)?.text).toBe(
+      `${label}(https://example.com/)`,
+    );
+    expect(rewriteText(`${label}(mailto:a@example.com?utm_source=x)`, options)).toBeNull();
   });
 
   it('ignores text without tracked links, empty text, and huge text', () => {
