@@ -104,6 +104,16 @@ export interface ClipboardEpochMessage {
   type: 'clipboard-epoch';
 }
 
+/** Content script → worker: invalidate older reads after trusted page intent. */
+export interface ClipboardIntentMessage {
+  type: 'clipboard-intent';
+}
+
+/** Worker → offscreen coordinator: advance its generation after newer page intent. */
+export interface OffscreenIntentMessage {
+  type: 'offscreen-intent';
+}
+
 /** Worker → offscreen coordinator: return its current generation. */
 export interface OffscreenEpochMessage {
   type: 'offscreen-epoch';
@@ -139,6 +149,8 @@ export type ExtensionMessage =
   | OffscreenRestoreMessage
   | InspectClipboardMessage
   | ClipboardEpochMessage
+  | ClipboardIntentMessage
+  | OffscreenIntentMessage
   | OffscreenEpochMessage;
 
 /** Sends a notification to the service worker without waiting for a response. */
@@ -204,6 +216,8 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
     case 'get-secret':
     case 'inspect-clipboard':
     case 'clipboard-epoch':
+    case 'clipboard-intent':
+    case 'offscreen-intent':
     case 'offscreen-epoch':
       return true;
     case 'count':

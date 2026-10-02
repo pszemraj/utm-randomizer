@@ -83,23 +83,8 @@ const watcher = startCopyWatcher({
   getKey: () => key,
   isContextValid,
   restore: (text) => coordinate({ type: 'restore-clipboard', text }),
-  beginRead: async () => {
-    const message: ExtensionMessage = { type: 'clipboard-epoch' };
-    const response: unknown = await chrome.runtime.sendMessage(message);
-    if (!(
-      typeof response === 'object' &&
-      response !== null &&
-      'ok' in response &&
-      response.ok === true &&
-      'epoch' in response &&
-      typeof response.epoch === 'number' &&
-      Number.isSafeInteger(response.epoch) &&
-      response.epoch >= 0
-    )) {
-      throw new Error('Clipboard coordinator did not acknowledge the read');
-    }
-    return response.epoch;
-  },
+  invalidateReads: () => clipboardEpoch('clipboard-intent'),
+  beginRead: () => clipboardEpoch('clipboard-epoch'),
   reconcile: (text, embedded, baseline, types, epoch, pageCopy) =>
     coordinate({ type: 'reconcile-clipboard', text, embedded, baseline, types: [...types], epoch, pageCopy }),
   onRewrite: ({ original, urls, undoable }) => {
@@ -116,6 +101,24 @@ const watcher = startCopyWatcher({
     sendNotification({ type: 'rewritten', urls, relayToast: isTopFrame ? undefined : payload });
   },
 });
+
+/** Obtains the generation acknowledged for a new trusted intent or a whole-clipboard inspection. */
+async function clipboardEpoch(type: 'clipboard-intent' | 'clipboard-epoch'): Promise<number> {
+  const response: unknown = await chrome.runtime.sendMessage({ type } satisfies ExtensionMessage);
+  if (!(
+    typeof response === 'object' &&
+    response !== null &&
+    'ok' in response &&
+    response.ok === true &&
+    'epoch' in response &&
+    typeof response.epoch === 'number' &&
+    Number.isSafeInteger(response.epoch) &&
+    response.epoch >= 0
+  )) {
+    throw new Error('Clipboard coordinator did not acknowledge the read');
+  }
+  return response.epoch;
+}
 
 /** Requires the shared clipboard writer to acknowledge the operation before reporting success. */
 async function coordinate(message: ExtensionMessage): Promise<void> {

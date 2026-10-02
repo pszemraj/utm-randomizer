@@ -404,6 +404,26 @@ it('returns the persistent coordinator generation before a page reads the clipbo
   expect(worker.closeDocument).not.toHaveBeenCalled();
 });
 
+it('forwards trusted content intent with whole-clipboard polling disabled', async () => {
+  const worker = await startBackground({ enabled: true, watchClipboard: false });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
+  const response = vi.fn();
+  worker.sendMessage.mockResolvedValueOnce({ ok: true, epoch: 3 });
+  expect(worker.listener({ type: 'clipboard-intent' }, contentSender, response)).toBe(true);
+  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true, epoch: 3 }));
+  expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-intent' });
+  expect(worker.closeDocument).not.toHaveBeenCalled();
+});
+
+it('does not create a coordinator for automatic intent while paused', async () => {
+  const worker = await startBackground();
+  const response = vi.fn();
+  worker.listener({ type: 'clipboard-intent' }, contentSender, response);
+  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: false }));
+  expect(worker.createDocument).not.toHaveBeenCalled();
+  expect(worker.sendMessage).not.toHaveBeenCalled();
+});
+
 it.each([
   undefined,
   { ok: false, epoch: 0 },
@@ -425,6 +445,8 @@ it('rejects popup generation requests and content attempts to query the offscree
   for (const [message, sender] of [
     [{ type: 'clipboard-epoch' }, popupSender],
     [{ type: 'offscreen-epoch' }, contentSender],
+    [{ type: 'clipboard-intent' }, popupSender],
+    [{ type: 'offscreen-intent' }, contentSender],
   ] as const) {
     const response = vi.fn();
     expect(worker.listener(message, sender, response)).toBe(false);

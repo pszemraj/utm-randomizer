@@ -65,6 +65,8 @@ let now: number;
 let key: string | null;
 let reconcile: ReturnType<typeof vi.fn<WatcherDeps['reconcile']>>;
 let restore: ReturnType<typeof vi.fn<WatcherDeps['restore']>>;
+let invalidateReads: ReturnType<typeof vi.fn<WatcherDeps['invalidateReads']>>;
+let beginRead: ReturnType<typeof vi.fn<WatcherDeps['beginRead']>>;
 
 /** Starts a watcher in Remove mode (simple expected output) with a controllable clock; records rewrites. */
 function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {}, isContextValid = () => true) {
@@ -74,11 +76,14 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
   key = 'test-key';
   reconcile = vi.fn<WatcherDeps['reconcile']>().mockResolvedValue(undefined);
   restore = vi.fn<WatcherDeps['restore']>().mockResolvedValue(undefined);
+  invalidateReads = vi.fn<WatcherDeps['invalidateReads']>().mockResolvedValue(0);
+  beginRead = vi.fn<WatcherDeps['beginRead']>().mockResolvedValue(0);
   watcher = startCopyWatcher({
     clipboard,
     reconcile,
     restore,
-    beginRead: () => Promise.resolve(0),
+    beginRead,
+    invalidateReads,
     getSettings: () => settings,
     getKey: () => key,
     onRewrite: (event) => rewrites.push(event),
@@ -321,6 +326,48 @@ function pendingRead() {
 }
 
 describe('clipboard reconciliation', () => {
+  it('binds page reads to their acknowledged intent instead of adopting a newer shared generation', async () => {
+    const clipboard = new FakeClipboard(true);
+    start(clipboard, { watchClipboard: false });
+    let acknowledge!: (epoch: number) => void;
+    invalidateReads.mockImplementationOnce(
+      () =>
+        new Promise<number>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    interact();
+    clipboard.change(TRACKED);
+    await flush();
+    expect(invalidateReads).toHaveBeenCalledOnce();
+    expect(beginRead).not.toHaveBeenCalled();
+    beginRead.mockResolvedValue(5);
+    acknowledge(4);
+    await flush();
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], 4, true);
+    expect(beginRead).not.toHaveBeenCalled();
+  });
+
+  it('advances shared intent even when a native copy needs no rewrite', () => {
+    start(null, { watchClipboard: false });
+    document.body.innerHTML = '<textarea>https://example.com/functional?si=abcdefgh</textarea>';
+    const field = document.querySelector('textarea');
+    if (!field) throw new Error('Missing field');
+    selectText(field);
+    const event = copyEvent();
+    field.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(invalidateReads).toHaveBeenCalledOnce();
+    expect(beginRead).not.toHaveBeenCalled();
+  });
+
+  it('keeps paused intent local instead of starting coordinator operations', () => {
+    start(null, { enabled: false });
+    interact();
+    document.body.dispatchEvent(copyEvent());
+    expect(invalidateReads).not.toHaveBeenCalled();
+  });
+
   it('requires a complete native inventory for background inspection', async () => {
     const clipboard = new FakeClipboard(true);
     const current = start(clipboard);
@@ -403,6 +450,7 @@ describe('clipboard reconciliation', () => {
     expect(reconcile).not.toHaveBeenCalled();
     expect(rewrites).toEqual([]);
     expect(data.getData('text/plain')).toBe(TRACKED);
+    expect(invalidateReads).not.toHaveBeenCalled();
     interact();
     clipboard.dispatchEvent(Object.assign(new Event('clipboardchange'), { types: ['text/plain'] }));
     await flush();

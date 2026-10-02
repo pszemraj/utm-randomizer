@@ -10,6 +10,8 @@ describe('runtime message payloads', () => {
     { type: 'get-secret' },
     { type: 'inspect-clipboard' },
     { type: 'clipboard-epoch' },
+    { type: 'clipboard-intent' },
+    { type: 'offscreen-intent' },
     { type: 'offscreen-epoch' },
     { type: 'count', urls: 1 },
     { type: 'rewritten', urls: 2, relayToast: { message: 'Cleaned', undoText: '' }, tabId: 7 },

@@ -276,6 +276,37 @@ it('rejects stale reconciliation without overwriting the newer clipboard content
   expect(writes).not.toHaveBeenCalled();
 });
 
+it('rejects an older page context after newer intent copies identical functional text', async () => {
+  const { clipboard, writes, message, readEpoch } = await start();
+  const text = '/watch?v=1&si=abcdefgh';
+  clipboard.text = text;
+  const oldEpoch = readEpoch();
+  expect(message({ type: 'offscreen-intent' })).toHaveBeenCalledWith({ ok: true, epoch: oldEpoch + 1 });
+  expect(readEpoch()).toBeGreaterThan(oldEpoch);
+  message({
+    type: 'offscreen-reconcile',
+    text,
+    embedded: false,
+    types: clipboard.types,
+    epoch: oldEpoch,
+    config: CONFIG,
+    baseUrl: 'https://www.youtube.com/feed',
+  });
+  expect(clipboard.text).toBe(text);
+  expect(writes).not.toHaveBeenCalled();
+  message({
+    type: 'offscreen-reconcile',
+    text,
+    embedded: false,
+    types: clipboard.types,
+    epoch: readEpoch(),
+    config: CONFIG,
+    baseUrl: 'https://example.com/control',
+  });
+  expect(clipboard.text).toBe(text);
+  expect(writes).not.toHaveBeenCalled();
+});
+
 it('expires Undo suppression only when a fresh copy has a different observed baseline', async () => {
   const { clipboard, message, readEpoch } = await start();
   message({ type: 'offscreen-restore', text: TRACKED });

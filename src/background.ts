@@ -180,11 +180,12 @@ function reconcileClipboard(
   });
 }
 
-/** Reads the offscreen coordinator's persistent generation before a page reads the clipboard. */
-function clipboardEpoch(): Promise<number> {
+/** Captures the coordinator generation, advancing it for newer automatic page intent. */
+function clipboardEpoch(intent = false): Promise<number> {
   return withOffscreen(async () => {
+    if (intent && !(await loadSettings()).enabled) throw new Error('Automatic cleaning is paused');
     await ensureOffscreen();
-    const message: ExtensionMessage = { type: 'offscreen-epoch' };
+    const message: ExtensionMessage = { type: intent ? 'offscreen-intent' : 'offscreen-epoch' };
     const response: unknown = await chrome.runtime.sendMessage(message);
     if (
       typeof response !== 'object' ||
@@ -365,6 +366,7 @@ chrome.runtime.onMessage.addListener(
           'copy-clipboard',
           'inspect-clipboard',
           'clipboard-epoch',
+          'clipboard-intent',
         ].includes(message.type)
       ) {
         sendResponse({ ok: false });
@@ -437,12 +439,13 @@ chrome.runtime.onMessage.addListener(
           sendResponse,
         );
         return true;
+      case 'clipboard-intent':
       case 'clipboard-epoch':
         if (!content) {
           sendResponse({ ok: false });
           return false;
         }
-        clipboardEpoch().then(
+        clipboardEpoch(message.type === 'clipboard-intent').then(
           (epoch) => {
             sendResponse({ ok: true, epoch });
           },
@@ -477,6 +480,7 @@ chrome.runtime.onMessage.addListener(
       case 'offscreen-restore':
       case 'offscreen-reconcile':
       case 'offscreen-epoch':
+      case 'offscreen-intent':
       case 'watch-config':
         if (!isWorkerSender(sender)) {
           sendResponse({ ok: false });

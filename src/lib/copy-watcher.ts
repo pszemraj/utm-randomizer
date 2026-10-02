@@ -32,8 +32,10 @@ export interface WatcherDeps {
    * leave it alone instead of rewriting it again.
    */
   restore: (text: string) => Promise<void>;
-  /** Coordinator generation captured before an asynchronous read, invalidated by Copy, Undo, or configuration. */
+  /** Current coordinator generation for whole-clipboard inspection without page intent. */
   beginRead: () => Promise<number>;
+  /** Advances and returns the shared generation that binds reads to this trusted page intent. */
+  invalidateReads: () => Promise<number>;
   /** Ask the offscreen writer to reconcile this text with the current, format-aware clipboard snapshot. */
   reconcile: (
     text: string,
@@ -158,6 +160,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   let generation = 0;
   let restoring = false;
   let sweep: AbortController | null = null;
+  let pendingIntent: Promise<number> | null = null;
   const listeners = new AbortController();
 
   /** Current rewrite options, or null while replacement values cannot be computed yet. */
@@ -181,6 +184,10 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     if (!event.isTrusted) return;
     invalidate();
     lastIntent = now();
+    if (active()) {
+      pendingIntent = deps.invalidateReads();
+      void pendingIntent.catch(() => undefined);
+    }
   }
 
   /**
@@ -284,7 +291,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     let snapshot: ClipboardSnapshot | null;
     let epoch: number;
     try {
-      epoch = await deps.beginRead();
+      epoch = await (pageCopy && pendingIntent ? pendingIntent : deps.beginRead());
       if (generation !== job || listeners.signal.aborted || !active()) return false;
       snapshot = await readClipboard(clipboard, job);
     } catch {

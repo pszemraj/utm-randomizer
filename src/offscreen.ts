@@ -28,7 +28,7 @@ let ignored: ClipboardSnapshot | null = null;
 /** Clipboard payload waiting out the grace period. */
 let candidate: ClipboardSnapshot | null = null;
 let inspectionPending = false;
-/** Invalidates native reads started before Undo, explicit copies, or watcher reconfiguration. */
+/** Invalidates native reads started before newer page intent, Undo, explicit copies, or reconfiguration. */
 let epoch = 0;
 const loopGuard = createLoopGuard(() => Date.now());
 
@@ -222,9 +222,14 @@ chrome.runtime.onMessage.addListener(
       typeof message !== 'object' ||
       message === null ||
       !('type' in message) ||
-      !['offscreen-copy', 'offscreen-restore', 'offscreen-reconcile', 'offscreen-epoch', 'watch-config'].includes(
-        String(message.type),
-      )
+      ![
+        'offscreen-copy',
+        'offscreen-restore',
+        'offscreen-reconcile',
+        'offscreen-epoch',
+        'offscreen-intent',
+        'watch-config',
+      ].includes(String(message.type))
     ) {
       return false;
     }
@@ -261,6 +266,10 @@ chrome.runtime.onMessage.addListener(
         });
         break;
       case 'offscreen-epoch':
+        sendResponse({ ok: true, epoch });
+        break;
+      case 'offscreen-intent':
+        epoch += 1;
         sendResponse({ ok: true, epoch });
         break;
       case 'watch-config':
