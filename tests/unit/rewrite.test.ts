@@ -283,10 +283,63 @@ describe('site-specific tracking', () => {
       'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
     ],
     ['https://x.com/jack/status/20?s=20&t=AbCdEf', 'https://x.com/jack/status/20'],
+    ['https://twitter.com/jack/status/20?s=20&t=AbCdEf', 'https://twitter.com/jack/status/20'],
     ['https://www.bing.com/search?q=cats&sp=1&pq=ca&form=QBRE&cvid=abc', 'https://www.bing.com/search?q=cats'],
     [
       'https://www.tiktok.com/@scout2015/video/6718335390845095173?lang=en&_t=Ab12&_r=1',
       'https://www.tiktok.com/@scout2015/video/6718335390845095173?lang=en',
+    ],
+    [
+      'https://cgi.ebay.com/ws/eBayISAPI.dll?ViewItem&item=123456789012&_trksid=p123&mkevt=1&mkcid=1',
+      'https://cgi.ebay.com/ws/eBayISAPI.dll?ViewItem&item=123456789012',
+    ],
+    [
+      'https://www.aliexpress.com/item/1005001234567890.html?algo_pvid=Ab12&aff_trace_key=Cd34#product-description',
+      'https://www.aliexpress.com/item/1005001234567890.html#product-description',
+    ],
+    // Apple's campaign-link example keeps the media type and iMessage product-page selector.
+    [
+      'https://apps.apple.com/us/app/apple-store/id439104108?pt=8668&ct=test123&mt=8&app=messages',
+      'https://apps.apple.com/us/app/apple-store/id439104108?mt=8&app=messages',
+    ],
+    [
+      'https://genome.ch.bbc.co.uk/search/0/20?order=asc&q=%22rock+around+the+clock%22&ns_mchannel=social&ns_source=twitter',
+      'https://genome.ch.bbc.co.uk/search/0/20?order=asc&q=%22rock+around+the+clock%22',
+    ],
+    ['https://www.bbc.com/news?ocid=social&ns_campaign=share#main-content', 'https://www.bbc.com/news#main-content'],
+    [
+      'https://www.etsy.com/search?q=ceramic+mug&ref=search_bar&click_key=Ab12&click_sum=Cd34',
+      'https://www.etsy.com/search?q=ceramic+mug',
+    ],
+    [
+      'https://www.imdb.com/search/title/?genres=drama&my_ratings=restrict&ref_=adv&pf_rd_p=Ab12',
+      'https://www.imdb.com/search/title/?genres=drama&my_ratings=restrict',
+    ],
+    ['https://www.walmart.com/search?q=laptop&athbdg=L1100&u1=Ab12', 'https://www.walmart.com/search?q=laptop'],
+    // Twitch's embed contract requires parent and preserves the requested playback time.
+    [
+      'https://player.twitch.tv/?video=v40464143&parent=streamernews.example.com&time=1h2m3s&tt_medium=embed&tt_content=vod',
+      'https://player.twitch.tv/?video=v40464143&parent=streamernews.example.com&time=1h2m3s',
+    ],
+    ['https://www.msn.com/?ocid=share&cvid=Ab12#main', 'https://www.msn.com/#main'],
+    [
+      'https://www.microsoft.com/en-us/download/details.aspx?id=54616&ocid=affiliate&epi=Ab12',
+      'https://www.microsoft.com/en-us/download/details.aspx?id=54616',
+    ],
+    [
+      'https://www.xbox.com/en-US/games/halo-infinite?ocid=share&nclid=Ab12#overview',
+      'https://www.xbox.com/en-US/games/halo-infinite#overview',
+    ],
+    ['https://www.theguardian.com/world?page=2&CMP=share_btn_link', 'https://www.theguardian.com/world?page=2'],
+    [
+      'https://www.washingtonpost.com/search/?query=climate&itid=search',
+      'https://www.washingtonpost.com/search/?query=climate',
+    ],
+    ['https://www.snapchat.com/add/scout2015?share_id=Ab12', 'https://www.snapchat.com/add/scout2015'],
+    ['https://www.quora.com/search?q=rust&share=1', 'https://www.quora.com/search?q=rust'],
+    [
+      'https://play.google.com/store/apps/details?id=com.google.android.apps.maps&pcampaignid=share&referrer=utm_source%3Demail',
+      'https://play.google.com/store/apps/details?id=com.google.android.apps.maps',
     ],
     ['https://www.instagram.com/p/C0abc/?igsh=MWt4bXZ2', 'https://www.instagram.com/p/C0abc/'],
     [
@@ -313,6 +366,10 @@ describe('site-specific tracking', () => {
     ['https://example.com/?__hssc=1.1.1&__hstc=abc&__hsfp=9&keep=1', 'https://example.com/?keep=1'],
   ])('cleans %s', (input, expected) => {
     expect(rewriteUrl(input, strip)?.url).toBe(expected);
+    expect(hasTrackingParams(expected)).toBe(false);
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      expect(rewriteUrl(expected, { mode, key: 'review-key' })).toBeNull();
+    }
   });
 });
 
@@ -391,6 +448,7 @@ describe('functional links stay intact', () => {
     'https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fexample.com',
     'https://www.amazon.com/dp/B0ABC?th=1&psc=1&smid=A1B2C3&tag=creator-20',
     'https://x.com/search?q=rust&f=live',
+    'https://twitter.com/search?q=rust&f=live',
     'https://medium.com/p/abc?sk=friendlinkkey',
     'https://www.netflix.com/browse?jbv=80057281',
     'https://substack.com/app-link/post?publication_id=1&post_id=2',
