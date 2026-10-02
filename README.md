@@ -62,7 +62,7 @@ Ambiguous names like `ref`, `source`, `src`, `campaign`, `keywords`, `cid`, and 
 
 Non-tracking query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less links such as `www.example.com/page?utm_source=x` are supported. Relative links copied by a page, including asynchronous text and HTML copies, use the originating frame's URL for classification and retain their relative form.
 
-Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten.
+Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. Explicit Copy still copies longer links unchanged and accepts replacements that grow beyond that input bound.
 
 Links inside longer plain text can be cleaned, including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`. When a copy supplies HTML, link targets and visible URLs are cleaned while preserving the HTML flavor, including new targets with unchanged plain text. Polling compares both flavors to leave existing rich clipboard contents alone after unrelated clicks, and continues if a new copy interrupts its baseline read. Automatic writes require a complete inventory containing only plain text and HTML; images, files, and custom formats are left untouched. Standalone URLs retain trailing punctuation as part of the URL; sentence-punctuation heuristics apply only to links extracted from prose.
 

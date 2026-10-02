@@ -897,6 +897,37 @@ test.describe('address bar', () => {
 });
 
 test.describe('extension pages', () => {
+  test('explicitly copies generated and unchanged links beyond the rewrite input bound', async ({
+    context,
+    extensionId,
+    readClipboard,
+    setSettings,
+  }) => {
+    await setSettings({ enabled: false, mode: 'decoy' });
+    const input = `https://example.com/?${Array<string>(6000).fill('utm_source=x').join('&')}`;
+    const oversized = `https://example.com/?data=${'x'.repeat(100_001)}`;
+    for (const url of [input, oversized]) {
+      const popup = await context.newPage();
+      // Supply the tab URL as a toolbar invocation would, without navigating to a huge request URL.
+      await popup.addInitScript((pageUrl) => {
+        Object.defineProperty(chrome.tabs, 'query', { value: () => Promise.resolve([{ url: pageUrl }]) });
+      }, url);
+      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+      await expect(popup.locator('#copyPage')).toBeEnabled();
+      await popup.locator('#copyPage').click();
+      await expect(popup.locator('#copyStatus')).toContainText('Copied');
+      const copied = await readClipboard();
+      if (url === input) {
+        expect(input.length).toBeLessThan(100_000);
+        expect(copied.length).toBeGreaterThan(100_000);
+        expect(new URL(copied).searchParams.getAll('utm_source')).toHaveLength(6000);
+      } else {
+        expect(copied).toBe(oversized);
+      }
+      await popup.close();
+    }
+  });
+
   test('popup shows and saves settings', async ({ context, extensionId, serviceWorker }) => {
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);

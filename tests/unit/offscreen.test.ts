@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from 'vitest';
 import type { ExtensionMessage } from '../../src/lib/messages';
+import { rewriteUrl } from '../../src/lib/rewrite';
 
 const TRACKED = 'https://example.com/page?utm_source=newsletter';
 const CLEAN = 'https://example.com/page';
@@ -112,6 +113,20 @@ async function start() {
   };
   return { clipboard, sendMessage, message, writes, inspector, readEpoch };
 }
+
+it('writes explicit generated and unchanged links beyond the rewrite input limit', async () => {
+  const { clipboard, message } = await start();
+  const input = `https://example.com/?${Array<string>(6000).fill('utm_source=x').join('&')}`;
+  const rewritten = rewriteUrl(input, { mode: 'decoy', key: 'test-key' })?.url;
+  expect(input.length).toBeLessThan(100_000);
+  expect(rewritten?.length).toBeGreaterThan(100_000);
+  if (!rewritten) throw new Error('Missing rewritten link');
+  const unchanged = `https://example.com/?data=${'x'.repeat(100_001)}`;
+  for (const text of [rewritten, unchanged]) {
+    expect(message({ type: 'offscreen-copy', text })).toHaveBeenCalledWith({ ok: true });
+    expect(clipboard.text).toBe(text);
+  }
+});
 
 it.each([undefined, 'https://example.com/page', 'https://www.youtube.com/feed'])(
   'uses the originating page context for relative text and HTML (%s)',

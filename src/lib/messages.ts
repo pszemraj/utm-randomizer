@@ -155,7 +155,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Clipboard payloads share the rewriter's 100,000-character input limit. */
+/** Automatic clipboard inputs, Undo text, and other payloads retain the rewriter's input limit. */
 function isText(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 100_000;
 }
@@ -239,9 +239,10 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
         (value.baseline === undefined || isText(value.baseline))
       );
     case 'offscreen-copy':
+    case 'copy-clipboard':
+      return typeof value.text === 'string';
     case 'offscreen-restore':
     case 'restore-clipboard':
-    case 'copy-clipboard':
       return isText(value.text);
     default:
       return false;

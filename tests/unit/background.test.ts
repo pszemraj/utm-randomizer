@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { rewriteUrl } from '../../src/lib/rewrite';
 import {
   createOrReadSecret,
   DEFAULT_SETTINGS,
@@ -300,6 +301,25 @@ it('copies signed links unchanged through the menu and explains the skip', async
   );
   expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-copy', text: url });
   expect(worker.localSet).not.toHaveBeenCalled();
+});
+
+it('routes explicit copies beyond the rewrite input limit while paused', async () => {
+  const worker = await startBackground();
+  const input = `https://example.com/?${Array<string>(6000).fill('utm_source=x').join('&')}`;
+  const rewritten = rewriteUrl(input, { mode: 'decoy', key: 'test-key' })?.url;
+  expect(input.length).toBeLessThan(100_000);
+  expect(rewritten?.length).toBeGreaterThan(100_000);
+  if (!rewritten) throw new Error('Missing rewritten link');
+  const unchanged = `https://example.com/?data=${'x'.repeat(100_001)}`;
+  for (const text of [rewritten, unchanged]) {
+    const response = vi.fn();
+    expect(worker.listener({ type: 'copy-clipboard', text }, popupSender, response)).toBe(true);
+    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-copy', text });
+  }
+  worker.sendMessage.mockClear();
+  worker.menuListener({ menuItemId: 'copy-clean-link', linkUrl: input, editable: false }, { id: 7 } as chrome.tabs.Tab);
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-copy', text: rewritten }));
 });
 
 it('requests native clipboard inspection from the active page without blocking nested reconciliation', async () => {

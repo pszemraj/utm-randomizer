@@ -38,6 +38,7 @@
 - URL rewriting bounds input size and hashes each link's stable seed once, avoiding quadratic work for many tracking parameters.
 - Deferred clipboard checks clean text and HTML links even when a page stops copy or cut propagation.
 - Native rich selections retain their HTML formatting and functional anchor destinations during cleaning.
+- Explicit Copy accepts generated output and unchanged links beyond the rewrite input bound.
 - Post-copy writes share an offscreen coordinator and retain originating-frame context for relative text and HTML links; newer copies, Undo, and settings changes invalidate older asynchronous reads.
 - Automatic writes inspect the complete native format inventory and preserve images, files, and custom payloads. Whole-clipboard cleaning waits for a focused page when that inspection is unavailable.
 - Undo suppression survives cross-frame work and service-worker restart, then expires when different contents or formats are observed. Lost acknowledgements report restoration failure.
