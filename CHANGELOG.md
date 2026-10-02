@@ -37,6 +37,7 @@
 - Standalone URL punctuation stays in its original query value or fragment, and text and URL entry points agree on replacements.
 - URL rewriting bounds input size and hashes each link's stable seed once, avoiding quadratic work for many tracking parameters.
 - Deferred clipboard checks clean text and HTML links even when a page stops copy or cut propagation.
+- Polling reconciles copies after dispatch even when a dynamically registered page handler overwrites a synchronous edit.
 - Native rich selections retain their HTML formatting and functional anchor destinations during cleaning.
 - Plain-text Undo is offered only for copies containing no other clipboard formats.
 - Explicit Copy accepts generated output and unchanged links beyond the rewrite input bound.

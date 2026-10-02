@@ -522,6 +522,39 @@ describe('clipboard reconciliation', () => {
 });
 
 describe('gesture reconciliation', () => {
+  it('reconciles a fallback copy overwritten by a page handler registered during dispatch', async () => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    start(clipboard, { watchClipboard: false });
+    document.body.innerHTML = `<textarea>${TRACKED}</textarea>`;
+    const field = document.querySelector('textarea');
+    if (!field) throw new Error('Missing field');
+    selectText(field);
+    let beforeOverwrite = '';
+    document.addEventListener(
+      'copy',
+      () => {
+        window.addEventListener(
+          'copy',
+          (event) => {
+            beforeOverwrite = event.clipboardData?.getData('text/plain') ?? '';
+            event.clipboardData?.setData('text/plain', TRACKED);
+            event.preventDefault();
+          },
+          { once: true },
+        );
+      },
+      { capture: true, once: true },
+    );
+    const event = copyEvent();
+    field.dispatchEvent(event);
+    clipboard.text = event.clipboardData?.getData('text/plain') ?? '';
+    expect(beforeOverwrite).toBe(CLEAN);
+    expect(clipboard.text).toBe(TRACKED);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain'], 0, true);
+  });
+
   it('compares HTML as well as text with the pre-gesture baseline', async () => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(false);

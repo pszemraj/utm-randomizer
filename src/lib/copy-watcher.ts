@@ -356,12 +356,6 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     window.addEventListener(type, markIntent, options);
   }
 
-  const afterPageHandlers = (event: ClipboardEvent) => {
-    const handled = onCopy(event);
-    if (!handled && !supportsChangeEvent && clipboard && !restoring && active()) {
-      runSweep(SWEEP_AFTER_COPY);
-    }
-  };
   for (const type of ['copy', 'cut'] as const) {
     window.addEventListener(
       type,
@@ -369,19 +363,24 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
         if (!event.isTrusted) return;
         markIntent(event);
         let reachedBubble = false;
-        // A window listener added now runs last in this event's bubble phase, after every page handler
-        // (including page listeners on window) has put its data on the clipboard.
+        // Runs after previously registered page handlers. Handlers added during dispatch may run later.
         const late = (lateEvent: ClipboardEvent) => {
           if (lateEvent === event) {
             reachedBubble = true;
-            afterPageHandlers(event);
+            onCopy(event);
           }
         };
         window.addEventListener(type, late, { once: true, signal: listeners.signal });
-        // A stopped event still has a default copy/cut action; check its result once dispatch is over.
+        // Check stopped events and fallback copies after every page handler and the default action finish.
         setTimeout(() => {
           window.removeEventListener(type, late);
-          if (!reachedBubble && clipboard && !restoring && !listeners.signal.aborted && active()) {
+          if (
+            (!reachedBubble || !supportsChangeEvent) &&
+            clipboard &&
+            !restoring &&
+            !listeners.signal.aborted &&
+            active()
+          ) {
             runSweep(SWEEP_AFTER_COPY);
           }
         }, 0);

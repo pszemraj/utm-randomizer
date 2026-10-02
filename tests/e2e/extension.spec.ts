@@ -802,6 +802,37 @@ test.describe('copying on web pages', () => {
     });
   }
 
+  test('reconciles a copy overwritten by a page handler registered during dispatch', async ({
+    playground,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    const textarea = playground.getByTestId('select-textarea');
+    await textarea.fill(ARTICLE);
+    await playground.evaluate((text) => {
+      document.addEventListener(
+        'copy',
+        () => {
+          window.addEventListener(
+            'copy',
+            (event) => {
+              event.clipboardData?.setData('text/plain', text);
+              event.preventDefault();
+            },
+            { once: true },
+          );
+        },
+        { capture: true, once: true },
+      );
+    }, ARTICLE);
+    await textarea.press('ControlOrMeta+A');
+    await textarea.press('ControlOrMeta+C');
+    await expect.poll(readClipboard).toBe('https://example.com/article?id=42');
+  });
+
   test('rewrites links inside text copied from a text area', async ({ playground, readClipboard, setSettings }) => {
     await setSettings({ mode: 'strip' });
     const textarea = playground.getByTestId('select-textarea');
