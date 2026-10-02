@@ -31,7 +31,7 @@ Copy links the way you normally do; there is nothing to click. Three layers catc
 
 - **On web pages**, copy detection covers selecting a link and pressing Ctrl+C / Cmd+C (including in text fields), a site's "Copy link" or "Share" button (using `navigator.clipboard`, `execCommand('copy')`, or a copy-event handler, including inside iframes), and right-click → **Copy link address**. Rich selections retain formatting and functional anchor destinations.
 - **In the address bar**, tracking parameters are replaced without reloading. Copying the address, sharing the tab, bookmarking, and sending it to your phone all pick up the cleaned link.
-- **In other apps**, a background watcher detects copies and asks a focused web page to inspect all clipboard formats before rewriting. If no focused page can inspect them, the clipboard is left untouched until one is available.
+- **In other apps**, a background watcher detects copies and asks a focused web page to inspect all clipboard formats before rewriting. If no focused page can inspect them, the clipboard is left untouched until one is available. Copies with custom formats remain untouched; cleaning resumes if a later copy removes those formats, even when its text stays the same.
 
 Automatic plain-text rewrites show an **Undo** notification on supported web pages when notifications are enabled. Undo restores the original clipboard text until different contents are observed; a later fresh copy is cleaned again. Copies with HTML or custom formats and address-bar changes have no Undo button.
 

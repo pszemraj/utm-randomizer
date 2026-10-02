@@ -1134,7 +1134,13 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
   const OUTSIDE =
     'https://example.com/story?id=11&utm_source=twitter&utm_medium=social&gclid=Cj0KCQjw9-KzBhDVARIsAF_BwE';
 
-  test('preserves custom formats hidden from synthetic paste', async ({ playground, context, waitForWatcher }) => {
+  test('preserves hidden custom formats and cleans identical text after they are removed', async ({
+    playground,
+    context,
+    waitForWatcher,
+    readClipboard,
+    writeClipboardExternally,
+  }) => {
     await waitForWatcher(true);
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(playground.url()).origin });
     await playground.evaluate(async (text) => {
@@ -1155,6 +1161,9 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
       };
     });
     expect(copied).toEqual({ text: OUTSIDE, custom: 'opaque payload' });
+    await writeClipboardExternally(OUTSIDE);
+    const cleaned = await waitForClipboard(readClipboard, (text) => text !== OUTSIDE);
+    expectReplaced(cleaned, OUTSIDE);
   });
 
   test('leaves copies untouched without a focused reader and retries when one is available', async ({

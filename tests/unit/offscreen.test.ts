@@ -46,7 +46,7 @@ async function start() {
     if (payload.type !== 'inspect-clipboard') return Promise.resolve(undefined);
     if (!inspector.enabled) return Promise.resolve({ ok: false });
     const types = clipboard.nativeTypes ?? clipboard.types;
-    if (types.some((type) => type !== 'text/plain' && type !== 'text/html')) return Promise.resolve({ ok: true });
+    if (types.some((type) => type !== 'text/plain' && type !== 'text/html')) return Promise.resolve({ ok: false });
     let epoch = '';
     onMessage?.({ type: 'offscreen-epoch' }, WORKER, (value) => {
       epoch = value.epoch ?? '';
@@ -207,7 +207,7 @@ it('leaves the clipboard untouched without a focused native reader, then retries
   expect(writes).toHaveBeenCalledOnce();
 });
 
-it('preserves native web-custom formats even when synthetic paste exposes only plain text', async () => {
+it('preserves native web-custom formats and retries after only the custom flavor is removed', async () => {
   const { clipboard, writes, message, readEpoch } = await start();
   clipboard.text = TRACKED;
   clipboard.nativeTypes = ['text/plain', 'web application/custom'];
@@ -224,6 +224,10 @@ it('preserves native web-custom formats even when synthetic paste exposes only p
     types: clipboard.nativeTypes,
   });
   expect(writes).not.toHaveBeenCalled();
+  clipboard.nativeTypes = ['text/plain'];
+  await vi.advanceTimersByTimeAsync(750);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
 });
 
 it('expires Undo suppression after observing a formats-only clipboard change', async () => {

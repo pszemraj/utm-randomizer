@@ -429,7 +429,7 @@ describe('clipboard reconciliation', () => {
     const current = start(clipboard);
     clipboard.text = TRACKED;
     clipboard.types = ['text/plain', 'web application/custom'];
-    expect(await current.inspect()).toBe(true);
+    expect(await current.inspect()).toBe(false);
     expect(reconcile).not.toHaveBeenCalled();
     expect(clipboard.writes).toEqual([]);
     vi.spyOn(document, 'hasFocus').mockReturnValue(false);

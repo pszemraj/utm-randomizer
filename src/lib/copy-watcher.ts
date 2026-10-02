@@ -303,7 +303,8 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     if (generation !== job || !active()) {
       return false;
     }
-    if (!snapshot) return true;
+    // Keep the background candidate: removing a web-custom flavor is invisible to synthetic paste.
+    if (!snapshot) return false;
     const { text, html, types } = snapshot;
     if (
       text === baseline?.text &&
