@@ -43,7 +43,7 @@
 - Synthetic copy, gesture, and Undo events cannot authorize clipboard writes; malformed runtime messages and forged control senders are rejected.
 - Clipboard checks compare HTML as well as plain text: new HTML targets are cleaned even with unchanged text, while legacy polling leaves pre-existing rich links alone after unrelated clicks and context menus and continues when a new copy invalidates its baseline read.
 - Settings changes stop or reconfigure the clipboard watcher independently of cosmetic context-menu updates.
-- Decoy mode replaces percent-encoded ASCII identifiers, mixed-case hexadecimal identifiers, and percent-encoded or non-Latin tracking words while preserving encoding and repeated-rewrite stability.
+- Decoy replacements stay stable for percent-encoded and mixed-case hexadecimal identifiers, non-Latin tracking words, and values containing malformed percent sequences.
 - Standalone Markdown links in plain clipboard text are cleaned even when the text contains no whitespace.
 - Tokens containing `magic-8-ball` were randomized again on the next copy; stable replacements remove the need to detect previously randomized values.
 - HubSpot's `__hssc`, `__hstc`, and `__hsfp` were never matched.

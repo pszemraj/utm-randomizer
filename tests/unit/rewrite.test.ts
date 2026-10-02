@@ -153,6 +153,15 @@ describe('rewriteUrl (hybrid)', () => {
 });
 
 describe('idempotency', () => {
+  it('keeps a campaign with an unescaped percent sign stable', () => {
+    const options = { mode: 'decoy', key: '2' } as const;
+    const once = rewriteUrl('https://example.com/?utm_campaign=50%off', options);
+    expect(once).not.toBeNull();
+    expect(once?.url).toMatch(/^https:\/\/example\.com\/\?utm_campaign=[0-9]{2}%of[a-z]$/);
+    expect(rewriteUrl(once?.url ?? '', options)).toBeNull();
+    expect(rewriteUrl('https://example.com/?coupon=50%off', options)).toBeNull();
+  });
+
   it.each(['decoy', 'hybrid'] as const)('keeps a mixed-case hexadecimal campaign stable (%s)', (mode) => {
     for (const raw of ['aB1c1F1b', '%61%42%31%63%31%46%31%62']) {
       const options = { mode, key: 'review0' };

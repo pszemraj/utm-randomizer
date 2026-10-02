@@ -4,7 +4,29 @@ import { createSecret, pick, seededRandom } from '../../src/lib/prng';
 import { isWordy, replacementValue, scrambleLike } from '../../src/lib/values';
 
 const CATEGORIES: Category[] = ['source', 'medium', 'campaign', 'term', 'content', 'generic', 'id'];
-const PIECES = ['a', 'Z', '7', '0', 'f', 'B', '-', '_', '.', '%3D', '%2C', '%61', '%6a', '%4A', '%31', '~', 'q', 'X9'];
+const PIECES = [
+  'a',
+  'Z',
+  '7',
+  '0',
+  'f',
+  'B',
+  '-',
+  '_',
+  '.',
+  '%3D',
+  '%2C',
+  '%61',
+  '%6a',
+  '%4A',
+  '%31',
+  '~',
+  'q',
+  'X9',
+  '%',
+  '%a',
+  '%qz',
+];
 
 /** A random raw value built from letters, digits, separators, and percent-escapes. */
 function randomRaw(random: () => number): string {
@@ -81,6 +103,25 @@ describe('scrambleLike', () => {
 });
 
 describe('replacementValue', () => {
+  it.each(['50%off', '%foo', '%q1', '%1q', '%', '%a', '%%61%qz', '%a%32%qz', '%qz%3D%61'])(
+    'preserves malformed percent tokens and fixed points (%s)',
+    (raw) => {
+      const malformed = raw.match(/%(?![0-9a-f]{2})[^%]{0,2}/gi) ?? [];
+      for (const category of ['campaign', 'id'] as const) {
+        for (let i = 0; i < 100; i += 1) {
+          const seed = `malformed-${String(i)}`;
+          const decoy = replacementValue('decoy', category, raw, seed);
+          expect(decoy.match(/%(?![0-9a-f]{2})[^%]{0,2}/gi) ?? []).toEqual(malformed);
+          expect(decoy).toHaveLength(raw.length);
+          for (const style of ['decoy', 'hybrid'] as const) {
+            const once = replacementValue(style, category, raw, seed);
+            expect(replacementValue(style, category, once, seed)).toBe(once);
+          }
+        }
+      }
+    },
+  );
+
   it.each(['aB1c1F1b', '%61%42%31%63%31%46%31%62'])(
     'keeps mixed-case hexadecimal identifier shape and fixed points (%s)',
     (raw) => {

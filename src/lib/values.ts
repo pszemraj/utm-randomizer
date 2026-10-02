@@ -518,6 +518,16 @@ function shapeOf(raw: string): ShapeToken[] {
   const tokens: ShapeToken[] = [];
   for (let i = 0; i < raw.length;) {
     const escape = PERCENT_ESCAPE.exec(raw.slice(i));
+    if (raw.charAt(i) === '%' && !escape) {
+      // Keep malformed escapes literal so scrambling cannot turn them into valid escapes.
+      let end = i + 1;
+      while (end < Math.min(i + 3, raw.length) && raw.charAt(end) !== '%') {
+        end += 1;
+      }
+      tokens.push({ literal: raw.slice(i, end) });
+      i = end;
+      continue;
+    }
     const char = escape ? String.fromCharCode(Number.parseInt(escape[0].slice(1), 16)) : raw.charAt(i);
     if (escape && (!/[A-Za-z0-9]/.test(char) || i < prefixLength)) {
       tokens.push({ literal: escape[0] });
