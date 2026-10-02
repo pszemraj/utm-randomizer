@@ -53,15 +53,24 @@ export async function saveSettings(changes: Partial<Settings>): Promise<void> {
   await chrome.storage.local.set(changes);
 }
 
-/** Calls `listener` with the full settings whenever any of them change. Returns an unsubscribe function. */
-export function watchSettings(listener: (settings: Settings) => void): () => void {
+/** Subscribes to local storage changes and returns an unsubscribe function. */
+function watchLocalChanges(listener: (changes: Record<string, chrome.storage.StorageChange>) => void): () => void {
   const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'local' && SETTING_KEYS.some((key) => key in changes)) {
-      void loadSettings().then(listener);
+    if (area === 'local') {
+      listener(changes);
     }
   };
   chrome.storage.onChanged.addListener(onChanged);
   return () => chrome.storage.onChanged.removeListener(onChanged);
+}
+
+/** Calls `listener` with the full settings whenever any of them change. Returns an unsubscribe function. */
+export function watchSettings(listener: (settings: Settings) => void): () => void {
+  return watchLocalChanges((changes) => {
+    if (SETTING_KEYS.some((key) => key in changes)) {
+      void loadSettings().then(listener);
+    }
+  });
 }
 
 /**
@@ -89,14 +98,12 @@ export async function createOrReadSecret(): Promise<string> {
 
 /** Calls `listener` whenever the per-install key is created or replaced. Returns an unsubscribe function. */
 export function watchSecret(listener: (secret: string) => void): () => void {
-  const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+  return watchLocalChanges((changes) => {
     const next: unknown = changes[SECRET_KEY]?.newValue;
-    if (area === 'local' && typeof next === 'string' && next) {
+    if (typeof next === 'string' && next) {
       listener(next);
     }
-  };
-  chrome.storage.onChanged.addListener(onChanged);
-  return () => chrome.storage.onChanged.removeListener(onChanged);
+  });
 }
 
 /** The per-install key for contexts other than the service worker: read it, or ask the worker to create it. */
