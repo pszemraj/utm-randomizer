@@ -1,6 +1,12 @@
 import { startAddressBarCleaner, type AddressBarCleaner } from './lib/address-bar';
 import { startCopyWatcher, type WatchedClipboard } from './lib/copy-watcher';
-import { isExtensionMessage, sendNotification, type ExtensionMessage, type ToastPayload } from './lib/messages';
+import {
+  isExtensionMessage,
+  isWorkerSender,
+  sendNotification,
+  type ExtensionMessage,
+  type ToastPayload,
+} from './lib/messages';
 import {
   DEFAULT_SETTINGS,
   describeMode,
@@ -29,6 +35,7 @@ let settingsUpdated = false;
 void loadSettings().then((loaded) => {
   if (!settingsUpdated) {
     settings = loaded;
+    watcher.invalidate();
   }
   addressBar?.clean();
 });
@@ -36,15 +43,18 @@ void requestSecret()
   .catch(() => null)
   .then((loaded) => {
     key ??= loaded;
+    watcher.invalidate();
     addressBar?.clean();
   });
 const unwatchSettings = watchSettings((updated) => {
   settingsUpdated = true;
   settings = updated;
+  watcher.invalidate();
   addressBar?.clean();
 });
 const unwatchSecret = watchSecret((updated) => {
   key = updated;
+  watcher.invalidate();
 });
 
 /** False once the extension was reloaded, updated, or removed (`chrome.runtime.id` disappears). */
@@ -72,15 +82,33 @@ const watcher = startCopyWatcher({
   getSettings: () => settings,
   getKey: () => key,
   isContextValid,
-  beforeRestore: async (text) => {
-    // The background clipboard watcher would otherwise rewrite the restored link right away.
-    const message: ExtensionMessage = { type: 'ignore-clipboard', text };
-    await chrome.runtime.sendMessage(message).catch(() => undefined);
+  restore: (text) => coordinate({ type: 'restore-clipboard', text }),
+  beginRead: async () => {
+    const message: ExtensionMessage = { type: 'clipboard-epoch' };
+    const response: unknown = await chrome.runtime.sendMessage(message);
+    if (!(
+      typeof response === 'object' &&
+      response !== null &&
+      'ok' in response &&
+      response.ok === true &&
+      'epoch' in response &&
+      typeof response.epoch === 'number' &&
+      Number.isSafeInteger(response.epoch) &&
+      response.epoch >= 0
+    )) {
+      throw new Error('Clipboard coordinator did not acknowledge the read');
+    }
+    return response.epoch;
   },
-  onRewrite: ({ original, urls }) => {
+  reconcile: (text, embedded, baseline, types, epoch) =>
+    coordinate({ type: 'reconcile-clipboard', text, embedded, baseline, types: [...types], epoch }),
+  onRewrite: ({ original, urls, undoable }) => {
     const { emoji, done } = describeMode(settings.mode);
     const payload: ToastPayload | undefined = settings.notify
-      ? { message: `${emoji} Tracking ${done}${urls > 1 ? ` in ${urls} links` : ''}`, undoText: original }
+      ? {
+          message: `${emoji} Tracking ${done}${urls > 1 ? ` in ${urls} links` : ''}`,
+          undoText: undoable === false ? undefined : original,
+        }
       : undefined;
     if (payload && isTopFrame) {
       toast(payload);
@@ -88,6 +116,14 @@ const watcher = startCopyWatcher({
     sendNotification({ type: 'rewritten', urls, relayToast: isTopFrame ? undefined : payload });
   },
 });
+
+/** Requires the shared clipboard writer to acknowledge the operation before reporting success. */
+async function coordinate(message: ExtensionMessage): Promise<void> {
+  const response: unknown = await chrome.runtime.sendMessage(message);
+  if (!(typeof response === 'object' && response !== null && 'ok' in response && response.ok === true)) {
+    throw new Error('Clipboard coordinator rejected the operation');
+  }
+}
 
 if (isTopFrame) {
   // Only the top frame's URL is shown in the address bar.
@@ -99,8 +135,8 @@ if (isTopFrame) {
 
   const onMessage = (
     message: unknown,
-    _sender: chrome.runtime.MessageSender,
-    sendResponse: (shown: boolean) => void,
+    sender: chrome.runtime.MessageSender,
+    sendResponse: (shown: boolean | { ok: boolean }) => void,
   ) => {
     if (!isContextValid()) {
       chrome.runtime.onMessage.removeListener(onMessage);
@@ -108,7 +144,12 @@ if (isTopFrame) {
       unwatchSecret();
       return;
     }
-    if (isExtensionMessage(message) && message.type === 'toast') {
+    if (!isWorkerSender(sender) || !isExtensionMessage(message)) return false;
+    if (message.type === 'inspect-clipboard') {
+      void watcher.inspect().then((ok) => sendResponse({ ok }));
+      return true;
+    }
+    if (message.type === 'toast') {
       toast(message.toast);
       // Answer so the worker knows a toast was shown and skips its badge fallback.
       sendResponse(true);

@@ -116,22 +116,19 @@ export function showToast({ message, onUndo, durationMs = onUndo ? 4500 : 2500 }
     const undo = document.createElement('button');
     undo.className = 'undo';
     undo.textContent = 'Undo';
-    undo.addEventListener(
-      'click',
-      () => {
-        undo.remove();
-        onUndo().then(
-          () => {
-            text.textContent = 'Original link restored';
-          },
-          () => {
-            text.textContent = 'Could not restore the original link';
-          },
-        );
-        schedule(1600);
-      },
-      { once: true },
-    );
+    undo.addEventListener('click', (event) => {
+      if (!event.isTrusted) return;
+      undo.remove();
+      onUndo().then(
+        () => {
+          text.textContent = 'Original link restored';
+        },
+        () => {
+          text.textContent = 'Could not restore the original link';
+        },
+      );
+      schedule(1600);
+    });
     toast.append(undo);
   }
 

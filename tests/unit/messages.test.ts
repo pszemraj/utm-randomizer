@@ -1,0 +1,97 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { isExtensionMessage, isWorkerSender } from '../../src/lib/messages';
+
+const config = { mode: 'strip', key: 'test-key' };
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('runtime message payloads', () => {
+  it.each([
+    { type: 'get-secret' },
+    { type: 'inspect-clipboard' },
+    { type: 'clipboard-epoch' },
+    { type: 'offscreen-epoch' },
+    { type: 'count', urls: 1 },
+    { type: 'rewritten', urls: 2, relayToast: { message: 'Cleaned', undoText: '' }, tabId: 7 },
+    { type: 'toast', toast: { message: 'Cleaned' } },
+    { type: 'watch-config', config },
+    { type: 'watch-config', config: null },
+    { type: 'offscreen-copy', text: 'copy' },
+    { type: 'copy-clipboard', text: 'copy' },
+    { type: 'restore-clipboard', text: 'original' },
+    { type: 'offscreen-restore', text: 'original' },
+    { type: 'reconcile-clipboard', text: '', embedded: true, types: ['text/plain'], epoch: 0, baseline: 'before' },
+    { type: 'offscreen-reconcile', text: 'copy', embedded: false, types: ['text/plain'], epoch: 0, config, tabId: 7 },
+    {
+      type: 'reconcile-clipboard',
+      text: '',
+      embedded: true,
+      types: ['text/plain', 'web application/custom'],
+      epoch: 0,
+    },
+  ])('accepts a valid $type payload', (message) => {
+    expect(isExtensionMessage(message)).toBe(true);
+  });
+
+  it.each([
+    null,
+    [],
+    { type: 'unknown' },
+    { type: 'count', urls: '1000' },
+    { type: 'count', urls: 0 },
+    { type: 'count', urls: -1 },
+    { type: 'count', urls: 1.5 },
+    { type: 'count', urls: Number.POSITIVE_INFINITY },
+    { type: 'count', urls: Number.MAX_SAFE_INTEGER + 1 },
+    { type: 'rewritten', urls: 1, relayToast: { message: 42 } },
+    { type: 'rewritten', urls: 1, tabId: -1 },
+    { type: 'offscreen-copy' },
+    { type: 'offscreen-copy', text: 5 },
+    { type: 'offscreen-copy', text: 'x'.repeat(100_001) },
+    { type: 'restore-clipboard', text: null },
+    { type: 'watch-config', config: { mode: 'invalid', key: 'key' } },
+    { type: 'watch-config', config: { mode: 'strip', key: 123 } },
+    { type: 'watch-config', config: { mode: 'strip', key: '' } },
+    { type: 'watch-config', config: { mode: 'strip', key: 'x'.repeat(100_001) } },
+    { type: 'toast', toast: { message: 'ok', undoText: 5 } },
+    { type: 'toast', toast: { message: 'x'.repeat(100_001) } },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: 'true' },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: true, baseline: 5 },
+    { type: 'offscreen-reconcile', text: 'copy', embedded: false },
+    { type: 'offscreen-reconcile', text: 'copy', embedded: false, config, tabId: 1.5 },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: true },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: true, types: ['text/plain', 5] },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: true, types: ['x'.repeat(257)] },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: true, types: [''] },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: true, types: Array<string>(101).fill('text/plain') },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: true, types: ['text/plain'] },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: true, types: ['text/plain'], epoch: -1 },
+    { type: 'reconcile-clipboard', text: 'copy', embedded: true, types: ['text/plain'], epoch: 1.5 },
+    {
+      type: 'reconcile-clipboard',
+      text: 'copy',
+      embedded: true,
+      types: ['text/plain'],
+      epoch: Number.MAX_SAFE_INTEGER + 1,
+    },
+    { type: 'offscreen-reconcile', text: 'copy', embedded: true, types: ['text/plain'], config, epoch: '0' },
+  ])('rejects malformed messages %#', (message) => {
+    expect(isExtensionMessage(message)).toBe(false);
+  });
+});
+
+describe('offscreen worker authorization', () => {
+  it('accepts only the same extension worker without a tab', () => {
+    vi.stubGlobal('chrome', {
+      runtime: { id: 'test-extension', getURL: (path: string) => `chrome-extension://test-extension/${path}` },
+    });
+    expect(isWorkerSender({ id: 'test-extension' })).toBe(true);
+    expect(isWorkerSender({ id: 'test-extension', url: 'chrome-extension://test-extension/background.js' })).toBe(true);
+    expect(isWorkerSender({ id: 'other-extension' })).toBe(false);
+    expect(isWorkerSender({ id: 'test-extension', url: 'chrome-extension://test-extension/popup.html' })).toBe(false);
+    expect(isWorkerSender({ id: 'test-extension', url: 'chrome-extension://test-extension/offscreen.html' })).toBe(
+      false,
+    );
+    expect(isWorkerSender({ id: 'test-extension', tab: { id: 7 } as chrome.tabs.Tab })).toBe(false);
+  });
+});

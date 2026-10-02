@@ -18,7 +18,7 @@ const options = {
   outdir: OUT_DIR,
   bundle: true,
   format: 'iife',
-  target: 'chrome116',
+  target: 'chrome123',
   // Unminified output keeps Chrome Web Store review straightforward; the bundle is tiny either way.
   minify: false,
   sourcemap: isWatch ? 'inline' : false,

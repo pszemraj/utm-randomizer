@@ -5,6 +5,7 @@ import {
   type CopyWatcher,
   type RewriteEvent,
   type WatchedClipboard,
+  type WatcherDeps,
 } from '../../src/lib/copy-watcher';
 import { DEFAULT_SETTINGS, type Settings } from '../../src/lib/settings';
 
@@ -14,6 +15,7 @@ const CLEAN = 'https://example.com/page?id=7';
 /** Async Clipboard API stand-in; `modern` exposes the `clipboardchange` event like Chrome 144+. */
 class FakeClipboard extends EventTarget implements WatchedClipboard {
   text = '';
+  types = ['text/plain'];
   writes: string[] = [];
 
   constructor(modern: boolean) {
@@ -28,6 +30,14 @@ class FakeClipboard extends EventTarget implements WatchedClipboard {
     return Promise.resolve(this.text);
   }
 
+  /** Native format inventory and a text snapshot; reads can be delayed independently in tests. */
+  read(): ReturnType<WatchedClipboard['read']> {
+    const text = this.readText();
+    return Promise.resolve([
+      { types: [...this.types], getType: async () => new Blob([await text], { type: 'text/plain' }) },
+    ]);
+  }
+
   /** Replaces the fake clipboard text and records the write. */
   writeText(text: string): Promise<void> {
     this.text = text;
@@ -38,7 +48,8 @@ class FakeClipboard extends EventTarget implements WatchedClipboard {
   /** Something (the page, the browser) replaced the clipboard contents. */
   change(text: string, types: string[] = ['text/plain']): void {
     this.text = text;
-    this.dispatchEvent(Object.assign(new Event('clipboardchange'), { types }));
+    this.types = types;
+    this.dispatchEvent(trusted(Object.assign(new Event('clipboardchange'), { types })));
   }
 }
 
@@ -47,6 +58,8 @@ let settings: Settings;
 let rewrites: RewriteEvent[];
 let now: number;
 let key: string | null;
+let reconcile: ReturnType<typeof vi.fn<WatcherDeps['reconcile']>>;
+let restore: ReturnType<typeof vi.fn<WatcherDeps['restore']>>;
 
 /** Starts a watcher in Remove mode (simple expected output) with a controllable clock; records rewrites. */
 function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {}, isContextValid = () => true) {
@@ -54,8 +67,13 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
   rewrites = [];
   now = 100_000;
   key = 'test-key';
+  reconcile = vi.fn<WatcherDeps['reconcile']>().mockResolvedValue(undefined);
+  restore = vi.fn<WatcherDeps['restore']>().mockResolvedValue(undefined);
   watcher = startCopyWatcher({
     clipboard,
+    reconcile,
+    restore,
+    beginRead: () => Promise.resolve(0),
     getSettings: () => settings,
     getKey: () => key,
     onRewrite: (event) => rewrites.push(event),
@@ -67,7 +85,7 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
 
 /** A cancelable, bubbling copy or cut event with an empty DataTransfer, like the browser dispatches. */
 function copyEvent(type: 'copy' | 'cut' = 'copy'): ClipboardEvent {
-  return new ClipboardEvent(type, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+  return trusted(new ClipboardEvent(type, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }));
 }
 
 /** Selects the whole text content of `element`. */
@@ -81,12 +99,12 @@ function selectText(element: Element): void {
 
 /** Simulates the user clicking on the page, which opens the watcher's intent window. */
 function interact(): void {
-  document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  document.body.dispatchEvent(trusted(new PointerEvent('pointerdown', { bubbles: true })));
 }
 
 /** Lets pending clipboard reads and writes (chained promises) settle. */
 async function flush(): Promise<void> {
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
     await Promise.resolve();
   }
 }
@@ -97,6 +115,7 @@ afterEach(() => {
   document.body.innerHTML = '';
   window.getSelection()?.removeAllRanges();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('copy events', () => {
@@ -235,328 +254,208 @@ describe('copy events', () => {
   });
 });
 
-describe('clipboardchange', () => {
-  it('rewrites links the page wrote while the user was interacting with it', async () => {
+/** Happy DOM has no browser input source; trusted fixtures model it separately from synthetic attack events. */
+function trusted<T extends Event>(event: T): T {
+  Object.defineProperty(event, 'isTrusted', { value: true });
+  return event;
+}
+
+/** A read whose completion the test controls to model clipboard work arriving out of order. */
+function pendingRead() {
+  let resolve!: (text: string) => void;
+  const promise = new Promise<string>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe('clipboard reconciliation', () => {
+  it('requires a complete native inventory for background inspection', async () => {
+    const clipboard = new FakeClipboard(true);
+    const current = start(clipboard);
+    clipboard.text = TRACKED;
+    clipboard.types = ['text/plain', 'web application/custom'];
+    expect(await current.inspect()).toBe(true);
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(clipboard.writes).toEqual([]);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    expect(await current.inspect()).toBe(false);
+  });
+
+  it('does not inspect for a disabled whole-clipboard watcher', async () => {
+    const current = start(new FakeClipboard(true), { watchClipboard: false });
+    expect(await current.inspect()).toBe(false);
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+  it('delegates current clipboard text without writing from the page', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard);
     interact();
     clipboard.change(TRACKED);
     await flush();
-
-    expect(clipboard.text).toBe(CLEAN);
-    expect(clipboard.writes).toEqual([CLEAN]);
-    expect(rewrites).toHaveLength(1);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], 0);
+    expect(clipboard.writes).toEqual([]);
+    expect(rewrites).toEqual([]);
   });
 
-  it('ignores changes long after the last interaction', async () => {
+  it.each(['image/png', 'Files', 'application/custom'])('leaves mixed %s formats alone', async (type) => {
     const clipboard = new FakeClipboard(true);
     start(clipboard);
     interact();
-    now += 60_000;
+    clipboard.change(TRACKED, ['text/plain', type]);
+    await flush();
+    expect(reconcile).not.toHaveBeenCalled();
     clipboard.change(TRACKED);
     await flush();
-
-    expect(clipboard.writes).toHaveLength(0);
+    expect(reconcile).toHaveBeenCalledOnce();
   });
 
-  it('ignores non-text content and does not loop on its own writes', async () => {
+  it('requests format-aware reconciliation for HTML-only links', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard);
     interact();
-    clipboard.change(TRACKED, ['image/png']);
+    clipboard.change('A product', ['text/plain', 'text/html']);
     await flush();
-    expect(clipboard.writes).toHaveLength(0);
-
-    clipboard.change(TRACKED);
-    await flush();
-    clipboard.change(clipboard.text);
-    await flush();
-    expect(clipboard.writes).toEqual([CLEAN]);
+    expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain', 'text/html'], 0);
   });
 
-  it("rewrites a fresh copy of the same link, but not another watcher's rewrite of it", async () => {
+  it('rejects synthetic copy, gesture and clipboard-change events', async () => {
+    const clipboard = new FakeClipboard(true);
+    start(clipboard);
+    const data = new DataTransfer();
+    data.setData('text/plain', TRACKED);
+    const copy = new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true });
+    copy.preventDefault();
+    document.body.dispatchEvent(copy);
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    clipboard.change(TRACKED);
+    await flush();
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(rewrites).toEqual([]);
+    expect(data.getData('text/plain')).toBe(TRACKED);
+    interact();
+    clipboard.dispatchEvent(Object.assign(new Event('clipboardchange'), { types: ['text/plain'] }));
+    await flush();
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it('invalidates an older read when a newer change completes first', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard);
     interact();
+    const old = pendingRead();
+    const recent = pendingRead();
+    vi.spyOn(clipboard, 'readText').mockReturnValueOnce(old.promise).mockReturnValueOnce(recent.promise);
     clipboard.change(TRACKED);
     await flush();
-    // The copy button is clicked again right away: the original is back and is cleaned again.
-    interact();
-    clipboard.change(TRACKED);
+    clipboard.change('newer contents');
+    recent.resolve('newer contents');
     await flush();
-    expect(clipboard.writes).toEqual([CLEAN, CLEAN]);
-
-    // Another tracked version of the link, as a watcher that disagrees would write it, is left alone...
-    const otherRewrite = 'https://example.com/page?id=7&utm_source=reddit&fbclid=IwAR9xyz';
-    clipboard.change(otherRewrite);
+    old.resolve(TRACKED);
     await flush();
-    expect(clipboard.text).toBe(otherRewrite);
-
-    // ...until the loop guard's window has passed.
-    now += 6_000;
-    clipboard.change(otherRewrite);
-    await flush();
-    expect(clipboard.text).toBe(CLEAN);
+    expect(reconcile.mock.calls).toEqual([['newer contents', true, undefined, ['text/plain'], 0]]);
   });
 
-  it('only rewrites links embedded in text when the clipboard holds plain text', async () => {
+  it.each(['Undo', 'stop', 'settings', 'new intent'])('invalidates a pending read on %s', async (action) => {
     const clipboard = new FakeClipboard(true);
-    start(clipboard);
+    const current = start(clipboard);
     interact();
-    clipboard.change(`Look: ${TRACKED}`, ['text/plain', 'text/html']);
-    await flush();
-    expect(clipboard.writes).toHaveLength(0);
-
-    clipboard.change(`Look: ${TRACKED}`, ['text/plain']);
-    await flush();
-    expect(clipboard.writes).toEqual([`Look: ${CLEAN}`]);
-  });
-
-  it('restores the original on undo without rewriting it again', async () => {
-    const clipboard = new FakeClipboard(true);
-    const copyWatcher = start(clipboard);
-    interact();
+    const read = pendingRead();
+    vi.spyOn(clipboard, 'readText').mockReturnValueOnce(read.promise);
     clipboard.change(TRACKED);
     await flush();
-
-    await copyWatcher.restore(TRACKED);
-    clipboard.change(TRACKED);
+    if (action === 'Undo') await current.restore(TRACKED);
+    else if (action === 'stop') current.stop();
+    else if (action === 'settings') current.invalidate();
+    else interact();
+    read.resolve(TRACKED);
     await flush();
-
-    expect(clipboard.text).toBe(TRACKED);
-    expect(rewrites).toHaveLength(1);
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(clipboard.writes).toEqual([]);
   });
 
-  it.each(['ordinary text', ''])(
-    'cleans a fresh copy after Undo and a different clipboard value (%s)',
-    async (text) => {
-      const clipboard = new FakeClipboard(true);
-      const copyWatcher = start(clipboard, { watchClipboard: false });
-      interact();
-      clipboard.change(TRACKED);
-      await flush();
-      await copyWatcher.restore(TRACKED);
-      clipboard.change(text);
-      await flush();
-      clipboard.change(TRACKED);
-      await flush();
-
-      expect(clipboard.text).toBe(CLEAN);
-      expect(clipboard.writes).toEqual([CLEAN, TRACKED, CLEAN]);
-    },
-  );
-
-  it('clears Undo suppression after copying non-text content', async () => {
+  it('fails Undo when the coordinator does not acknowledge it', async () => {
     const clipboard = new FakeClipboard(true);
-    const copyWatcher = start(clipboard, { watchClipboard: false });
-    interact();
-    await copyWatcher.restore(TRACKED);
-    clipboard.change('', ['image/png']);
-    clipboard.change(TRACKED);
-    await flush();
-
-    expect(clipboard.writes).toEqual([TRACKED, CLEAN]);
+    const current = start(clipboard);
+    restore.mockRejectedValueOnce(new Error('worker terminated'));
+    await expect(current.restore(TRACKED)).rejects.toThrow('worker terminated');
+    expect(clipboard.writes).toEqual([]);
   });
 
-  it('tells other watchers about Undo before restoring the original', async () => {
-    const clipboard = new FakeClipboard(true);
-    const order: string[] = [];
-    watcher = startCopyWatcher({
-      clipboard,
-      getSettings: () => ({ ...DEFAULT_SETTINGS, mode: 'strip' }),
-      getKey: () => 'test-key',
-      onRewrite: () => undefined,
-      beforeRestore: (text) => {
-        order.push(`ignore ${text}`);
-        return Promise.resolve();
-      },
-    });
-    const write = clipboard.writeText.bind(clipboard);
-    clipboard.writeText = (text) => {
-      order.push(`write ${text}`);
-      return write(text);
-    };
-
-    await watcher.restore(TRACKED);
-
-    expect(order).toEqual([`ignore ${TRACKED}`, `write ${TRACKED}`]);
-  });
-
-  it('shuts down once the extension context is gone', async () => {
+  it('ignores expired intent and stops after context removal', async () => {
     const clipboard = new FakeClipboard(true);
     let valid = true;
     start(clipboard, {}, () => valid);
     interact();
+    now += 60_000;
+    clipboard.change(TRACKED);
+    await flush();
+    expect(reconcile).not.toHaveBeenCalled();
+    interact();
     valid = false;
     clipboard.change(TRACKED);
     await flush();
-
     valid = true;
     interact();
     clipboard.change(TRACKED);
     await flush();
-    expect(clipboard.writes).toHaveLength(0);
+    expect(reconcile).not.toHaveBeenCalled();
   });
 });
 
-describe('without clipboardchange (Chrome < 144)', () => {
-  it.each(['copy', 'cut'] as const)('polls after a page stops %s propagation', async (type) => {
+describe('gesture reconciliation', () => {
+  it.each([true, false])('reconciles a trusted copy whose propagation stopped (clipboardchange %s)', async (modern) => {
     vi.useFakeTimers();
-    const clipboard = new FakeClipboard(false);
-    start(clipboard, { watchClipboard: false });
-    document.body.innerHTML = `<textarea id="field">${TRACKED}</textarea>`;
-    const field = document.getElementById('field');
-    if (!(field instanceof HTMLTextAreaElement)) throw new Error('missing fixture');
-    field.focus();
-    field.select();
-    field.addEventListener(type, (event) => event.stopPropagation());
-    const event = copyEvent(type);
-    field.dispatchEvent(event);
-    // The browser's default copy/cut action writes after event dispatch.
-    clipboard.text = TRACKED;
-
-    await vi.advanceTimersByTimeAsync(500);
-
-    expect(event.defaultPrevented).toBe(false);
-    expect(clipboard.writes).toEqual([CLEAN]);
-    expect(rewrites).toHaveLength(1);
-  });
-
-  it('does not start a delayed propagation fallback after the watcher stops', async () => {
-    vi.useFakeTimers();
-    const clipboard = new FakeClipboard(false);
-    const copyWatcher = start(clipboard);
-    const read = vi.spyOn(clipboard, 'readText');
+    const clipboard = new FakeClipboard(modern);
+    start(clipboard);
     document.body.innerHTML = '<textarea id="field"></textarea>';
     const field = document.getElementById('field');
     if (!field) throw new Error('missing fixture');
-    field.addEventListener('copy', (event) => event.stopPropagation());
+    field.addEventListener('copy', (event) => event.stopImmediatePropagation());
     field.dispatchEvent(copyEvent());
-    clipboard.text = TRACKED;
-    copyWatcher.stop();
-
+    clipboard.text = 'A product';
     await vi.advanceTimersByTimeAsync(500);
-
-    expect(read).not.toHaveBeenCalled();
-    expect(clipboard.writes).toHaveLength(0);
+    expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain'], 0);
   });
 
-  it('expires Undo suppression when the next gesture observes different clipboard text', async () => {
-    vi.useFakeTimers();
-    const clipboard = new FakeClipboard(false);
-    const copyWatcher = start(clipboard, { watchClipboard: false });
-    await copyWatcher.restore(TRACKED);
-    clipboard.text = 'ordinary text';
-    document.body.innerHTML = '<button id="share">Copy link</button>';
-    document.getElementById('share')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    clipboard.text = TRACKED;
-    await vi.advanceTimersByTimeAsync(3000);
-
-    expect(clipboard.writes).toEqual([TRACKED, CLEAN]);
-  });
-
-  it('does not let an earlier gesture baseline clear a newer Undo', async () => {
-    vi.useFakeTimers();
-    const clipboard = new FakeClipboard(false);
-    const copyWatcher = start(clipboard, { watchClipboard: false });
-    clipboard.text = CLEAN;
-    document.body.innerHTML = '<button id="undo">Undo</button>';
-    const button = document.getElementById('undo');
-    if (!button) throw new Error('missing fixture');
-    button.addEventListener('click', () => void copyWatcher.restore(TRACKED));
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await vi.advanceTimersByTimeAsync(3000);
-
-    expect(clipboard.writes).toEqual([TRACKED]);
-    expect(clipboard.text).toBe(TRACKED);
-  });
-
-  it.each(['click', 'contextmenu'])('leaves an existing clipboard link alone after an unrelated %s', async (type) => {
-    vi.useFakeTimers();
-    const clipboard = new FakeClipboard(false);
-    clipboard.text = TRACKED;
-    start(clipboard, { watchClipboard: false });
-    document.body.innerHTML = `<a id="control" href="${TRACKED}">article</a>`;
-    document.getElementById('control')?.dispatchEvent(new MouseEvent(type, { bubbles: true }));
-
-    await vi.advanceTimersByTimeAsync(8500);
-
-    expect(clipboard.text).toBe(TRACKED);
-    expect(clipboard.writes).toHaveLength(0);
-  });
-
-  it('captures the baseline before a button immediately writes a link', async () => {
+  it('never starts reconciliation from a synthetic click', async () => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(false);
     start(clipboard);
-    document.body.innerHTML = '<button id="share">Copy link</button>';
-    const button = document.getElementById('share');
-    if (!button) throw new Error('missing fixture');
-    button.addEventListener('click', () => void clipboard.writeText(TRACKED));
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    await vi.advanceTimersByTimeAsync(3000);
-
-    expect(clipboard.text).toBe(CLEAN);
-    expect(clipboard.writes).toEqual([TRACKED, CLEAN]);
-  });
-
-  it('catches delayed writes and a fresh copy of the same link', async () => {
-    vi.useFakeTimers();
-    const clipboard = new FakeClipboard(false);
-    start(clipboard);
-    document.body.innerHTML = '<button id="share">Copy link</button>';
-    const button = document.getElementById('share');
-    if (!button) throw new Error('missing fixture');
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await vi.advanceTimersByTimeAsync(1000);
-    clipboard.text = TRACKED;
-    await vi.advanceTimersByTimeAsync(2000);
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.body.innerHTML = '<button id="copy">Copy link</button>';
+    document.getElementById('copy')?.click();
     clipboard.text = TRACKED;
     await vi.advanceTimersByTimeAsync(3000);
-
-    expect(clipboard.writes).toEqual([CLEAN, CLEAN]);
+    expect(reconcile).not.toHaveBeenCalled();
   });
 
-  it('polls the clipboard after a click on a copy button', async () => {
+  it('compares legacy copies with the pre-gesture baseline', async () => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(false);
+    clipboard.text = 'previous contents';
     start(clipboard);
-    document.body.innerHTML = '<button id="share">Copy link</button>';
-    document.getElementById('share')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.body.innerHTML = '<button id="copy">Copy link</button>';
+    document.getElementById('copy')?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
     clipboard.text = TRACKED;
-
     await vi.advanceTimersByTimeAsync(3000);
-
-    expect(clipboard.text).toBe(CLEAN);
-    expect(clipboard.writes).toEqual([CLEAN]);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, 'previous contents', ['text/plain'], 0);
+    expect(clipboard.writes).toEqual([]);
   });
 
-  it('polls after the context menu opens on a link (Copy link address)', async () => {
+  it('leaves an unchanged legacy clipboard alone and cancels pending sweeps on stop', async () => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(false);
-    start(clipboard);
-    document.body.innerHTML = `<a id="link" href="${TRACKED}">article</a>`;
-    document.getElementById('link')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
-
-    await vi.advanceTimersByTimeAsync(1500);
     clipboard.text = TRACKED;
-    await vi.advanceTimersByTimeAsync(1000);
-
-    expect(clipboard.text).toBe(CLEAN);
-  });
-
-  it('ignores clicks on things that are not controls', async () => {
-    vi.useFakeTimers();
-    const clipboard = new FakeClipboard(false);
-    start(clipboard);
-    clipboard.text = TRACKED;
-    document.body.innerHTML = '<p id="plain">text</p>';
-    document.getElementById('plain')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
+    const current = start(clipboard);
+    document.body.innerHTML = '<button id="copy">Copy link</button>';
+    const button = document.getElementById('copy');
+    button?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
     await vi.advanceTimersByTimeAsync(3000);
-
-    expect(clipboard.writes).toHaveLength(0);
+    expect(reconcile).not.toHaveBeenCalled();
+    button?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
+    current.stop();
+    clipboard.text = 'later contents';
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(reconcile).not.toHaveBeenCalled();
   });
 });

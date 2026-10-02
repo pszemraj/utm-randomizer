@@ -47,12 +47,332 @@ async function expectStable(read: () => Promise<string>, ms: number): Promise<st
 }
 
 test.describe('copying on web pages', () => {
+  test('rejects synthetic copy and Undo without consuming the real Undo button', async ({
+    playground,
+    readClipboard,
+    writeClipboardExternally,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    await writeClipboardExternally('prior clipboard contents');
+    await playground.evaluate(() => {
+      const data = new DataTransfer();
+      data.setData('text/plain', 'https://attacker.example/invoice?utm_source=forged');
+      const event = new ClipboardEvent('copy', { bubbles: true, cancelable: true, clipboardData: data });
+      event.preventDefault();
+      document.body.dispatchEvent(event);
+      document.querySelector('utm-randomizer-toast')?.shadowRoot?.querySelector<HTMLButtonElement>('.undo')?.click();
+    });
+    expect(await readClipboard()).toBe('prior clipboard contents');
+    await expect(playground.locator('utm-randomizer-toast')).toHaveCount(0);
+
+    await playground.getByTestId('copy-writetext').click();
+    await expect.poll(readClipboard).toBe('https://example.com/article?id=42');
+    const undo = playground.locator('utm-randomizer-toast').getByRole('button', { name: 'Undo' });
+    await undo.evaluate((button) => (button as HTMLButtonElement).click());
+    expect(await readClipboard()).toBe('https://example.com/article?id=42');
+    await expect(undo).toBeVisible();
+    await undo.click();
+    await expect.poll(readClipboard).toBe(ARTICLE);
+  });
+
+  for (const stop of ['stopPropagation', 'stopImmediatePropagation'] as const) {
+    test(`preserves and cleans HTML-only tracked links after ${stop}`, async ({
+      playground,
+      context,
+      setSettings,
+      waitForWatcher,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false });
+      await waitForWatcher(false);
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: new URL(playground.url()).origin,
+      });
+      await playground.evaluate((method) => {
+        const button = document.createElement('button');
+        button.id = 'copy-stopped-html';
+        button.textContent = 'Copy product';
+        button.onclick = () => {
+          // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises a real browser copy event
+          document.execCommand('copy');
+        };
+        document.addEventListener(
+          'copy',
+          (event) => {
+            event.preventDefault();
+            event.clipboardData?.setData('text/plain', 'A product');
+            event.clipboardData?.setData(
+              'text/html',
+              '<strong><a href="https://shop.example/?id=42&utm_source=email">A product</a></strong>',
+            );
+            event[method]();
+          },
+          { once: true },
+        );
+        document.body.append(button);
+      }, stop);
+      await playground.locator('#copy-stopped-html').click();
+      await expect
+        .poll(() =>
+          playground.evaluate(async () => {
+            const items = await navigator.clipboard.read();
+            const item = items.find((entry) => entry.types.includes('text/html'));
+            return item ? (await item.getType('text/html')).text() : '';
+          }),
+        )
+        .toMatch(/href="https:\/\/shop\.example\/\?id=42"/);
+      const copied = await playground.evaluate(async () => {
+        const [item] = await navigator.clipboard.read();
+        return {
+          text: await navigator.clipboard.readText(),
+          html: item ? await (await item.getType('text/html')).text() : '',
+        };
+      });
+      expect(copied.text).toBe('A product');
+      expect(copied.html).toContain('<strong>');
+      expect(copied.html).not.toContain('utm_source');
+    });
+  }
+
+  test('bounds synchronous work for an HTML anchor with many tracking parameters', async ({ playground }) => {
+    await playground.evaluate(() => {
+      const link = 'https://example.com/?' + Array.from({ length: 5000 }, () => 'utm_a=x').join('&');
+      const button = document.createElement('button');
+      button.id = 'copy-many-parameters';
+      button.textContent = 'Copy many parameters';
+      document.addEventListener(
+        'copy',
+        (event) => {
+          event.preventDefault();
+          event.clipboardData?.setData('text/plain', 'A product');
+          event.clipboardData?.setData('text/html', `<a href="${link}">A product</a>`);
+          window.addEventListener(
+            'copy',
+            (copied) => {
+              const html = copied.clipboardData?.getData('text/html') ?? '';
+              const doc = new DOMParser().parseFromString(html, 'text/html');
+              const href = doc.querySelector('a')?.getAttribute('href') ?? '';
+              button.dataset.changed = String(new URL(href).searchParams.get('utm_a') !== 'x');
+            },
+            { once: true },
+          );
+        },
+        { once: true },
+      );
+      button.onclick = () => {
+        const start = performance.now();
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- measures the synchronous copy-handler route
+        document.execCommand('copy');
+        button.dataset.elapsed = String(performance.now() - start);
+      };
+      document.body.append(button);
+    });
+    const button = playground.locator('#copy-many-parameters');
+    await button.click();
+    await expect(button).toHaveAttribute('data-changed', 'true');
+    expect(Number(await button.getAttribute('data-elapsed'))).toBeLessThan(500);
+  });
+
+  test('top-frame Undo suppresses an iframe copy through the shared writer', async ({
+    playground,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    await playground.frameLocator('[data-testid="frame"]').getByRole('button', { name: 'Copy embedded link' }).click();
+    await expect.poll(readClipboard).toBe('https://example.com/embed?v=3');
+    await playground.locator('utm-randomizer-toast').getByRole('button', { name: 'Undo' }).click();
+    expect(await expectStable(readClipboard, 3000)).toBe('https://example.com/embed?utm_source=iframe&v=3');
+  });
+
+  test('reports a lost Undo acknowledgement and retains suppression across worker restart', async ({
+    playground,
+    context,
+    serviceWorker,
+    extensionId,
+    readClipboard,
+    setSettings,
+  }) => {
+    await setSettings({ mode: 'strip' });
+    await playground.getByTestId('copy-writetext').click();
+    await expect.poll(readClipboard).toBe('https://example.com/article?id=42');
+    const session = await context.newCDPSession(playground);
+    let versionId = '';
+    session.on(
+      'ServiceWorker.workerVersionUpdated',
+      (event: { versions: { scriptURL: string; versionId: string; runningStatus: string }[] }) => {
+        const worker = event.versions.find(
+          (entry) => entry.scriptURL === serviceWorker.url() && entry.runningStatus === 'running',
+        );
+        if (worker) versionId = worker.versionId;
+      },
+    );
+    await session.send('ServiceWorker.enable');
+    await expect.poll(() => versionId).not.toBe('');
+    await serviceWorker.evaluate(() => {
+      const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+      // Hold the response after offscreen has restored the payload, then terminate the worker.
+      Object.defineProperty(chrome.runtime, 'sendMessage', {
+        value: (message: { type?: string }) => {
+          const response: Promise<unknown> = send(message);
+          if (message.type !== 'offscreen-restore') return response;
+          return response.then(() => {
+            Reflect.set(globalThis, 'testUndoAckHeld', true);
+            return new Promise(() => undefined);
+          });
+        },
+      });
+    });
+    await playground.locator('utm-randomizer-toast').getByRole('button', { name: 'Undo' }).click();
+    await expect
+      .poll(() => serviceWorker.evaluate(() => Reflect.get(globalThis, 'testUndoAckHeld') === true))
+      .toBe(true);
+    await session.send('ServiceWorker.stopWorker', { versionId });
+    await expect(playground.locator('utm-randomizer-toast')).toContainText('Could not restore the original link');
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    const restarted: unknown = await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'get-secret' }));
+    expect(restarted).toMatchObject({ ok: true });
+    await playground.bringToFront();
+    expect(await expectStable(readClipboard, 3000)).toBe(ARTICLE);
+    await popup.close();
+    await session.detach();
+  });
+
+  for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+    test(`keeps signed URLs unchanged in ${mode} clipboard, address-bar and popup paths`, async ({
+      playground,
+      server,
+      readClipboard,
+      context,
+      extensionId,
+      setSettings,
+    }) => {
+      await setSettings({ mode });
+      const signed = `${server.origin}/?utm_source=email&Signature=signature&Key-Pair-Id=key&Expires=99`;
+      await playground.goto(signed);
+      await playground.waitForTimeout(600);
+      expect(playground.url()).toBe(signed);
+      const button = playground.getByTestId('copy-writetext');
+      await button.evaluate((element, url) => {
+        const row = element.closest<HTMLElement>('[data-url]');
+        if (!row) throw new Error('missing copy fixture');
+        row.dataset.url = url;
+      }, signed);
+      await button.click();
+      await expect.poll(readClipboard).toBe(signed);
+      expect(await expectStable(readClipboard, 1500)).toBe(signed);
+      const popup = await context.newPage();
+      // A popup opened as a test tab has no toolbar invocation's activeTab grant.
+      await popup.addInitScript((url) => {
+        Object.defineProperty(chrome.tabs, 'query', { value: () => Promise.resolve([{ url }]) });
+      }, signed);
+      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+      await expect(popup.locator('#copyPage')).toBeEnabled();
+      await popup.locator('#copyPage').click();
+      await expect(popup.locator('#copyStatus')).toHaveText('Copied (signed link left unchanged)');
+      expect(await readClipboard()).toBe(signed);
+      await popup.close();
+    });
+  }
+
   test('rewrites links copied with navigator.clipboard.writeText', async ({ playground, readClipboard }) => {
     await playground.getByTestId('copy-writetext').click();
     const copied = await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
     expectReplaced(copied, ARTICLE);
     expect(new URL(copied).searchParams.get('id')).toBe('42');
     await expect(playground.locator('utm-randomizer-toast')).toContainText('Tracking swapped for decoys');
+  });
+
+  test('rewrites percent-encoded click IDs and keeps their encoding', async ({
+    playground,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'decoy', watchClipboard: false });
+    await waitForWatcher(false);
+    const id = '0123456789abcdef0123456789abcdef';
+    const encoded = id.replace(/./g, (char) => `%${char.charCodeAt(0).toString(16)}`);
+    const original = `https://example.com/?msclkid=${encoded}&keep=%2F`;
+    const button = playground.getByTestId('copy-writetext');
+    await button.evaluate((element, url) => {
+      const row = element.closest<HTMLElement>('[data-url]');
+      if (!row) throw new Error('missing copy fixture');
+      row.dataset.url = url;
+    }, original);
+
+    await button.click();
+    const copied = await waitForClipboard(readClipboard, (text) => text !== original);
+    expect(copied).toMatch(/^https:\/\/example\.com\/\?msclkid=(?:%[0-9a-fA-F]{2}){32}&keep=%2F$/);
+    expect(new URL(copied).searchParams.get('msclkid')).toMatch(/^[0-9a-f]{32}$/);
+    expect(new URL(copied).searchParams.get('msclkid')).not.toBe(id);
+    expect(await expectStable(readClipboard, 1000)).toBe(copied);
+  });
+
+  test('preserves images copied with plain-text descriptions containing tracked links', async ({
+    playground,
+    context,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: new URL(playground.url()).origin,
+    });
+    const description = 'Copy of this image: https://example.com/a?utm_source=real';
+    await playground.evaluate((text) => {
+      const button = document.createElement('button');
+      button.id = 'copy-image-description';
+      button.textContent = 'Copy image with description';
+      button.onclick = async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const drawing = canvas.getContext('2d');
+        if (!drawing) throw new Error('missing drawing context');
+        drawing.fillStyle = 'rgb(200, 50, 25)';
+        drawing.fillRect(0, 0, 1, 1);
+        const png = await new Promise<Blob>((resolve) => {
+          canvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+          }, 'image/png');
+        });
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': png, 'text/plain': new Blob([text], { type: 'text/plain' }) }),
+        ]);
+        button.dataset.copied = 'true';
+      };
+      document.body.append(button);
+    }, description);
+
+    await playground.locator('#copy-image-description').click();
+    await expect(playground.locator('#copy-image-description')).toHaveAttribute('data-copied', 'true');
+    // Also let the legacy polling path finish every scheduled check.
+    await playground.waitForTimeout(3000);
+    const copied = await playground.evaluate(async () => {
+      const items = await navigator.clipboard.read();
+      const item = items.find((entry) => entry.types.includes('image/png'));
+      if (!item) return null;
+      const bitmap = await createImageBitmap(await item.getType('image/png'));
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const drawing = canvas.getContext('2d');
+      if (!drawing) throw new Error('missing drawing context');
+      drawing.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return {
+        text: await navigator.clipboard.readText(),
+        pixel: [...drawing.getImageData(0, 0, 1, 1).data],
+      };
+    });
+    expect(copied).toEqual({ text: description, pixel: [200, 50, 25, 255] });
+    await expect(playground.locator('utm-randomizer-toast')).toHaveCount(0);
   });
 
   test('keeps the rewritten link stable: watchers never fight over it', async ({ playground, readClipboard }) => {
@@ -206,6 +526,50 @@ test.describe('copying on web pages', () => {
 test.describe('copying anywhere else (whole-clipboard watcher)', () => {
   const OUTSIDE =
     'https://example.com/story?id=11&utm_source=twitter&utm_medium=social&gclid=Cj0KCQjw9-KzBhDVARIsAF_BwE';
+
+  test('preserves custom formats hidden from synthetic paste', async ({ playground, context, waitForWatcher }) => {
+    await waitForWatcher(true);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(playground.url()).origin });
+    await playground.evaluate(async (text) => {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/plain': new Blob([text], { type: 'text/plain' }),
+          'web application/custom': new Blob(['opaque payload'], { type: 'application/custom' }),
+        }),
+      ]);
+    }, OUTSIDE);
+    await playground.waitForTimeout(1800);
+    const copied = await playground.evaluate(async () => {
+      const [item] = await navigator.clipboard.read();
+      if (!item?.types.includes('web application/custom')) return null;
+      return {
+        text: await (await item.getType('text/plain')).text(),
+        custom: await (await item.getType('web application/custom')).text(),
+      };
+    });
+    expect(copied).toEqual({ text: OUTSIDE, custom: 'opaque payload' });
+  });
+
+  test('leaves copies untouched without a focused reader and retries when one is available', async ({
+    playground,
+    context,
+    extensionId,
+    readClipboard,
+    writeClipboardExternally,
+    waitForWatcher,
+    setSettings,
+  }) => {
+    await setSettings({ mode: 'strip' });
+    await waitForWatcher(true);
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await popup.bringToFront();
+    await writeClipboardExternally(OUTSIDE);
+    expect(await expectStable(readClipboard, 1800)).toBe(OUTSIDE);
+    await playground.bringToFront();
+    await expect.poll(readClipboard).toBe('https://example.com/story?id=11');
+    await popup.close();
+  });
 
   test('rewrites links copied outside any page, such as from the address bar or another app', async ({
     playground,

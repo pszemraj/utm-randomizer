@@ -13,17 +13,13 @@ export interface RewrittenMessage {
   urls: number;
   /** Toast to show elsewhere (the rewrite happened in a subframe or in the background). */
   relayToast?: ToastPayload;
+  /** Originating tab for a reconciliation performed by the offscreen document. */
+  tabId?: number;
 }
 
 /** Content script or popup → service worker: create (if needed) and return the per-install key. */
 export interface GetSecretMessage {
   type: 'get-secret';
-}
-
-/** Content script → service worker: Undo is about to restore `text`; the background watcher must leave it. */
-export interface IgnoreClipboardMessage {
-  type: 'ignore-clipboard';
-  text: string;
 }
 
 /** What the background clipboard watcher needs to rewrite links on its own. */
@@ -39,12 +35,6 @@ export interface WatchConfigMessage {
   config: WatchConfig | null;
 }
 
-/** Service worker → offscreen document: leave `text` alone while it is on the clipboard (Undo). */
-export interface WatchIgnoreMessage {
-  type: 'watch-ignore';
-  text: string;
-}
-
 /** Service worker → content script (top frame): show a toast. */
 export interface ToastMessage {
   type: 'toast';
@@ -56,6 +46,63 @@ export interface OffscreenCopyMessage {
   type: 'offscreen-copy';
   /** Exact text to write. */
   text: string;
+}
+
+/** Content script → service worker: reconcile the snapshot just observed on the clipboard. */
+export interface ReconcileClipboardMessage {
+  type: 'reconcile-clipboard';
+  text: string;
+  embedded: boolean;
+  /** Complete MIME inventory observed through the async Clipboard API. */
+  types: string[];
+  /** Coordinator generation captured before the clipboard read. */
+  epoch: number;
+  baseline?: string;
+}
+
+/** Content script → service worker: restore text and suppress automatic rewriting. */
+export interface RestoreClipboardMessage {
+  type: 'restore-clipboard';
+  text: string;
+}
+
+/** Popup → service worker: put an explicitly copied link on the clipboard. */
+export interface CopyClipboardMessage {
+  type: 'copy-clipboard';
+  text: string;
+}
+
+/** Service worker → offscreen document: reconcile text with the current settings. */
+export interface OffscreenReconcileMessage {
+  type: 'offscreen-reconcile';
+  text: string;
+  embedded: boolean;
+  types: string[];
+  epoch: number;
+  baseline?: string;
+  config: WatchConfig;
+  tabId?: number;
+}
+
+/** Service worker → offscreen document: restore the original and suppress its rewrite. */
+export interface OffscreenRestoreMessage {
+  type: 'offscreen-restore';
+  text: string;
+}
+
+/** Offscreen → worker → focused content script: inspect all native clipboard representations. */
+export interface InspectClipboardMessage {
+  type: 'inspect-clipboard';
+}
+
+/** Content script → worker: obtain the coordinator generation before reading the clipboard. */
+export interface ClipboardEpochMessage {
+  type: 'clipboard-epoch';
+}
+
+/** Worker → offscreen coordinator: return its current generation. */
+export interface OffscreenEpochMessage {
+  type: 'offscreen-epoch';
 }
 
 /** Popup → service worker: count a rewrite done from the popup. */
@@ -79,10 +126,16 @@ export type ExtensionMessage =
   | ToastMessage
   | OffscreenCopyMessage
   | CountMessage
-  | IgnoreClipboardMessage
   | GetSecretMessage
   | WatchConfigMessage
-  | WatchIgnoreMessage;
+  | ReconcileClipboardMessage
+  | RestoreClipboardMessage
+  | CopyClipboardMessage
+  | OffscreenReconcileMessage
+  | OffscreenRestoreMessage
+  | InspectClipboardMessage
+  | ClipboardEpochMessage
+  | OffscreenEpochMessage;
 
 /** Sends a notification to the service worker without waiting for a response. */
 export function sendNotification(message: ExtensionMessage): void {
@@ -93,10 +146,107 @@ export function sendNotification(message: ExtensionMessage): void {
   }
 }
 
-/**
- * Narrows an incoming `chrome.runtime` message to this extension's message shape. Listeners still
- * switch on `type`, so unknown types fall through harmlessly.
- */
+/** Whether a value is an object with named payload fields. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Clipboard payloads share the rewriter's 100,000-character input limit. */
+function isText(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 100_000;
+}
+
+/** Validates a bounded clipboard-format inventory, including unsupported formats. */
+function isTypes(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 100 &&
+    value.every((type: unknown) => typeof type === 'string' && type.length > 0 && type.length <= 256)
+  );
+}
+
+/** Whether a tab id or clipboard generation is a nonnegative safe integer. */
+function isNonnegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** Whether a rewrite count is a positive safe integer. */
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+/** Validates the mode and per-install key supplied to the coordinator. */
+function isWatchConfig(value: unknown): value is WatchConfig {
+  return (
+    isRecord(value) &&
+    typeof value.mode === 'string' &&
+    ['decoy', 'silly', 'hybrid', 'strip'].includes(value.mode) &&
+    isText(value.key) &&
+    value.key.length > 0
+  );
+}
+
+/** Validates a notification and its optional Undo text. */
+function isToast(value: unknown): value is ToastPayload {
+  return isRecord(value) && isText(value.message) && (value.undoText === undefined || isText(value.undoText));
+}
+
+/** Validates every known runtime message payload before a listener acts on it. */
 export function isExtensionMessage(value: unknown): value is ExtensionMessage {
-  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string';
+  if (!isRecord(value)) {
+    return false;
+  }
+  switch (value.type) {
+    case 'get-secret':
+    case 'inspect-clipboard':
+    case 'clipboard-epoch':
+    case 'offscreen-epoch':
+      return true;
+    case 'count':
+      return isCount(value.urls);
+    case 'rewritten':
+      return (
+        isCount(value.urls) &&
+        (value.relayToast === undefined || isToast(value.relayToast)) &&
+        (value.tabId === undefined || isNonnegativeInteger(value.tabId))
+      );
+    case 'toast':
+      return isToast(value.toast);
+    case 'watch-config':
+      return value.config === null || isWatchConfig(value.config);
+    case 'offscreen-reconcile':
+      return (
+        isText(value.text) &&
+        typeof value.embedded === 'boolean' &&
+        isTypes(value.types) &&
+        isNonnegativeInteger(value.epoch) &&
+        (value.baseline === undefined || isText(value.baseline)) &&
+        isWatchConfig(value.config) &&
+        (value.tabId === undefined || isNonnegativeInteger(value.tabId))
+      );
+    case 'reconcile-clipboard':
+      return (
+        isText(value.text) &&
+        typeof value.embedded === 'boolean' &&
+        isTypes(value.types) &&
+        isNonnegativeInteger(value.epoch) &&
+        (value.baseline === undefined || isText(value.baseline))
+      );
+    case 'offscreen-copy':
+    case 'offscreen-restore':
+    case 'restore-clipboard':
+    case 'copy-clipboard':
+      return isText(value.text);
+    default:
+      return false;
+  }
+}
+
+/** Only the extension's service worker may control offscreen clipboard operations. */
+export function isWorkerSender(sender: chrome.runtime.MessageSender): boolean {
+  return (
+    sender.id === chrome.runtime.id &&
+    sender.tab === undefined &&
+    (sender.url === undefined || sender.url === chrome.runtime.getURL('background.js'))
+  );
 }

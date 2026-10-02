@@ -31,7 +31,7 @@ export interface ExtensionFixtures {
   readClipboard: () => Promise<string>;
   /** Writes the clipboard from outside the page, like the browser's own "Copy link address" or another app. */
   writeClipboardExternally: (text: string) => Promise<void>;
-  /** Waits until the background clipboard watcher (the offscreen document) is running or stopped. */
+  /** Waits for watcher settings and the shared clipboard document's lifecycle to settle. */
   waitForWatcher: (running: boolean) => Promise<void>;
   /** Writes extension settings (see `src/lib/settings.ts`) straight to storage. */
   setSettings: (settings: Record<string, unknown>) => Promise<void>;
@@ -148,15 +148,22 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
       await baseExpect
         .poll(
           () =>
-            serviceWorker.evaluate(async () => {
-              const contexts = await chrome.runtime.getContexts({
-                contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-              });
-              return contexts.length > 0;
-            }),
+            serviceWorker
+              .evaluate(async () => {
+                const contexts = await chrome.runtime.getContexts({
+                  contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+                });
+                const settings = await chrome.storage.local.get(['enabled', 'watchClipboard']);
+                return {
+                  document: contexts.length > 0,
+                  watching: settings.enabled !== false && settings.watchClipboard !== false,
+                  enabled: settings.enabled !== false,
+                };
+              })
+              .then((state) => state.watching === running && state.document === state.enabled),
           { timeout: 10_000 },
         )
-        .toBe(running);
+        .toBe(true);
       // Let a freshly started watcher take its baseline reading of the clipboard.
       await new Promise((resolve) => setTimeout(resolve, 1000));
     });

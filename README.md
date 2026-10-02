@@ -21,7 +21,7 @@ npm ci
 npm run build
 ```
 
-Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select the `dist/` folder. Chrome 116 or newer is required. After pulling changes, rebuild and click the reload icon on the extension's card.
+Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select the `dist/` folder. Chrome 123 or newer is required. After pulling changes, rebuild and click the reload icon on the extension's card.
 
 To verify the installation, copy the example's `Copied` URL from a web page and paste it into a text field. In the default Decoy mode, the tracking values should change while `id=42` stays intact.
 
@@ -31,9 +31,9 @@ Copy links the way you normally do; there is nothing to click. Three layers catc
 
 - **On web pages**, copy detection covers selecting a link and pressing Ctrl+C / Cmd+C (including in text fields), a site's "Copy link" or "Share" button (using `navigator.clipboard`, `execCommand('copy')`, or a copy-event handler, including inside iframes), and right-click → **Copy link address**.
 - **In the address bar**, tracking parameters are replaced without reloading. Copying the address, sharing the tab, bookmarking, and sending it to your phone all pick up the cleaned link.
-- **Everywhere else**, a background watcher catches tracked links copied in another app, on a browser page like `chrome://history`, or on a site where extensions cannot run.
+- **In other apps**, a background watcher detects copies and asks a focused web page to inspect all clipboard formats before rewriting. If no focused page can inspect them, the clipboard is left untouched until one is available.
 
-Automatic clipboard rewrites show an **Undo** notification on supported web pages when notifications are enabled. Undo restores the original clipboard text until different contents are observed; a later fresh copy is cleaned again. Address-bar changes have no Undo notification.
+Automatic plain-text rewrites show an **Undo** notification on supported web pages when notifications are enabled. Undo restores the original clipboard text until different contents are observed; a later fresh copy is cleaned again. HTML rewrites and address-bar changes have no Undo button.
 
 Explicit actions copy a cleaned link on demand: right-click a link → **Copy link with decoy tracking**; right-click a page → **Copy page link with decoy tracking**; and **Alt+Shift+U** or the popup's **Copy this page's link** button for the current page. These actions use the selected mode and still work while automatic cleaning is paused. The shortcut can be changed at `chrome://extensions/shortcuts`.
 
@@ -62,7 +62,9 @@ Ambiguous names like `ref`, `source`, `src`, `campaign`, `keywords`, `cid`, and 
 
 Non-tracking query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less links such as `www.example.com/page?utm_source=x` are supported.
 
-Links inside longer plain text can be cleaned, including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`. When a site's copy handler supplies HTML, link targets and visible URLs are cleaned while preserving that HTML. Other formatted copies are rewritten only when their text is a lone link; formatted text with embedded links is left alone.
+Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten.
+
+Links inside longer plain text can be cleaned, including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`. When a copy supplies HTML, link targets and visible URLs are cleaned while preserving the HTML flavor. Automatic writes require a complete inventory containing only plain text and HTML; images, files, and custom formats are left untouched. Standalone URLs retain trailing punctuation as part of the URL; sentence-punctuation heuristics apply only to links extracted from prose.
 
 ## How it works
 
@@ -71,22 +73,27 @@ flowchart LR
   subgraph page["Web page (content script in every frame)"]
     copy["copy event,<br/>page-handled cut"] -->|"rewrite clipboardData before it is written"| clip[("Clipboard")]
     other["writeText() button, native cut,<br/>Copy link address"] --> clip
-    clip -->|"clipboardchange<br/>or legacy polling"| fix["read, rewrite, write back"]
+    clip -->|"clipboardchange<br/>or legacy polling"| fix["inspect all formats"]
     load["page load,<br/>in-page navigation"] -->|"history.replaceState"| bar["Address bar"]
   end
   apps["Other apps,<br/>browser pages"] --> clip
   worker["Service worker"] -->|"starts, configures"| offscreen["Offscreen document"]
   offscreen -->|"watch clipboard"| clip
+  fix -->|"current snapshot"| worker
+  worker -->|"reconcile, Copy, Undo"| offscreen
+  offscreen -->|"preserve supported formats"| clip
   menu["Context menu,<br/>Alt+Shift+U"] --> worker
 ```
 
 Copy events and page-handled cuts are rewritten synchronously after the page's handlers have run. Native cuts keep their normal deletion behavior and are checked asynchronously. On [Chrome 144 and later](https://developer.chrome.com/release-notes/144#the-clipboardchange-event), `clipboardchange` catches other writes within 10 seconds of interaction with the page; plain-text changes can include embedded links.
 
-Older Chrome versions poll after copy and cut events, including events whose propagation the page stops. Button or link clicks and right-clicks on links also start a pre-gesture clipboard read followed by short polling. Comparing against that baseline leaves existing clipboard text alone after unrelated gestures. Legacy polling rewrites lone links. If the async Clipboard API is unavailable, synchronous copy handling still works; asynchronous copies rely on the background watcher.
+Chrome 123–143 polls after copy and cut events, including events whose propagation the page stops. Button or link clicks and right-clicks on links also start a pre-gesture clipboard read followed by short polling. Comparing against that baseline leaves existing clipboard text alone after unrelated gestures. Legacy polling rewrites lone links and HTML targets. Only trusted browser events authorize these page checks; synthetic copy events and programmatic Undo clicks are ignored. If the async Clipboard API is unavailable, synchronous copy handling still works, but that page cannot inspect asynchronous copies.
 
 The address bar is cleaned with `history.replaceState` once the page's `load` event has fired, so the page has already done its own work with the URL, and again 300 ms after each in-page navigation.
 
-The background watcher runs in an offscreen document, because service workers have no DOM and the document can read the clipboard without focus. It leaves existing clipboard contents alone when starting, checks every 0.75 seconds, and waits 250 ms after detecting a new tracked link so a page's content script can handle its copies first. The [stable replacement values](#replacement-values) keep the watchers from fighting over a link. Async clipboard watchers skip competing tracked versions of the same link for 5 seconds after a rewrite to limit repeated rewrites.
+The offscreen document coordinates all post-copy writes, including explicit Copy and Undo. Page reads are invalidated by newer events, settings changes, Undo, and shutdown. The writer checks current text and formats before committing, and Undo succeeds only after acknowledgement. Clipboard read and write operations are not atomic with arbitrary external apps.
+
+The background watcher leaves existing contents alone when starting, checks every 0.75 seconds, and waits 250 ms after detecting a change. A focused page then uses the Clipboard API to inspect the complete format inventory: offscreen synthetic paste alone cannot see web custom formats. Without that inspection, no automatic write occurs. Turning off whole-clipboard watching stops polling; the shared writer remains available for page copies and Undo. Competing tracked versions of the same link are skipped for 5 seconds after a rewrite.
 
 ## Permissions
 

@@ -5,7 +5,7 @@
 ### Breaking
 
 - The unpacked extension now lives in `dist/`: load that folder in `chrome://extensions` instead of the repository root.
-- Requires Chrome 116 or newer (was 102).
+- Requires Chrome 123 or newer (was 102).
 - Decoy is the default replacement style. The old nonsense values are still available as Silly mode.
 - Only [known tracking parameters](README.md#what-gets-rewritten) are rewritten; ambiguous names retain their functional uses on other sites.
 
@@ -35,10 +35,13 @@
 - Recognized signed CloudFront, AWS, Google Cloud, and Azure links remain byte-for-byte unchanged in every mode.
 - Standalone URL punctuation stays in its original query value or fragment, and text and URL entry points agree on replacements.
 - URL rewriting bounds input size and hashes each link's stable seed once, avoiding quadratic work for many tracking parameters.
-- Legacy clipboard polling catches copy and cut events even when a page stops their propagation.
-- Undo suppression expires when different clipboard contents are observed, allowing fresh copies of the original link to be cleaned again.
+- Deferred clipboard checks clean text and HTML links even when a page stops copy or cut propagation.
+- Post-copy writes share an offscreen coordinator; newer copies, Undo, and settings changes invalidate older asynchronous reads.
+- Automatic writes inspect the complete native format inventory and preserve images, files, and custom payloads. Whole-clipboard cleaning waits for a focused page when that inspection is unavailable.
+- Undo suppression survives cross-frame work and service-worker restart, then expires when different contents or formats are observed. Lost acknowledgements report restoration failure.
+- Synthetic copy, gesture, and Undo events cannot authorize clipboard writes; malformed runtime messages and forged control senders are rejected.
 - Legacy clipboard polling leaves pre-existing links alone after unrelated clicks and context menus.
-- Settings changes stop or reconfigure the clipboard watcher on Chrome 116-122, where context-menu updates use callbacks.
+- Settings changes stop or reconfigure the clipboard watcher independently of cosmetic context-menu updates.
 - Decoy mode replaces percent-encoded ASCII identifiers and percent-encoded or non-Latin tracking words while preserving encoding and repeated-rewrite stability.
 - Standalone Markdown links in plain clipboard text are cleaned even when the text contains no whitespace.
 - Tokens containing `magic-8-ball` were randomized again on the next copy; stable replacements remove the need to detect previously randomized values.

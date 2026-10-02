@@ -1,5 +1,5 @@
 import type { ExtensionMessage } from './lib/messages';
-import { hasTrackingParams, rewriteUrl, type Mode } from './lib/rewrite';
+import { getRewriteSkipReason, hasTrackingParams, rewriteUrl, type Mode } from './lib/rewrite';
 import { describeMode, loadSettings, requestSecret, saveSettings, watchSettings, type Settings } from './lib/settings';
 
 const COMMAND_COPY_PAGE = 'copy-clean-page-url';
@@ -73,7 +73,11 @@ async function copyPageLink(): Promise<void> {
   }
   const result = rewriteUrl(pageUrl, { mode: settings.mode, key });
   try {
-    await navigator.clipboard.writeText(result?.url ?? pageUrl);
+    const message: ExtensionMessage = { type: 'copy-clipboard', text: result?.url ?? pageUrl };
+    const response: unknown = await chrome.runtime.sendMessage(message);
+    if (!(typeof response === 'object' && response !== null && 'ok' in response && response.ok === true)) {
+      throw new Error('Clipboard coordinator rejected the copy');
+    }
   } catch {
     setStatus('Could not write to the clipboard', true);
     return;
@@ -83,6 +87,10 @@ async function copyPageLink(): Promise<void> {
     setStatus(`${emoji} Copied, tracking ${done}`);
     const message: ExtensionMessage = { type: 'count', urls: 1 };
     chrome.runtime.sendMessage(message).catch(() => undefined);
+  } else if (getRewriteSkipReason(pageUrl) === 'signed') {
+    setStatus('Copied (signed link left unchanged)');
+  } else if (getRewriteSkipReason(pageUrl) === 'too-long') {
+    setStatus('Copied (link too long to rewrite)');
   } else if (hasTrackingParams(pageUrl)) {
     // The address bar was already cleaned, so the link carries replacements already.
     setStatus(`${emoji} Copied, tracking already ${done}`);

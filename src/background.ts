@@ -1,5 +1,11 @@
-import { isExtensionMessage, type ExtensionMessage, type ToastPayload, type WatchConfig } from './lib/messages';
-import { hasTrackingParams, rewriteUrl } from './lib/rewrite';
+import {
+  isExtensionMessage,
+  isWorkerSender,
+  type ExtensionMessage,
+  type ToastPayload,
+  type WatchConfig,
+} from './lib/messages';
+import { getRewriteSkipReason, hasTrackingParams, rewriteUrl } from './lib/rewrite';
 import { createOrReadSecret, describeMode, loadSettings, watchSettings, type Settings } from './lib/settings';
 
 const MENU_COPY_LINK = 'copy-clean-link';
@@ -67,7 +73,7 @@ function countRewrites(urls: number): Promise<void> {
 }
 
 // The offscreen document is the service worker's clipboard (it has no DOM of its own). It stays
-// open while the background clipboard watcher is on and is created on demand otherwise. Every
+// open while automatic cleaning is on and is created on demand otherwise. Every
 // operation on it is serialized, because only one offscreen document may exist at a time.
 let offscreenQueue: Promise<unknown> = Promise.resolve();
 
@@ -111,8 +117,9 @@ async function watchConfigFor(settings: Settings): Promise<WatchConfig | null> {
 /** Starts, reconfigures, or stops the background clipboard watcher to match the current settings. */
 function syncWatcher(): Promise<void> {
   return withOffscreen(async () => {
-    const config = await watchConfigFor(await loadSettings());
-    if (config) {
+    const settings = await loadSettings();
+    const config = await watchConfigFor(settings);
+    if (settings.enabled) {
       await ensureOffscreen();
       await tellOffscreen({ type: 'watch-config', config });
     } else if (await hasOffscreen()) {
@@ -123,19 +130,91 @@ function syncWatcher(): Promise<void> {
   });
 }
 
-/** Puts `text` on the clipboard through the offscreen document. */
-function writeClipboard(text: string): Promise<void> {
+/** Sends an explicit clipboard operation through the offscreen coordinator. */
+function performClipboardOperation(message: ExtensionMessage): Promise<void> {
   return withOffscreen(async () => {
     await ensureOffscreen();
     try {
-      await tellOffscreen({ type: 'offscreen-copy', text });
+      await tellOffscreen(message);
     } finally {
-      // Keep the document only while the watcher needs it.
-      if (!(await watchConfigFor(await loadSettings()))) {
+      // Keep Undo suppression while automatic cleaning is enabled, even without global polling.
+      if (!(await loadSettings()).enabled) {
         await chrome.offscreen.closeDocument();
       }
     }
   });
+}
+
+/** Puts `text` on the clipboard through the offscreen document. */
+function writeClipboard(text: string): Promise<void> {
+  return performClipboardOperation({ type: 'offscreen-copy', text });
+}
+
+/** Reconciles a page's observation against the current clipboard and settings. */
+function reconcileClipboard(
+  text: string,
+  embedded: boolean,
+  types: string[],
+  epoch: number,
+  tabId: number | undefined,
+  baseline?: string,
+): Promise<void> {
+  return withOffscreen(async () => {
+    const settings = await loadSettings();
+    if (!settings.enabled) {
+      return;
+    }
+    await ensureOffscreen();
+    await tellOffscreen({
+      type: 'offscreen-reconcile',
+      text,
+      embedded,
+      types,
+      epoch,
+      baseline,
+      config: { mode: settings.mode, key: await secret() },
+      tabId,
+    });
+  });
+}
+
+/** Reads the offscreen coordinator's persistent generation before a page reads the clipboard. */
+function clipboardEpoch(): Promise<number> {
+  return withOffscreen(async () => {
+    await ensureOffscreen();
+    const message: ExtensionMessage = { type: 'offscreen-epoch' };
+    const response: unknown = await chrome.runtime.sendMessage(message);
+    if (
+      typeof response !== 'object' ||
+      response === null ||
+      !('ok' in response) ||
+      response.ok !== true ||
+      !('epoch' in response) ||
+      typeof response.epoch !== 'number' ||
+      !Number.isSafeInteger(response.epoch) ||
+      response.epoch < 0
+    ) {
+      throw new Error('Clipboard generation was not acknowledged');
+    }
+    return response.epoch;
+  });
+}
+
+/** Asks the active page to inspect formats before the offscreen watcher may reconcile them. */
+async function inspectClipboard(): Promise<void> {
+  const settings = await loadSettings();
+  if (!settings.enabled || !settings.watchClipboard) {
+    throw new Error('Whole-clipboard watching is disabled');
+  }
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (tab?.id === undefined) {
+    throw new Error('No active clipboard reader');
+  }
+  const message: ExtensionMessage = { type: 'inspect-clipboard' };
+  const response: unknown = await chrome.tabs.sendMessage(tab.id, message, { frameId: 0 });
+  if (!(typeof response === 'object' && response !== null && 'ok' in response && response.ok === true)) {
+    throw new Error('Clipboard inspection was not acknowledged');
+  }
 }
 
 /** Shows `text` on the toolbar icon for two seconds in the given tab. */
@@ -176,11 +255,14 @@ async function copyCleanLink(url: string, tabId: number | undefined): Promise<vo
   }
   if (settings.notify) {
     const { emoji, done } = describeMode(settings.mode);
+    const skipReason = getRewriteSkipReason(url);
     const message = result
       ? `${emoji} Link copied, tracking ${done}`
-      : hasTrackingParams(url)
-        ? `${emoji} Link copied, tracking already ${done}`
-        : '📋 Link copied (no tracking found)';
+      : skipReason === 'signed'
+        ? '📋 Signed link copied unchanged'
+        : hasTrackingParams(url)
+          ? `${emoji} Link copied, tracking already ${done}`
+          : '📋 Link copied (no tracking found)';
     await notifyTab(tabId, { message }, true);
   }
 }
@@ -198,6 +280,37 @@ async function notifyActiveTab(toast: ToastPayload): Promise<void> {
   }
 }
 
+/** Whether a message came from this extension's offscreen coordinator. */
+function isOffscreenSender(sender: chrome.runtime.MessageSender): boolean {
+  return (
+    sender.id === chrome.runtime.id &&
+    sender.tab === undefined &&
+    sender.url === chrome.runtime.getURL('offscreen.html')
+  );
+}
+
+/** Whether a message came from this extension's popup. */
+function isPopupSender(sender: chrome.runtime.MessageSender): boolean {
+  return sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL('popup.html');
+}
+
+/** Whether a message came from an injected script in a tab. */
+function isContentSender(sender: chrome.runtime.MessageSender): boolean {
+  return sender.id === chrome.runtime.id && sender.tab?.id !== undefined && !isPopupSender(sender);
+}
+
+/** Acknowledges a coordinator operation, including failed or missing offscreen acknowledgements. */
+function acknowledge(operation: Promise<void>, sendResponse: (response: { ok: boolean }) => void): void {
+  operation.then(
+    () => {
+      sendResponse({ ok: true });
+    },
+    () => {
+      sendResponse({ ok: false });
+    },
+  );
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   void createMenus();
   void secret();
@@ -211,12 +324,11 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 watchSettings((settings) => {
+  void syncWatcher();
   const titles = menuTitles(settings.mode);
   for (const [id, title] of Object.entries(titles)) {
-    // Callback support predates Chrome 123's Promise API; menu errors must not interrupt settings changes.
-    chrome.contextMenus.update(id, { title }, () => chrome.runtime.lastError);
+    chrome.contextMenus.update(id, { title }).catch(() => undefined);
   }
-  void syncWatcher();
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -234,27 +346,68 @@ chrome.commands.onCommand.addListener((command, tab) => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, sender, sendResponse: (response: { ok: boolean; secret?: string }) => void) => {
+  (message: unknown, sender, sendResponse: (response: { ok: boolean; secret?: string; epoch?: number }) => void) => {
     if (!isExtensionMessage(message)) {
+      // Offscreen controls have their own receiver; do not race its acknowledgement.
+      if (
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        typeof message.type === 'string' &&
+        [
+          'rewritten',
+          'count',
+          'get-secret',
+          'reconcile-clipboard',
+          'restore-clipboard',
+          'copy-clipboard',
+          'inspect-clipboard',
+          'clipboard-epoch',
+        ].includes(message.type)
+      ) {
+        sendResponse({ ok: false });
+      }
       return false;
     }
+    const content = isContentSender(sender);
+    const popup = isPopupSender(sender);
+    const offscreen = isOffscreenSender(sender);
     switch (message.type) {
       case 'rewritten': {
+        if ((!content && !offscreen) || (message.tabId !== undefined && !offscreen)) {
+          sendResponse({ ok: false });
+          return false;
+        }
         void countRewrites(message.urls);
-        const tabId = sender.tab?.id;
-        if (message.relayToast && tabId !== undefined) {
-          const toast: ExtensionMessage = { type: 'toast', toast: message.relayToast };
-          chrome.tabs.sendMessage(tabId, toast, { frameId: 0 }).catch(() => undefined);
-        } else if (message.relayToast) {
-          // From the background clipboard watcher: the user may be looking at any tab.
-          void notifyActiveTab(message.relayToast);
+        const tabId = offscreen ? message.tabId : sender.tab?.id;
+        if (message.relayToast) {
+          const toast = message.relayToast;
+          void loadSettings().then((settings) => {
+            if (!settings.notify) {
+              return;
+            }
+            if (tabId !== undefined) {
+              const notification: ExtensionMessage = { type: 'toast', toast };
+              void chrome.tabs.sendMessage(tabId, notification, { frameId: 0 }).catch(() => undefined);
+            } else {
+              void notifyActiveTab(toast);
+            }
+          });
         }
         return false;
       }
       case 'count':
+        if (!popup) {
+          sendResponse({ ok: false });
+          return false;
+        }
         void countRewrites(message.urls);
         return false;
       case 'get-secret':
+        if (!content && !popup) {
+          sendResponse({ ok: false });
+          return false;
+        }
         secret().then(
           (value) => {
             sendResponse({ ok: true, secret: value });
@@ -264,21 +417,68 @@ chrome.runtime.onMessage.addListener(
           },
         );
         return true;
-      case 'ignore-clipboard':
-        // Undo in a page: make sure the background watcher does not rewrite the restored link again.
-        void withOffscreen(async () => {
-          if (await hasOffscreen()) {
-            await tellOffscreen({ type: 'watch-ignore', text: message.text });
-          }
-        })
-          .then(
-            () => true,
-            () => false,
-          )
-          .then((ok) => {
-            sendResponse({ ok });
-          });
+      case 'reconcile-clipboard':
+        if (!content) {
+          sendResponse({ ok: false });
+          return false;
+        }
+        acknowledge(
+          reconcileClipboard(
+            message.text,
+            message.embedded,
+            message.types,
+            message.epoch,
+            sender.tab?.id,
+            message.baseline,
+          ),
+          sendResponse,
+        );
         return true;
+      case 'clipboard-epoch':
+        if (!content) {
+          sendResponse({ ok: false });
+          return false;
+        }
+        clipboardEpoch().then(
+          (epoch) => {
+            sendResponse({ ok: true, epoch });
+          },
+          () => {
+            sendResponse({ ok: false });
+          },
+        );
+        return true;
+      case 'inspect-clipboard':
+        if (!offscreen) {
+          sendResponse({ ok: false });
+          return false;
+        }
+        // Do not join the offscreen queue: the reader can send a nested reconciliation request.
+        acknowledge(inspectClipboard(), sendResponse);
+        return true;
+      case 'restore-clipboard':
+        if (!content) {
+          sendResponse({ ok: false });
+          return false;
+        }
+        acknowledge(performClipboardOperation({ type: 'offscreen-restore', text: message.text }), sendResponse);
+        return true;
+      case 'copy-clipboard':
+        if (!popup) {
+          sendResponse({ ok: false });
+          return false;
+        }
+        acknowledge(writeClipboard(message.text), sendResponse);
+        return true;
+      case 'offscreen-copy':
+      case 'offscreen-restore':
+      case 'offscreen-reconcile':
+      case 'offscreen-epoch':
+      case 'watch-config':
+        if (!isWorkerSender(sender)) {
+          sendResponse({ ok: false });
+        }
+        return false;
       default:
         return false;
     }
