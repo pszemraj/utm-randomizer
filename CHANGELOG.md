@@ -35,7 +35,7 @@
 - [Clipboard coordination](README.md#clipboard-coordination) rejects stale reads after newer copies, settings changes, Undo, and coordinator recreation. Undo suppression survives cross-frame work and worker restarts; lost acknowledgements report failure.
 - [Background watching](README.md#background-watching) retries unavailable readers and custom-format removal, and settings updates no longer depend on context-menu updates.
 - Synthetic copy, gesture, and Undo events and malformed or forged runtime messages are rejected.
-- [URL rewriting](README.md#what-gets-rewritten) preserves Amazon store selectors, signed links, standalone punctuation, and relative page-link forms, and handles standalone Markdown links.
+- [URL rewriting](README.md#what-gets-rewritten) preserves Bing Maps collections, Amazon store selectors, signed links, standalone punctuation, and relative page-link forms, and handles standalone Markdown links.
 - [Replacement values](README.md#replacement-values) stay stable for encoded, mixed-case hexadecimal, non-Latin, malformed-percent, and `magic-8-ball` inputs. HubSpot's `__hssc`, `__hstc`, and `__hsfp` are matched.
 - Synchronous rewriting is bounded and avoids repeated full-link hashing; explicit Copy accepts unchanged or generated links beyond the automatic input bound.
 - [Notifications and statistics](README.md#usage) resume expiry after keyboard focus leaves and count rich-copy links without duplicate text/HTML counts.

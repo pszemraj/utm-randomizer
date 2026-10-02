@@ -109,6 +109,12 @@ describe('classifyParam', () => {
     expect(classifyParam('ved', 'www.google.com', '/search')).toBe('id');
     expect(classifyParam('ved', 'www.google.com', '/maps/place/x')).toBeNull();
     expect(classifyParam('cid', 'maps.google.com', '/')).toBeNull();
+    for (const path of ['/', '/search', '/images/search', '/videos/search/', '/news/search']) {
+      expect(classifyParam('sp', 'www.bing.com', path)).toBe('generic');
+    }
+    for (const path of ['/maps', '/maps/default.aspx', '/search/other']) {
+      expect(classifyParam('sp', 'www.bing.com', path)).toBeNull();
+    }
   });
 
   it('is not fooled by Object.prototype keys', () => {

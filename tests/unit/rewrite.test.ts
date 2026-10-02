@@ -283,6 +283,7 @@ describe('site-specific tracking', () => {
       'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
     ],
     ['https://x.com/jack/status/20?s=20&t=AbCdEf', 'https://x.com/jack/status/20'],
+    ['https://www.bing.com/search?q=cats&sp=1&pq=ca&form=QBRE&cvid=abc', 'https://www.bing.com/search?q=cats'],
     ['https://www.instagram.com/p/C0abc/?igsh=MWt4bXZ2', 'https://www.instagram.com/p/C0abc/'],
     [
       'https://www.reddit.com/r/rust/comments/abc/title/?share_id=Xy12&utm_medium=android_app&utm_source=share',
@@ -312,6 +313,26 @@ describe('site-specific tracking', () => {
 });
 
 describe('functional links stay intact', () => {
+  it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('preserves Bing Maps collections in %s mode', (mode) => {
+    // Microsoft documents sp as the address, pin, or geometry to add to the map.
+    const options = { mode, key: 'review-key' };
+    for (const path of ['/maps', '/maps/default.aspx']) {
+      for (const collection of [
+        'point.47.67_-122.12_Office',
+        'adr.1%20Microsoft%20Way%2C%20Redmond%2C%20WA%2098052',
+        'polyline.47.68_-122.12_48.68_-123.12_LINE',
+      ]) {
+        const map = `https://www.bing.com${path}?cp=47.67~-122.12&lvl=12&sp=${collection}`;
+        expect(rewriteUrl(map, options)).toBeNull();
+        expect(hasTrackingParams(map)).toBe(false);
+        const rewritten = rewriteUrl(`${map}&utm_source=map_share`, options)?.url;
+        expect(rewritten).toBeDefined();
+        expect(rewritten).toContain(`cp=47.67~-122.12&lvl=12&sp=${collection}`);
+        expect(rewritten).not.toContain('utm_source=map_share');
+      }
+    }
+  });
+
   it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('preserves Amazon store selectors in %s mode', (mode) => {
     const options = { mode, key: 'review-key' };
     for (const path of ['/s', '/gp/search']) {

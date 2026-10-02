@@ -376,6 +376,8 @@ const SITE_RULES: SiteRule[] = [
   { hosts: ['play.google.com'], params: { pcampaignid: 'campaign', referrer: 'source' } },
   {
     hosts: ['bing.com'],
+    // Bing Maps uses sp for collections: https://learn.microsoft.com/en-us/bingmaps/articles/create-a-custom-map-url
+    path: /^\/(?:search|images\/search|videos\/search|news\/search)?\/?$/,
     params: {
       cvid: 'id',
       form: 'source',
