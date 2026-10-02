@@ -496,18 +496,12 @@ export function isWordy(raw: string): boolean {
   return WORDY.test(decoded) && HAS_LETTER.test(decoded) && !HEX_ID.test(decoded);
 }
 
-/** `lower`/`upper` when the letters and digits of `raw` form a hexadecimal string of that case. */
-function hexCase(raw: string): 'lower' | 'upper' | null {
+/** Whether the letters and digits of `raw` form a hexadecimal identifier, in either case. */
+function isHex(raw: string): boolean {
   const alnum = raw
     .replace(/%([0-9A-Fa-f]{2})/g, (_escape, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
     .replace(/[^0-9A-Za-z]/g, '');
-  if (!/[0-9]/.test(alnum)) {
-    return null;
-  }
-  if (/^[0-9a-f]+$/.test(alnum) && /[a-f]/.test(alnum)) {
-    return 'lower';
-  }
-  return /^[0-9A-F]+$/.test(alnum) && /[A-F]/.test(alnum) ? 'upper' : null;
+  return /^[0-9a-f]+$/i.test(alnum) && /[0-9]/.test(alnum) && /[a-f]/i.test(alnum);
 }
 
 /**
@@ -517,7 +511,7 @@ function hexCase(raw: string): 'lower' | 'upper' | null {
  * to hex digits.
  */
 function shapeOf(raw: string): ShapeToken[] {
-  const hex = hexCase(raw);
+  const hex = isHex(raw);
   const numeric = /^[0-9]+$/.test(raw);
   const prefixLength = raw.length >= 12 ? 4 : numeric && raw.length > 1 ? 1 : 0;
 
@@ -536,9 +530,9 @@ function shapeOf(raw: string): ShapeToken[] {
     } else if (DIGITS.includes(char)) {
       token = { alphabet: DIGITS.split(''), code: 'd' };
     } else if (LOWER.includes(char)) {
-      token = hex === 'lower' ? { alphabet: 'abcdef'.split(''), code: 'x' } : { alphabet: LOWER.split(''), code: 'l' };
+      token = hex ? { alphabet: 'abcdef'.split(''), code: 'x' } : { alphabet: LOWER.split(''), code: 'l' };
     } else if (UPPER.includes(char)) {
-      token = hex === 'upper' ? { alphabet: 'ABCDEF'.split(''), code: 'X' } : { alphabet: UPPER.split(''), code: 'u' };
+      token = hex ? { alphabet: 'ABCDEF'.split(''), code: 'X' } : { alphabet: UPPER.split(''), code: 'u' };
     } else {
       token = { literal: char };
     }
@@ -575,7 +569,7 @@ function shapeSignature(tokens: ShapeToken[]): string {
 export function scrambleLike(raw: string, random: Random): string {
   const tokens = shapeOf(raw);
   const chars = tokens.map((token) => ('literal' in token ? token.literal : pick(random, token.alphabet)));
-  if (hexCase(raw) === null && hexCase(chars.join('')) !== null) {
+  if (!isHex(raw) && isHex(chars.join(''))) {
     const index = tokens.findIndex(
       (token) =>
         'alphabet' in token && token.alphabet.some((candidate) => /[g-z]/i.test(decodeURIComponent(candidate))),

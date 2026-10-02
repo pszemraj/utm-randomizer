@@ -81,6 +81,25 @@ describe('scrambleLike', () => {
 });
 
 describe('replacementValue', () => {
+  it.each(['aB1c1F1b', '%61%42%31%63%31%46%31%62'])(
+    'keeps mixed-case hexadecimal identifier shape and fixed points (%s)',
+    (raw) => {
+      for (const category of ['campaign', 'id'] as const) {
+        for (let i = 0; i < 200; i += 1) {
+          const seed = `mixed-hex-${String(i)}`;
+          const decoy = replacementValue('decoy', category, raw, seed);
+          expect(decodeURIComponent(decoy)).toMatch(/^[a-f][A-F][0-9][a-f][0-9][A-F][0-9][a-f]$/);
+          expect(isWordy(decoy)).toBe(false);
+          expect(decoy).toHaveLength(raw.length);
+          for (const style of ['decoy', 'hybrid'] as const) {
+            const once = replacementValue(style, category, raw, seed);
+            expect(replacementValue(style, category, once, seed)).toBe(once);
+          }
+        }
+      }
+    },
+  );
+
   it('keeps fully encoded non-hexadecimal identifiers stable in decoy and hybrid modes', () => {
     for (const raw of ['%32%41%39%58', '%32%61%39%78']) {
       let hybridDecoys = 0;

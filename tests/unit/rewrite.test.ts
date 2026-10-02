@@ -153,6 +153,15 @@ describe('rewriteUrl (hybrid)', () => {
 });
 
 describe('idempotency', () => {
+  it.each(['decoy', 'hybrid'] as const)('keeps a mixed-case hexadecimal campaign stable (%s)', (mode) => {
+    for (const raw of ['aB1c1F1b', '%61%42%31%63%31%46%31%62']) {
+      const options = { mode, key: 'review0' };
+      const once = rewriteUrl(`https://example.com/?utm_campaign=${raw}`, options);
+      expect(once).not.toBeNull();
+      expect(rewriteUrl(once?.url ?? '', options)).toBeNull();
+    }
+  });
+
   const links = [
     'https://example.com/?utm_source=fb&utm_medium=social&utm_campaign=2025_launch&fbclid=abc123&gclid=xyz',
     'https://shop.example/p?gclid=Cj0KCQjw9-KzBhDVARIsAFLvbqRZQ8x9Xk1_BwE&utm_term=running+shoes&utm_content=a%20b',
