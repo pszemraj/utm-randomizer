@@ -29,9 +29,9 @@ To verify the installation, copy the example's `Copied` URL from a web page and 
 
 Copy links the way you normally do; there is nothing to click. Three layers catch them:
 
-- **On web pages**, copy detection covers selecting a link and pressing Ctrl+C / Cmd+C (including in text fields), a site's "Copy link" or "Share" button (using `navigator.clipboard`, `execCommand('copy')`, or a copy-event handler, including inside iframes), and right-click → **Copy link address**. Rich selections retain formatting and functional anchor destinations.
+- **On web pages**, copy with Ctrl+C / Cmd+C, a site's "Copy link" or "Share" button, or right-click → **Copy link address**. Text fields and iframes are supported; see [copy detection](#page-copies) and [clipboard formats](#clipboard-formats) for the limits.
 - **In the address bar**, tracking parameters are replaced without reloading. Copying the address, sharing the tab, bookmarking, and sending it to your phone all pick up the cleaned link.
-- **In other apps**, a background watcher detects copies and asks a focused web page to inspect all clipboard formats before rewriting. If no focused page can inspect them, the clipboard is left untouched until one is available. Copies with custom formats remain untouched; cleaning resumes if a later copy removes those formats, even when its text stays the same.
+- **In other apps**, the [background watcher](#background-watching) detects copied links when a focused web page can inspect the clipboard.
 
 Automatic plain-text rewrites show an **Undo** notification on supported web pages when notifications are enabled. Hovering or keyboard focus keeps the notification open; its countdown resumes after both leave. Undo restores the original clipboard text until different contents are observed; a later fresh copy is cleaned again. Copies with HTML or custom formats and address-bar changes have no Undo button.
 
@@ -41,7 +41,7 @@ The toolbar popup controls the mode, cleaning layers, notifications, and pause s
 
 ## Replacement values
 
-**Decoy** (the default) uses vocabulary and identifier formats from real campaigns:
+**Decoy** uses vocabulary and identifier formats from real campaigns:
 
 - sources and mediums from the vocabulary real campaigns use (`bing`, `linkedin`, `newsletter`, `paid_social`, `referral`, ...), including when the original words are percent-encoded or use non-Latin letters;
 - campaign names, search terms, and ad placements composed the way marketers write them (`retargeting_2024`, `black_friday_uk_2025`, `best+standing+desk`, `video_15s`);
@@ -64,7 +64,11 @@ Non-tracking query segments, their order and encoding, fragments, and link forms
 
 Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. Explicit Copy still copies longer links unchanged and accepts replacements that grow beyond that input bound.
 
-Links inside longer plain text can be cleaned, including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`. When a copy supplies HTML, link targets and visible URLs are cleaned while preserving the HTML flavor, including new targets with unchanged plain text. Rich copies also clean prose URLs in their plain-text representation. Polling compares both flavors to leave existing rich clipboard contents alone after unrelated clicks, and continues if a new copy interrupts its baseline read. Automatic writes require a complete inventory containing only plain text and HTML; images, files, and custom formats are left untouched. Standalone URLs retain trailing punctuation as part of the URL; sentence-punctuation heuristics apply only to links extracted from prose.
+Standalone URLs retain trailing punctuation as part of the URL; sentence-punctuation heuristics apply only to links extracted from prose.
+
+### Clipboard formats
+
+Links inside longer plain text can be cleaned, including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`. Rich copies clean anchor destinations and visible URLs in both plain text and HTML while retaining formatting and functional destinations. New HTML targets are checked even when the plain text is unchanged. Automatic writes require a complete inventory containing only plain text and HTML; images, files, and custom formats are left untouched.
 
 ## How it works
 
@@ -85,15 +89,21 @@ flowchart LR
   menu["Context menu,<br/>Alt+Shift+U"] --> worker
 ```
 
+### Page copies
+
 Copy events and page-handled cuts are rewritten synchronously after the page's handlers have run. Selected text fields inside open shadow roots are handled too, including on HTTP pages without the async Clipboard API. Native cuts keep their normal deletion behavior and are checked asynchronously. On [Chrome 144 and later](https://developer.chrome.com/release-notes/144#the-clipboardchange-event), `clipboardchange` catches other writes within 10 seconds of interaction with the page; plain-text changes can include embedded links.
 
-Chrome 123–143 polls after copy and cut events, including events whose propagation the page stops or whose data a later page handler overwrites. Button or link clicks and right-clicks on links also start a pre-gesture clipboard read followed by short polling. Comparing against that baseline leaves existing clipboard text alone after unrelated gestures. Legacy polling rewrites lone plain-text links and both representations of rich copies. Only trusted browser events authorize these page checks; synthetic copy events and programmatic Undo clicks are ignored. If the async Clipboard API is unavailable, synchronous copy handling still works, but that page cannot inspect asynchronous copies.
+Chrome 123–143 polls after copy and cut events, including events whose propagation the page stops or whose data a later page handler overwrites. Button or link clicks and right-clicks on links also start a pre-gesture clipboard read followed by short polling. Comparing text and HTML against that baseline leaves existing clipboard contents alone after unrelated gestures; polling continues if a new copy interrupts the baseline read. Legacy polling rewrites lone plain-text links and both representations of rich copies. Only trusted browser events authorize these page checks; synthetic copy events and programmatic Undo clicks are ignored. If the async Clipboard API is unavailable, synchronous copy handling still works, but that page cannot inspect asynchronous copies.
 
 The address bar is cleaned with `history.replaceState` once the page's `load` event has fired, so the page has already done its own work with the URL, and again 300 ms after each in-page navigation.
 
-The offscreen document coordinates all post-copy writes, including explicit Copy and Undo. Trusted new intent invalidates older reads across pages and frames, including when the new copy has identical text. Settings changes, Undo, and shutdown also cancel pending page reads; settings changes cancel automatic reconciliation waiting in the worker, and pause/resume cannot make an older request valid again. The writer checks current text and formats before committing, and Undo succeeds only after acknowledgement. Clipboard read and write operations are not atomic with arbitrary external apps.
+### Clipboard coordination
 
-The background watcher leaves existing contents alone when starting, checks every 0.75 seconds, and waits 250 ms after detecting a change. A focused page then uses the Clipboard API to inspect the complete format inventory: offscreen synthetic paste alone cannot see web custom formats. Without that inspection, no automatic write occurs. Turning off whole-clipboard watching stops polling; the shared writer remains available for page copies and Undo. Competing tracked versions of the same link are skipped for 5 seconds after a rewrite.
+The offscreen document coordinates all post-copy writes. Trusted new intent invalidates older reads across pages and frames, including when the new copy has identical text. Settings changes, Undo, and shutdown also cancel pending page reads and worker reconciliation; pause/resume cannot make an older request valid again. The writer checks current text and formats before committing, and Undo succeeds only after acknowledgement. Clipboard read and write operations are not atomic with arbitrary external apps.
+
+### Background watching
+
+The background watcher leaves existing contents alone when starting, checks every 0.75 seconds, and waits 250 ms after detecting a change. A focused page then uses the Clipboard API to inspect the [format inventory](#clipboard-formats): offscreen synthetic paste alone cannot see web custom formats. Without that inspection, no automatic write occurs. Inspection retries until a reader and supported formats are available, even if a later copy removes a custom format without changing the text. Competing tracked versions of the same link are skipped for 5 seconds after a rewrite.
 
 ## Permissions
 
@@ -114,6 +124,10 @@ The end-to-end tests load `dist/` into Playwright's Chromium, copy links on a lo
 
 The playground has one control for each copy path, a tracked address-bar link, a link to copy from another app, right-click test links, functional links that must paste unchanged, an iframe, and a box to inspect pasted text. Open it in the browser where `dist/` is loaded.
 
+CI runs the checks, the end-to-end tests, and packaging on every pull request, and attaches the Web Store zip to the run. See [CONTRIBUTING.md](CONTRIBUTING.md) for adding parameters and replacement values and for submitting changes.
+
+### Source map
+
 | Path                             | Contents                                                                             |
 | -------------------------------- | ------------------------------------------------------------------------------------ |
 | `src/manifest.json`              | Extension manifest; the build fills in `version` from `package.json`                 |
@@ -125,14 +139,15 @@ The playground has one control for each copy path, a tracked address-bar link, a
 | `src/lib/rewrite.ts`             | In-place link and text rewriting                                                     |
 | `src/lib/values.ts`, `prng.ts`   | Decoy, silly, and hybrid replacement values, seeded per install                      |
 | `src/lib/copy-watcher.ts`        | Copy detection on pages: copy events, `clipboardchange`, polling fallback            |
+| `src/lib/clipboard-html.ts`      | Rich clipboard rewriting and link counting                                           |
 | `src/lib/address-bar.ts`         | Address-bar cleaning                                                                 |
 | `src/lib/toast.ts`               | On-page notification in a shadow root on the top layer                               |
+| `src/lib/messages.ts`            | Runtime message contracts and sender checks                                          |
+| `src/lib/settings.ts`            | Settings defaults, storage subscriptions, and per-install key requests               |
 | `tests/unit/`                    | Vitest: rules, rewriting, values, and the page watchers in a simulated DOM           |
 | `tests/e2e/`                     | Playwright tests with the extension loaded                                           |
 | `tests/fixtures/playground.html` | Manual and end-to-end test page                                                      |
 | `scripts/`                       | Build, packaging, playground server, icon renderer                                   |
-
-CI runs the checks, the end-to-end tests, and packaging on every pull request, and attaches the Web Store zip to the run. See [CONTRIBUTING.md](CONTRIBUTING.md) for adding parameters and replacement values and for submitting changes.
 
 ## License
 
