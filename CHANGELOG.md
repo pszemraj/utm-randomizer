@@ -32,6 +32,7 @@
 
 ### Fixed
 
+- Amazon store-search selectors (`srs`) remain unchanged while tracking parameters are cleaned.
 - Browser tests explicitly select and verify the clipboard-event and polling paths instead of relying on Chromium feature flags.
 - Recognized signed CloudFront, AWS, Google Cloud, and Azure links remain byte-for-byte unchanged in every mode.
 - Standalone URL punctuation stays in its original query value or fragment, and text and URL entry points agree on replacements.

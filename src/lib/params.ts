@@ -319,7 +319,6 @@ const SITE_RULES: SiteRule[] = [
       refrid: 'id',
       qid: 'id',
       sr: 'generic',
-      srs: 'generic',
       sprefix: 'term',
       crid: 'id',
       linkcode: 'generic',

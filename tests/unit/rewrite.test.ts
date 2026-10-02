@@ -291,6 +291,19 @@ describe('site-specific tracking', () => {
 });
 
 describe('functional links stay intact', () => {
+  it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('preserves Amazon store selectors in %s mode', (mode) => {
+    const options = { mode, key: 'review-key' };
+    for (const path of ['/s', '/gp/search']) {
+      const store = `https://www.amazon.com${path}?i=appliances&srs=21217039011`;
+      expect(rewriteUrl(store, options)).toBeNull();
+      expect(hasTrackingParams(store)).toBe(false);
+      const rewritten = rewriteUrl(`${store}&utm_source=email`, options)?.url;
+      expect(rewritten).toBeDefined();
+      expect(rewritten).toContain('i=appliances&srs=21217039011');
+      expect(rewritten).not.toContain('utm_source=email');
+    }
+  });
+
   it.each([
     'https://www.youtube.com/results?search_query=lofi+beats',
     'https://www.youtube.com/feeds/videos.xml?channel_id=UCabc123',
