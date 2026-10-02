@@ -84,6 +84,15 @@ export type ExtensionMessage =
   | WatchConfigMessage
   | WatchIgnoreMessage;
 
+/** Sends a notification to the service worker without waiting for a response. */
+export function sendNotification(message: ExtensionMessage): void {
+  try {
+    chrome.runtime.sendMessage(message).catch(() => undefined);
+  } catch {
+    // A reloaded or removed extension can no longer send notifications.
+  }
+}
+
 /**
  * Narrows an incoming `chrome.runtime` message to this extension's message shape. Listeners still
  * switch on `type`, so unknown types fall through harmlessly.

@@ -5,7 +5,7 @@
 // Offscreen documents never have focus, so navigator.clipboard is unusable here; execCommand with
 // the extension's clipboardRead/clipboardWrite permissions works regardless of focus.
 import { createLoopGuard } from './lib/loop-guard';
-import { isExtensionMessage, type ExtensionMessage, type WatchConfig } from './lib/messages';
+import { isExtensionMessage, sendNotification, type WatchConfig } from './lib/messages';
 import { rewriteText } from './lib/rewrite';
 import { describeMode } from './lib/settings';
 
@@ -85,11 +85,6 @@ function writeClipboard(text: string): boolean {
   return ok;
 }
 
-/** Sends a message to the service worker; failures (worker restarting) only cost a notification. */
-function send(message: ExtensionMessage): void {
-  chrome.runtime.sendMessage(message).catch(() => undefined);
-}
-
 /** One watcher tick: rewrite the clipboard if it changed to something with tracked links. */
 function check(): void {
   if (!config) {
@@ -129,7 +124,7 @@ function check(): void {
   }
   loopGuard.record(snapshot.text, result.text);
   const { emoji, done } = describeMode(config.mode);
-  send({
+  sendNotification({
     type: 'rewritten',
     urls: result.urls,
     relayToast: {

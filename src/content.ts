@@ -1,6 +1,6 @@
 import { startAddressBarCleaner, type AddressBarCleaner } from './lib/address-bar';
 import { startCopyWatcher, type WatchedClipboard } from './lib/copy-watcher';
-import { isExtensionMessage, type ExtensionMessage, type ToastPayload } from './lib/messages';
+import { isExtensionMessage, sendNotification, type ExtensionMessage, type ToastPayload } from './lib/messages';
 import {
   DEFAULT_SETTINGS,
   describeMode,
@@ -53,15 +53,6 @@ function isContextValid(): boolean {
   return Boolean(chrome.runtime?.id);
 }
 
-/** Fire-and-forget message to the service worker. */
-function send(message: ExtensionMessage): void {
-  try {
-    chrome.runtime.sendMessage(message).catch(() => undefined);
-  } catch {
-    // Extension context invalidated (reloaded or removed); stats for this rewrite are skipped.
-  }
-}
-
 /** Shows a notification in this frame; its Undo restores the original clipboard text. */
 function toast(payload: ToastPayload): void {
   const { undoText } = payload;
@@ -94,7 +85,7 @@ const watcher = startCopyWatcher({
     if (payload && isTopFrame) {
       toast(payload);
     }
-    send({ type: 'rewritten', urls, relayToast: isTopFrame ? undefined : payload });
+    sendNotification({ type: 'rewritten', urls, relayToast: isTopFrame ? undefined : payload });
   },
 });
 
