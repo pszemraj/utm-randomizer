@@ -100,8 +100,8 @@ const watcher = startCopyWatcher({
     }
     return response.epoch;
   },
-  reconcile: (text, embedded, baseline, types, epoch) =>
-    coordinate({ type: 'reconcile-clipboard', text, embedded, baseline, types: [...types], epoch }),
+  reconcile: (text, embedded, baseline, types, epoch, pageCopy) =>
+    coordinate({ type: 'reconcile-clipboard', text, embedded, baseline, types: [...types], epoch, pageCopy }),
   onRewrite: ({ original, urls, undoable }) => {
     const { emoji, done } = describeMode(settings.mode);
     const payload: ToastPayload | undefined = settings.notify

@@ -37,7 +37,7 @@
 - Standalone URL punctuation stays in its original query value or fragment, and text and URL entry points agree on replacements.
 - URL rewriting bounds input size and hashes each link's stable seed once, avoiding quadratic work for many tracking parameters.
 - Deferred clipboard checks clean text and HTML links even when a page stops copy or cut propagation.
-- Post-copy writes share an offscreen coordinator; newer copies, Undo, and settings changes invalidate older asynchronous reads.
+- Post-copy writes share an offscreen coordinator and retain originating-frame context for relative text and HTML links; newer copies, Undo, and settings changes invalidate older asynchronous reads.
 - Automatic writes inspect the complete native format inventory and preserve images, files, and custom payloads. Whole-clipboard cleaning waits for a focused page when that inspection is unavailable.
 - Undo suppression survives cross-frame work and service-worker restart, then expires when different contents or formats are observed. Lost acknowledgements report restoration failure.
 - Synthetic copy, gesture, and Undo events cannot authorize clipboard writes; malformed runtime messages and forged control senders are rejected.

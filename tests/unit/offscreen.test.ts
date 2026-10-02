@@ -113,6 +113,33 @@ async function start() {
   return { clipboard, sendMessage, message, writes, inspector, readEpoch };
 }
 
+it.each([undefined, 'https://example.com/page', 'https://www.youtube.com/feed'])(
+  'uses the originating page context for relative text and HTML (%s)',
+  async (baseUrl) => {
+    const { clipboard, message, readEpoch } = await start();
+    const original = '/watch?v=1&si=abcdefgh&utm_source=email';
+    clipboard.text = original;
+    clipboard.html = `<a href="${original}">A video</a>`;
+    clipboard.types = ['text/plain', 'text/html'];
+    message({
+      type: 'offscreen-reconcile',
+      epoch: readEpoch(),
+      types: clipboard.types,
+      text: original,
+      embedded: false,
+      config: CONFIG,
+      baseUrl,
+    });
+    const expected =
+      baseUrl === undefined ? original : baseUrl.includes('youtube.com') ? '/watch?v=1' : '/watch?v=1&si=abcdefgh';
+    expect(clipboard.text).toBe(expected);
+    const html = new DOMParser().parseFromString(clipboard.html, 'text/html');
+    expect(html.querySelector('a')?.getAttribute('href')).toBe(expected);
+    expect(html.querySelector('a')?.textContent).toBe('A video');
+    expect(clipboard.types).toEqual(['text/plain', 'text/html']);
+  },
+);
+
 it('atomically restores and suppresses Undo across reconfiguration, then expires after another copy', async () => {
   const { clipboard, sendMessage, message, readEpoch } = await start();
   clipboard.text = TRACKED;

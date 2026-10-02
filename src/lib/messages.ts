@@ -53,6 +53,8 @@ export interface ReconcileClipboardMessage {
   type: 'reconcile-clipboard';
   text: string;
   embedded: boolean;
+  /** Whether a page copy gesture, rather than whole-clipboard inspection, prompted this read. */
+  pageCopy: boolean;
   /** Complete MIME inventory observed through the async Clipboard API. */
   types: string[];
   /** Coordinator generation captured before the clipboard read. */
@@ -80,6 +82,8 @@ export interface OffscreenReconcileMessage {
   types: string[];
   epoch: number;
   baseline?: string;
+  /** Originating frame URL for relative page copies; absent for whole-clipboard inspection. */
+  baseUrl?: string;
   config: WatchConfig;
   tabId?: number;
 }
@@ -221,6 +225,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
         isTypes(value.types) &&
         isNonnegativeInteger(value.epoch) &&
         (value.baseline === undefined || isText(value.baseline)) &&
+        (value.baseUrl === undefined || isText(value.baseUrl)) &&
         isWatchConfig(value.config) &&
         (value.tabId === undefined || isNonnegativeInteger(value.tabId))
       );
@@ -228,6 +233,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
       return (
         isText(value.text) &&
         typeof value.embedded === 'boolean' &&
+        typeof value.pageCopy === 'boolean' &&
         isTypes(value.types) &&
         isNonnegativeInteger(value.epoch) &&
         (value.baseline === undefined || isText(value.baseline))

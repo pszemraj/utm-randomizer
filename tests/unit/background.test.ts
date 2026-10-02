@@ -172,7 +172,7 @@ it.each([
   { type: 'count', urls: '1000' },
   { type: 'count', urls: -1 },
   { type: 'rewritten', urls: 1.5 },
-  { type: 'reconcile-clipboard', text: 5, embedded: true },
+  { type: 'reconcile-clipboard', pageCopy: true, text: 5, embedded: true, types: ['text/plain'], epoch: 0 },
   { type: 'restore-clipboard' },
 ])('rejects malformed commands without side effects %#', async (message) => {
   const worker = await startBackground();
@@ -225,20 +225,25 @@ it('acknowledges failed or lost Undo forwarding without silently reporting succe
   expect(worker.closeDocument).not.toHaveBeenCalled();
 });
 
-it('forwards page reconciliation with fresh settings, baseline and originating tab', async () => {
+it('forwards page reconciliation with fresh settings and the originating frame URL', async () => {
   const worker = await startBackground({ enabled: true, watchClipboard: false, mode: 'strip' });
   await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
   const response = vi.fn();
   worker.listener(
     {
       type: 'reconcile-clipboard',
+      pageCopy: true,
       text: 'current',
       embedded: true,
       types: ['text/plain'],
       epoch: 0,
       baseline: 'before',
     },
-    contentSender,
+    {
+      ...contentSender,
+      url: 'https://www.youtube.com/frame',
+      tab: { id: 7, url: 'https://example.com/' } as chrome.tabs.Tab,
+    },
     response,
   );
   await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
@@ -249,6 +254,7 @@ it('forwards page reconciliation with fresh settings, baseline and originating t
     types: ['text/plain'],
     epoch: 0,
     baseline: 'before',
+    baseUrl: 'https://www.youtube.com/frame',
     config: { mode: 'strip', key: 'test-key' },
     tabId: 7,
   });
@@ -303,7 +309,14 @@ it('requests native clipboard inspection from the active page without blocking n
     () =>
       new Promise<{ ok: boolean }>((resolve) => {
         worker.listener(
-          { type: 'reconcile-clipboard', text: 'current', embedded: false, types: ['text/plain'], epoch: 0 },
+          {
+            type: 'reconcile-clipboard',
+            pageCopy: false,
+            text: 'current',
+            embedded: false,
+            types: ['text/plain'],
+            epoch: 0,
+          },
           { ...contentSender, tab: { id: 9 } as chrome.tabs.Tab },
           resolve,
         );
@@ -321,6 +334,7 @@ it('requests native clipboard inspection from the active page without blocking n
     types: ['text/plain'],
     epoch: 0,
     baseline: undefined,
+    baseUrl: undefined,
     config: { mode: 'decoy', key: 'test-key' },
     tabId: 9,
   });

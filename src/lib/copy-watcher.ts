@@ -41,6 +41,7 @@ export interface WatcherDeps {
     baseline: string | undefined,
     types: readonly string[],
     epoch: number,
+    pageCopy: boolean,
   ) => Promise<void>;
   /** Called after each rewrite, to show a notification and count it. */
   onRewrite: (event: RewriteEvent) => void;
@@ -268,11 +269,14 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
    *
    * @param embedded Also rewrite links inside longer text (only safe for plain-text clipboard contents).
    * @param baseline Clipboard flavors before a polling gesture; unchanged contents are left alone.
+   * @param job Local generation that cancels stale reads after newer intent or configuration.
+   * @param pageCopy Whether page intent supplies a base URL for relative links.
    */
   async function rewriteClipboard(
     embedded: boolean,
     baseline?: ClipboardSnapshot | null,
     job = ++generation,
+    pageCopy = true,
   ): Promise<boolean> {
     if (!clipboard || document.hidden || !document.hasFocus()) {
       return false;
@@ -301,7 +305,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     // A synchronous text rewrite says nothing about a later HTML target with the same label.
     if (html === null && text === lastWritten) return true;
     try {
-      await deps.reconcile(text, embedded, baseline?.text, types, epoch);
+      await deps.reconcile(text, embedded, baseline?.text, types, epoch, pageCopy);
     } catch {
       return false;
     }
@@ -437,7 +441,9 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
 
   /** Answers the worker's request for a complete format inspection without requiring page intent. */
   function inspect(): Promise<boolean> {
-    return active() && getSettings().watchClipboard ? rewriteClipboard(true) : Promise.resolve(false);
+    return active() && getSettings().watchClipboard
+      ? rewriteClipboard(true, undefined, undefined, false)
+      : Promise.resolve(false);
   }
 
   return { restore, stop, invalidate, inspect };

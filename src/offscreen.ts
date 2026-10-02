@@ -3,7 +3,7 @@
 import { rewriteHtml } from './lib/clipboard-html';
 import { createLoopGuard } from './lib/loop-guard';
 import { isExtensionMessage, isWorkerSender, sendNotification, type WatchConfig } from './lib/messages';
-import { rewriteText } from './lib/rewrite';
+import { rewriteText, type RewriteOptions } from './lib/rewrite';
 import { describeMode } from './lib/settings';
 
 /** How often the clipboard is checked while watching. */
@@ -112,7 +112,7 @@ function observe(snapshot: ClipboardSnapshot): void {
 function reconcile(
   text: string,
   embedded: boolean,
-  options: WatchConfig,
+  options: RewriteOptions,
   types: string[],
   readEpoch: number,
   tabId?: number,
@@ -252,7 +252,7 @@ chrome.runtime.onMessage.addListener(
           ok: reconcile(
             message.text,
             message.embedded,
-            message.config,
+            { ...message.config, baseUrl: message.baseUrl },
             message.types,
             message.epoch,
             message.tabId,

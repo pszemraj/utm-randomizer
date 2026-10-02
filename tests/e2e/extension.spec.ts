@@ -136,6 +136,51 @@ test.describe('copying on web pages', () => {
     });
   }
 
+  test('preserves relative link forms in asynchronous text and HTML copies', async ({
+    playground,
+    context,
+    setSettings,
+    waitForWatcher,
+    readClipboard,
+  }) => {
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: new URL(playground.url()).origin,
+    });
+    await playground.evaluate(() => {
+      const button = document.createElement('button');
+      button.id = 'copy-relative';
+      button.textContent = 'Copy relative links';
+      button.onclick = () => {
+        setTimeout(() => {
+          void navigator.clipboard.write([
+            new ClipboardItem({
+              'text/plain': new Blob(['/relative-page?keep=a%2Fb&utm_source=email#part'], { type: 'text/plain' }),
+              'text/html': new Blob(
+                ['<b><a href="./relative-target?utm_campaign=spring&keep=a%2Fb#section">Target</a></b>'],
+                {
+                  type: 'text/html',
+                },
+              ),
+            }),
+          ]);
+        }, 100);
+      };
+      document.body.append(button);
+    });
+    await playground.locator('#copy-relative').click();
+    await expect.poll(readClipboard).toBe('/relative-page?keep=a%2Fb#part');
+    const html = await playground.evaluate(async () => {
+      const [item] = await navigator.clipboard.read();
+      return item ? (await item.getType('text/html')).text() : '';
+    });
+    // Chromium resolves relative HTML hrefs when it creates the native clipboard payload.
+    const target = new URL('./relative-target?keep=a%2Fb#section', playground.url()).href;
+    expect(html).toContain(`href="${target}"`);
+    expect(html).toContain('<b>');
+  });
+
   test('detects changed HTML with unchanged plain text after gestures and cached writes', async ({
     playground,
     context,
@@ -689,13 +734,18 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
     await expect.poll(readClipboard).toBe(copied);
   });
 
-  test('leaves text and links without tracking alone', async ({
+  test('leaves ordinary text, functional links, and unattributed relative links alone', async ({
     readClipboard,
     writeClipboardExternally,
     waitForWatcher,
   }) => {
     await waitForWatcher(true);
-    for (const text of ['hello world?', 'https://example.com/?id=1&page=2', 'https://maps.google.com/?cid=123']) {
+    for (const text of [
+      'hello world?',
+      'https://example.com/?id=1&page=2',
+      'https://maps.google.com/?cid=123',
+      '/relative-page?utm_source=email',
+    ]) {
       await writeClipboardExternally(text);
       expect(await expectStable(readClipboard, 1500)).toBe(text);
     }

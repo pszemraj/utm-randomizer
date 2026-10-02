@@ -158,6 +158,7 @@ function reconcileClipboard(
   epoch: number,
   tabId: number | undefined,
   baseline?: string,
+  baseUrl?: string,
 ): Promise<void> {
   return withOffscreen(async () => {
     const settings = await loadSettings();
@@ -172,6 +173,7 @@ function reconcileClipboard(
       types,
       epoch,
       baseline,
+      baseUrl,
       config: { mode: settings.mode, key: await secret() },
       tabId,
     });
@@ -430,6 +432,7 @@ chrome.runtime.onMessage.addListener(
             message.epoch,
             sender.tab?.id,
             message.baseline,
+            message.pageCopy ? sender.url : undefined,
           ),
           sendResponse,
         );
