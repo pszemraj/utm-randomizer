@@ -307,7 +307,7 @@ const SITE_RULES: SiteRule[] = [
       ug_btm: 'generic',
       trackparams: 'id',
       preview_pb: 'generic',
-      timestamp: 'generic',
+      // timestamp controls playback-time visibility: https://developers.tiktok.com/docs/en/embed-player
       source: 'source',
     },
   },

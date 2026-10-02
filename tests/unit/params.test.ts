@@ -117,6 +117,11 @@ describe('classifyParam', () => {
     }
   });
 
+  it('preserves TikTok player timestamp controls', () => {
+    expect(classifyParam('timestamp', 'www.tiktok.com', '/player/v1/6718335390845095173')).toBeNull();
+    expect(classifyParam('_t', 'www.tiktok.com', '/player/v1/6718335390845095173')).toBe('id');
+  });
+
   it('is not fooled by Object.prototype keys', () => {
     for (const key of [
       'constructor',

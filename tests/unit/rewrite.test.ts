@@ -284,6 +284,10 @@ describe('site-specific tracking', () => {
     ],
     ['https://x.com/jack/status/20?s=20&t=AbCdEf', 'https://x.com/jack/status/20'],
     ['https://www.bing.com/search?q=cats&sp=1&pq=ca&form=QBRE&cvid=abc', 'https://www.bing.com/search?q=cats'],
+    [
+      'https://www.tiktok.com/@scout2015/video/6718335390845095173?lang=en&_t=Ab12&_r=1',
+      'https://www.tiktok.com/@scout2015/video/6718335390845095173?lang=en',
+    ],
     ['https://www.instagram.com/p/C0abc/?igsh=MWt4bXZ2', 'https://www.instagram.com/p/C0abc/'],
     [
       'https://www.reddit.com/r/rust/comments/abc/title/?share_id=Xy12&utm_medium=android_app&utm_source=share',
@@ -313,6 +317,23 @@ describe('site-specific tracking', () => {
 });
 
 describe('functional links stay intact', () => {
+  it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)(
+    'preserves TikTok player timestamp controls in %s mode',
+    (mode) => {
+      // TikTok documents timestamp=0|1 as the playback-time visibility control.
+      const options = { mode, key: 'review-key' };
+      for (const timestamp of ['0', '1']) {
+        const player = `https://www.tiktok.com/player/v1/6718335390845095173?timestamp=${timestamp}&controls=1`;
+        expect(rewriteUrl(player, options)).toBeNull();
+        expect(hasTrackingParams(player)).toBe(false);
+        const rewritten = rewriteUrl(`${player}&_t=Ab12`, options)?.url;
+        expect(rewritten).toBeDefined();
+        expect(rewritten).toContain(`timestamp=${timestamp}&controls=1`);
+        expect(rewritten).not.toContain('_t=Ab12');
+      }
+    },
+  );
+
   it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('preserves Bing Maps collections in %s mode', (mode) => {
     // Microsoft documents sp as the address, pin, or geometry to add to the map.
     const options = { mode, key: 'review-key' };
