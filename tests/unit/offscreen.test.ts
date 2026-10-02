@@ -480,6 +480,44 @@ it('preserves HTML and plain text when both representations need rewriting', asy
   expect(clipboard.types).toEqual(['text/plain', 'text/html']);
 });
 
+it.each([true, false])('cleans both representations of rich prose with embedded %s', async (embedded) => {
+  const { clipboard, message, readEpoch } = await start();
+  const original = `Read ${TRACKED} today`;
+  const cleaned = `Read ${CLEAN} today`;
+  clipboard.text = original;
+  clipboard.html = `<p><b>${original}</b></p>`;
+  clipboard.types = ['text/plain', 'text/html'];
+  message({
+    type: 'offscreen-reconcile',
+    epoch: readEpoch(),
+    types: clipboard.types,
+    text: original,
+    embedded,
+    config: CONFIG,
+  });
+  expect(clipboard.text).toBe(cleaned);
+  expect(clipboard.html).toBe(`<p><b>${cleaned}</b></p>`);
+  expect(clipboard.types).toEqual(['text/plain', 'text/html']);
+});
+
+it('leaves plain-only prose unchanged when embedded rewriting is disabled', async () => {
+  const { clipboard, message, writes, readEpoch } = await start();
+  const original = `Read ${TRACKED} today`;
+  clipboard.text = original;
+  message({
+    type: 'offscreen-reconcile',
+    epoch: readEpoch(),
+    types: clipboard.types,
+    text: original,
+    embedded: false,
+    config: CONFIG,
+  });
+  expect(clipboard.text).toBe(original);
+  expect(clipboard.html).toBeNull();
+  expect(clipboard.types).toEqual(['text/plain']);
+  expect(writes).not.toHaveBeenCalled();
+});
+
 it('checks formats again immediately before committing an automatic write', async () => {
   const { clipboard, message, writes, readEpoch } = await start();
   clipboard.text = TRACKED;

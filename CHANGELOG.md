@@ -39,6 +39,7 @@
 - Deferred clipboard checks clean text and HTML links even when a page stops copy or cut propagation.
 - Polling reconciles copies after dispatch even when a dynamically registered page handler overwrites a synchronous edit.
 - Native rich selections retain their HTML formatting and functional anchor destinations during cleaning.
+- Rich copies clean URLs embedded in prose in both plain-text and HTML representations.
 - Plain-text Undo is offered only for copies containing no other clipboard formats.
 - Explicit Copy accepts generated output and unchanged links beyond the rewrite input bound.
 - Post-copy writes share an offscreen coordinator and retain originating-frame context for relative text and HTML links; newer copies, Undo, and settings changes invalidate older asynchronous reads.

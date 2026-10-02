@@ -132,7 +132,7 @@ function reconcile(
   ) {
     return true;
   }
-  const result = rewriteText(snapshot.text, { ...options, embedded: embedded && snapshot.html === null });
+  const result = rewriteText(snapshot.text, { ...options, embedded: embedded || snapshot.html !== null });
   const html = snapshot.html === null ? null : rewriteHtml(snapshot.html, options);
   if (!result && html === null) return true;
   const rewritten = { ...snapshot, text: result?.text ?? snapshot.text, html: html ?? snapshot.html };

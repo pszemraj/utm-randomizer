@@ -274,7 +274,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   /**
    * Reads candidate text; the offscreen writer checks the current snapshot before any write.
    *
-   * @param embedded Also rewrite links inside longer text (only safe for plain-text clipboard contents).
+   * @param embedded Also rewrite links inside longer plain-only text; HTML is handled by the coordinator.
    * @param baseline Clipboard flavors before a polling gesture; unchanged contents are left alone.
    * @param job Local generation that cancels stale reads after newer intent or configuration.
    * @param pageCopy Whether page intent supplies a base URL for relative links.
@@ -402,7 +402,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
           lastWritten = null;
           return;
         }
-        // Rich clipboard content would lose its formatting, so embedded links are only rewritten in plain text.
+        // The coordinator preserves HTML and cleans both representations; plain-only prose needs this flag.
         void rewriteClipboard(Boolean(types && !types.includes('text/html')));
       },
       { signal: listeners.signal },

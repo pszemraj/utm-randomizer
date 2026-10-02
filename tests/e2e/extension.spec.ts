@@ -767,46 +767,51 @@ test.describe('copying on web pages', () => {
     expect(copied.trim()).toMatch(/^https:\/\/example\.com\/deal\?id=9&utm_source=[^&]+&msclkid=[0-9a-f]{9}$/);
   });
 
-  test('preserves a rich selection with a different functional anchor destination', async ({
-    playground,
-    context,
-    setSettings,
-    waitForWatcher,
-    readClipboard,
-  }) => {
-    await setSettings({ mode: 'strip', watchClipboard: false });
-    await waitForWatcher(false);
-    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
-      origin: new URL(playground.url()).origin,
+  for (const prose of [false, true]) {
+    test(`preserves a rich ${prose ? 'prose ' : ''}selection with a different functional anchor destination`, async ({
+      playground,
+      context,
+      setSettings,
+      waitForWatcher,
+      readClipboard,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false });
+      await waitForWatcher(false);
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: new URL(playground.url()).origin,
+      });
+      const original = prose
+        ? 'Read https://example.com/?utm_source=email today'
+        : 'https://example.com/?utm_source=email';
+      const clean = prose ? 'Read https://example.com/ today' : 'https://example.com/';
+      await playground.evaluate((text) => {
+        const paragraph = document.createElement('p');
+        paragraph.innerHTML = `<a href="https://destination.example/item"><b>${text}</b></a>`;
+        document.body.append(paragraph);
+        const range = document.createRange();
+        range.selectNodeContents(paragraph);
+        const selection = getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }, original);
+      await playground.keyboard.press('ControlOrMeta+C');
+      await expect.poll(readClipboard).toBe(clean);
+      const copied = await playground.evaluate(async () => {
+        const [item] = await navigator.clipboard.read();
+        const html = item?.types.includes('text/html') ? await (await item.getType('text/html')).text() : '';
+        const document = new DOMParser().parseFromString(html, 'text/html');
+        return {
+          types: item?.types,
+          href: document.querySelector('a')?.getAttribute('href'),
+          boldText: document.querySelector('b')?.textContent,
+        };
+      });
+      expect(copied.types).toEqual(['text/plain', 'text/html']);
+      expect(copied.href).toBe('https://destination.example/item');
+      expect(copied.boldText).toBe(clean);
+      await expect(playground.locator('utm-randomizer-toast').getByRole('button', { name: 'Undo' })).toHaveCount(0);
     });
-    await playground.evaluate(() => {
-      const paragraph = document.createElement('p');
-      paragraph.innerHTML =
-        '<a href="https://destination.example/item"><b>https://example.com/?utm_source=email</b></a>';
-      document.body.append(paragraph);
-      const range = document.createRange();
-      range.selectNodeContents(paragraph);
-      const selection = getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    });
-    await playground.keyboard.press('ControlOrMeta+C');
-    await expect.poll(readClipboard).toBe('https://example.com/');
-    const copied = await playground.evaluate(async () => {
-      const [item] = await navigator.clipboard.read();
-      const html = item?.types.includes('text/html') ? await (await item.getType('text/html')).text() : '';
-      const document = new DOMParser().parseFromString(html, 'text/html');
-      return {
-        types: item?.types,
-        href: document.querySelector('a')?.getAttribute('href'),
-        boldText: document.querySelector('b')?.textContent,
-      };
-    });
-    expect(copied.types).toEqual(['text/plain', 'text/html']);
-    expect(copied.href).toBe('https://destination.example/item');
-    expect(copied.boldText).toBe('https://example.com/');
-    await expect(playground.locator('utm-randomizer-toast').getByRole('button', { name: 'Undo' })).toHaveCount(0);
-  });
+  }
 
   for (const action of ['copy', 'cut'] as const) {
     test(`rewrites a keyboard ${action} when the page stops propagation`, async ({
