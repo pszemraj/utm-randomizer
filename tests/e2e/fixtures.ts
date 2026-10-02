@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import {
   chromium,
   expect as baseExpect,
@@ -39,8 +41,8 @@ export interface ExtensionFixtures {
 
 /** Per-project options set in playwright.config.ts. */
 export interface ExtensionOptions {
-  /** Extra Chromium flag, used to switch the `clipboardchange` event on or off. */
-  blinkFeature: string;
+  /** Whether the content script sees native clipboard events or uses its polling fallback. */
+  clipboardChange: boolean;
 }
 
 const EXTENSION_PATH = path.resolve('dist');
@@ -59,7 +61,7 @@ async function extensionPage(context: BrowserContext, extensionId: string): Prom
 
 /** Playwright `test` with the extension fixtures. */
 export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: Playground }>({
-  blinkFeature: ['', { option: true }],
+  clipboardChange: [true, { option: true }],
 
   server: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires a destructuring pattern here
@@ -71,20 +73,31 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
     { scope: 'worker' },
   ],
 
-  context: async ({ blinkFeature }, use) => {
+  context: async ({ clipboardChange }, use) => {
+    const extensionPath = await mkdtemp(path.join(tmpdir(), 'utm-e2e-extension-'));
+    await cp(EXTENSION_PATH, extensionPath, { recursive: true });
+    if (!clipboardChange) {
+      // Chromium can remove shipped feature flags. Hide the capability in the isolated world
+      // before the real content script selects its path, without changing production bundles.
+      const contentPath = path.join(extensionPath, 'content.js');
+      await writeFile(
+        contentPath,
+        `delete Clipboard.prototype.onclipboardchange;\n${await readFile(contentPath, 'utf8')}`,
+      );
+    }
     const context = await chromium.launchPersistentContext('', {
       // Set CHROMIUM_PATH to reuse an installed Chromium instead of Playwright's download.
       executablePath: process.env.CHROMIUM_PATH || undefined,
       channel: process.env.CHROMIUM_PATH ? undefined : 'chromium',
       headless: !process.env.HEADED,
-      args: [
-        `--disable-extensions-except=${EXTENSION_PATH}`,
-        `--load-extension=${EXTENSION_PATH}`,
-        ...(blinkFeature ? [blinkFeature] : []),
-      ],
+      args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
     });
-    await use(context);
-    await context.close();
+    try {
+      await use(context);
+    } finally {
+      await context.close();
+      await rm(extensionPath, { recursive: true, force: true });
+    }
   },
 
   serviceWorker: async ({ context }, use) => {
@@ -96,11 +109,27 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
     await use(new URL(serviceWorker.url()).host);
   },
 
-  playground: async ({ context, server }, use) => {
+  playground: async ({ context, server, extensionId, clipboardChange }, use) => {
     // No clipboard permission is granted to the page: the content script must get by with the
     // extension's own clipboardRead/clipboardWrite permissions, as in a normal browser profile.
     const page = await context.newPage();
     await page.goto(`${server.origin}/`);
+    const session = await context.newCDPSession(page);
+    const contentContexts: number[] = [];
+    session.on('Runtime.executionContextCreated', ({ context: world }: { context: { id: number; origin: string } }) => {
+      if (world.origin === `chrome-extension://${extensionId}`) contentContexts.push(world.id);
+    });
+    await session.send('Runtime.enable');
+    expect(contentContexts.length).toBeGreaterThan(0);
+    for (const contextId of contentContexts) {
+      const { result } = await session.send('Runtime.evaluate', {
+        contextId,
+        expression: "'onclipboardchange' in navigator.clipboard",
+        returnByValue: true,
+      });
+      expect(result.value).toBe(clipboardChange);
+    }
+    await session.detach();
     await use(page);
   },
 

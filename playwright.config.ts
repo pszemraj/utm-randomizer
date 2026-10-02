@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import type { ExtensionOptions } from './tests/e2e/fixtures';
 
-// Two runs: one with the `clipboardchange` event (Chrome 144+ behavior) and one without it (older Chrome).
+// Exercise native clipboard events and the polling fallback in the same Chromium version.
 export default defineConfig<ExtensionOptions>({
   testDir: 'tests/e2e',
   fullyParallel: false,
@@ -10,7 +10,7 @@ export default defineConfig<ExtensionOptions>({
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   timeout: 30_000,
   projects: [
-    { name: 'clipboardchange', use: { blinkFeature: '--enable-blink-features=ClipboardChangeEvent' } },
-    { name: 'legacy-polling', use: { blinkFeature: '--disable-blink-features=ClipboardChangeEvent' } },
+    { name: 'clipboardchange', use: { clipboardChange: true } },
+    { name: 'legacy-polling', use: { clipboardChange: false } },
   ],
 });

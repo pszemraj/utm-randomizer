@@ -395,7 +395,10 @@ test.describe('copying on web pages', () => {
 
   test('rewrites links written after an async delay', async ({ playground, readClipboard }) => {
     await playground.getByTestId('copy-delayed').click();
-    const copied = await waitForClipboard(readClipboard, (text) => text.startsWith('https://youtu.be/'));
+    const copied = await waitForClipboard(
+      readClipboard,
+      (text) => text.startsWith('https://youtu.be/') && !text.includes('AbCdEf123456'),
+    );
     // Decoy identifiers keep the original's format: prefix, case pattern, and length.
     expect(copied).toMatch(/^https:\/\/youtu\.be\/dQw4w9WgXcQ\?si=AbCd[A-Z][a-z][0-9]{6}$/);
     expect(copied).not.toContain('AbCdEf123456');
