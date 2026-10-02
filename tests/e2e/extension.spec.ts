@@ -593,6 +593,50 @@ test.describe('copying on web pages', () => {
     expect(copied).toMatch(/^https:\/\/example\.com\/post\?ref=share&mc_cid=[^&]+&mc_eid=[0-9a-f]{6}&keep=yes$/);
   });
 
+  test('preserves custom copy formats without offering destructive plain-text Undo', async ({
+    playground,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    await playground.evaluate(() => {
+      document.addEventListener('copy', (event) => {
+        event.clipboardData?.setData('text/plain', 'https://example.com/?utm_source=email');
+        event.clipboardData?.setData('application/x-example', 'opaque payload');
+        event.preventDefault();
+      });
+      const field = document.createElement('textarea');
+      field.id = 'paste-custom';
+      field.value = 'Copy custom';
+      field.addEventListener('paste', (event) => {
+        field.value = JSON.stringify({
+          text: event.clipboardData?.getData('text/plain'),
+          custom: event.clipboardData?.getData('application/x-example'),
+          types: event.clipboardData?.types,
+        });
+        event.preventDefault();
+      });
+      document.body.append(field);
+    });
+    const field = playground.locator('#paste-custom');
+    await field.focus();
+    await field.press('ControlOrMeta+A');
+    await field.press('ControlOrMeta+C');
+    const toast = playground.locator('utm-randomizer-toast');
+    await expect(toast).toContainText('Tracking removed');
+    expect(await toast.getByRole('button', { name: 'Undo' }).count()).toBe(0);
+    await field.focus();
+    await field.press('ControlOrMeta+V');
+    await expect(field).toHaveValue(
+      JSON.stringify({
+        text: 'https://example.com/',
+        custom: 'opaque payload',
+        types: ['text/plain', 'application/x-example'],
+      }),
+    );
+  });
+
   test('rewrites links written after an async delay', async ({ playground, readClipboard }) => {
     await playground.getByTestId('copy-delayed').click();
     const copied = await waitForClipboard(

@@ -223,6 +223,25 @@ describe('copy events', () => {
     expect(event.clipboardData?.getData('text/html')).toBe(`<a href="${CLEAN}">Share</a>`);
   });
 
+  it.each([
+    { type: 'application/x-example', payload: 'opaque payload' },
+    { type: 'text/html', payload: '' },
+    { type: undefined, payload: '' },
+  ])('offers plain-text Undo only without an additional $type format', ({ type, payload }) => {
+    start(new FakeClipboard(true));
+    const event = copyEvent();
+    event.preventDefault();
+    event.clipboardData?.setData('text/plain', TRACKED);
+    if (type) event.clipboardData?.setData(type, payload);
+
+    document.body.dispatchEvent(event);
+
+    expect(event.clipboardData?.getData('text/plain')).toBe(CLEAN);
+    expect(event.clipboardData?.types).toEqual(type ? ['text/plain', type] : ['text/plain']);
+    if (type) expect(event.clipboardData?.getData(type)).toBe(payload);
+    expect(rewrites).toEqual([{ original: TRACKED, rewritten: CLEAN, urls: 1, ...(type ? { undoable: false } : {}) }]);
+  });
+
   it('never cancels a native cut', () => {
     start(new FakeClipboard(true));
     document.body.innerHTML = `<p id="link">${TRACKED}</p>`;

@@ -15,7 +15,7 @@ export interface RewriteEvent {
   rewritten: string;
   /** Number of links that changed. */
   urls: number;
-  /** False when restoring plain text would discard an HTML representation. */
+  /** False when restoring plain text would discard another clipboard format. */
   undoable?: boolean;
 }
 
@@ -237,7 +237,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       original,
       rewritten: result?.text ?? original,
       urls: result?.urls ?? 1,
-      ...(html ? { undoable: false } : {}),
+      ...(data.types.some((type) => type !== 'text/plain') ? { undoable: false } : {}),
     });
     return true;
   }
