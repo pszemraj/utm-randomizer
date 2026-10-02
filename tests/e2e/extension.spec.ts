@@ -136,6 +136,98 @@ test.describe('copying on web pages', () => {
     });
   }
 
+  test('detects changed HTML with unchanged plain text after gestures and cached writes', async ({
+    playground,
+    context,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: new URL(playground.url()).origin,
+    });
+    await playground.evaluate(async () => {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/plain': new Blob(['A product'], { type: 'text/plain' }),
+          'text/html': new Blob(['<a href="https://shop.example/old?utm_source=email">A product</a>'], {
+            type: 'text/html',
+          }),
+        }),
+      ]);
+      const idle = document.createElement('button');
+      idle.id = 'unrelated-click';
+      idle.textContent = 'Unrelated action';
+      const copy = document.createElement('button');
+      copy.id = 'copy-rich';
+      copy.textContent = 'Copy product';
+      copy.onclick = () => {
+        setTimeout(() => {
+          void navigator.clipboard.write([
+            new ClipboardItem({
+              'text/plain': new Blob([copy.dataset.text ?? 'A product'], { type: 'text/plain' }),
+              'text/html': new Blob(
+                ['<strong><a href="https://shop.example/new?utm_source=email">A product</a></strong>'],
+                {
+                  type: 'text/html',
+                },
+              ),
+            }),
+          ]);
+        }, 100);
+      };
+      document.body.append(idle, copy);
+    });
+    /** Reads the native HTML flavor without changing the clipboard. */
+    const readHtml = () =>
+      playground.evaluate(async () => {
+        try {
+          const [item] = await navigator.clipboard.read();
+          return item?.types.includes('text/html') ? await (await item.getType('text/html')).text() : '';
+        } catch (error) {
+          // A concurrent extension write invalidates the native read; poll its new snapshot.
+          if (error instanceof DOMException && error.name === 'InvalidStateError') return '';
+          throw error;
+        }
+      });
+    await playground.locator('#unrelated-click').click();
+    // An unchanged rich clipboard is not a new copy, even after all fallback polls have run.
+    await playground.waitForTimeout(3000);
+    expect(await readHtml()).toContain('https://shop.example/old?utm_source=email');
+    await playground.locator('#copy-rich').click();
+    await expect.poll(readHtml).toContain('href="https://shop.example/new"');
+
+    // Seed the synchronous rewrite cache, then copy a different HTML target with the same plain text.
+    await playground.evaluate(() => {
+      const seed = document.createElement('button');
+      seed.id = 'seed-rich-cache';
+      seed.textContent = 'Copy initial link';
+      seed.onclick = () => {
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises a real synchronous copy
+        document.execCommand('copy');
+      };
+      document.addEventListener(
+        'copy',
+        (event) => {
+          event.preventDefault();
+          event.clipboardData?.setData('text/plain', 'https://example.com/?utm_source=email');
+          event.clipboardData?.setData('text/html', '<a href="https://example.com/?utm_source=email">Initial link</a>');
+        },
+        { once: true },
+      );
+      document.body.append(seed);
+      const copy = document.querySelector<HTMLButtonElement>('#copy-rich');
+      if (copy) copy.dataset.text = 'https://example.com/';
+    });
+    await playground.locator('#seed-rich-cache').click();
+    await expect.poll(readHtml).toContain('href="https://example.com/"');
+    await playground.locator('#copy-rich').click();
+    await expect.poll(readHtml).toContain('href="https://shop.example/new"');
+    expect(await playground.evaluate(() => navigator.clipboard.readText())).toBe('https://example.com/');
+    expect(await readHtml()).toContain('<strong>');
+  });
+
   test('bounds synchronous work for an HTML anchor with many tracking parameters', async ({ playground }) => {
     await playground.evaluate(() => {
       const link = 'https://example.com/?' + Array.from({ length: 5000 }, () => 'utm_a=x').join('&');

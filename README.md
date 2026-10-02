@@ -64,7 +64,7 @@ Non-tracking query segments, their order and encoding, fragments, and link forms
 
 Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten.
 
-Links inside longer plain text can be cleaned, including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`. When a copy supplies HTML, link targets and visible URLs are cleaned while preserving the HTML flavor. Automatic writes require a complete inventory containing only plain text and HTML; images, files, and custom formats are left untouched. Standalone URLs retain trailing punctuation as part of the URL; sentence-punctuation heuristics apply only to links extracted from prose.
+Links inside longer plain text can be cleaned, including standalone Markdown links such as `[article](https://example.com/?utm_source=x)`. When a copy supplies HTML, link targets and visible URLs are cleaned while preserving the HTML flavor, including new targets with unchanged plain text. Polling compares both flavors so unrelated clicks leave existing rich clipboard contents alone. Automatic writes require a complete inventory containing only plain text and HTML; images, files, and custom formats are left untouched. Standalone URLs retain trailing punctuation as part of the URL; sentence-punctuation heuristics apply only to links extracted from prose.
 
 ## How it works
 

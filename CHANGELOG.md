@@ -41,7 +41,7 @@
 - Automatic writes inspect the complete native format inventory and preserve images, files, and custom payloads. Whole-clipboard cleaning waits for a focused page when that inspection is unavailable.
 - Undo suppression survives cross-frame work and service-worker restart, then expires when different contents or formats are observed. Lost acknowledgements report restoration failure.
 - Synthetic copy, gesture, and Undo events cannot authorize clipboard writes; malformed runtime messages and forged control senders are rejected.
-- Legacy clipboard polling leaves pre-existing links alone after unrelated clicks and context menus.
+- Clipboard checks compare HTML as well as plain text: new HTML targets are cleaned even with unchanged text, while legacy polling leaves pre-existing rich links alone after unrelated clicks and context menus.
 - Settings changes stop or reconfigure the clipboard watcher independently of cosmetic context-menu updates.
 - Decoy mode replaces percent-encoded ASCII identifiers, mixed-case hexadecimal identifiers, and percent-encoded or non-Latin tracking words while preserving encoding and repeated-rewrite stability.
 - Standalone Markdown links in plain clipboard text are cleaned even when the text contains no whitespace.

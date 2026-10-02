@@ -15,6 +15,7 @@ const CLEAN = 'https://example.com/page?id=7';
 /** Async Clipboard API stand-in; `modern` exposes the `clipboardchange` event like Chrome 144+. */
 class FakeClipboard extends EventTarget implements WatchedClipboard {
   text = '';
+  html = '';
   types = ['text/plain'];
   writes: string[] = [];
 
@@ -33,8 +34,12 @@ class FakeClipboard extends EventTarget implements WatchedClipboard {
   /** Native format inventory and a text snapshot; reads can be delayed independently in tests. */
   read(): ReturnType<WatchedClipboard['read']> {
     const text = this.readText();
+    const html = this.html;
     return Promise.resolve([
-      { types: [...this.types], getType: async () => new Blob([await text], { type: 'text/plain' }) },
+      {
+        types: [...this.types],
+        getType: async (type) => new Blob([type === 'text/html' ? html : await text], { type }),
+      },
     ]);
   }
 
@@ -319,6 +324,25 @@ describe('clipboard reconciliation', () => {
     expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain', 'text/html'], 0);
   });
 
+  it('reconciles changed HTML even when plain text matches a synchronous rewrite', async () => {
+    const clipboard = new FakeClipboard(true);
+    const current = start(clipboard);
+    const event = copyEvent();
+    event.preventDefault();
+    event.clipboardData?.setData('text/plain', TRACKED);
+    event.clipboardData?.setData('text/html', `<a href="${TRACKED}">${TRACKED}</a>`);
+    document.body.dispatchEvent(event);
+    expect(event.clipboardData?.getData('text/plain')).toBe(CLEAN);
+
+    clipboard.html = '<a href="https://example.com/other?utm_source=email">New target</a>';
+    clipboard.change(CLEAN, ['text/plain', 'text/html']);
+    await flush();
+    expect(reconcile).toHaveBeenCalledWith(CLEAN, false, undefined, ['text/plain', 'text/html'], 0);
+    reconcile.mockClear();
+    await current.inspect();
+    expect(reconcile).toHaveBeenCalledWith(CLEAN, true, undefined, ['text/plain', 'text/html'], 0);
+  });
+
   it('rejects synthetic copy, gesture and clipboard-change events', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard);
@@ -404,6 +428,26 @@ describe('clipboard reconciliation', () => {
 });
 
 describe('gesture reconciliation', () => {
+  it('compares HTML as well as text with the pre-gesture baseline', async () => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    clipboard.text = 'A product';
+    clipboard.types = ['text/plain', 'text/html'];
+    clipboard.html = '<a href="https://example.com/old?utm_source=email">A product</a>';
+    start(clipboard);
+    document.body.innerHTML = '<button id="copy">Copy link</button>';
+    const button = document.getElementById('copy');
+    button?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(reconcile).not.toHaveBeenCalled();
+
+    button?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
+    await flush();
+    clipboard.html = '<a href="https://example.com/new?utm_source=email">A product</a>';
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(reconcile).toHaveBeenCalledWith('A product', false, 'A product', ['text/plain', 'text/html'], 0);
+  });
+
   it.each([true, false])('reconciles a trusted copy whose propagation stopped (clipboardchange %s)', async (modern) => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(modern);

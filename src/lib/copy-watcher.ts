@@ -4,7 +4,6 @@ import type { Settings } from './settings';
 
 /** The subset of `navigator.clipboard` the watcher uses. */
 export interface WatchedClipboard extends EventTarget {
-  readText(): Promise<string>;
   read(): Promise<readonly Pick<ClipboardItem, 'types' | 'getType'>[]>;
 }
 
@@ -61,6 +60,13 @@ export interface CopyWatcher {
   inspect(): Promise<boolean>;
   /** Removes every listener and cancels pending clipboard checks. */
   stop(): void;
+}
+
+/** Supported clipboard flavors observed together through the native Clipboard API. */
+interface ClipboardSnapshot {
+  text: string;
+  html: string | null;
+  types: readonly string[];
 }
 
 /** A clipboard change this soon after the user interacted with the page is attributed to the page. */
@@ -235,54 +241,67 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     return true;
   }
 
-  /** Reads clipboard text and expires suppression on a change, without clearing a newer write. */
-  async function readClipboard(source: WatchedClipboard, job = generation): Promise<string> {
+  /** Reads supported flavors and expires text suppression without clearing a newer write. */
+  async function readClipboard(source: WatchedClipboard, job = generation): Promise<ClipboardSnapshot | null> {
     const written = lastWritten;
-    const text = await source.readText();
+    const items = await source.read();
+    const item = items[0];
+    if (
+      items.length !== 1 ||
+      !item ||
+      item.types.length === 0 ||
+      item.types.some((type) => type !== 'text/plain' && type !== 'text/html')
+    ) {
+      return null;
+    }
+    const types = item.types;
+    const text = types.includes('text/plain') ? await (await item.getType('text/plain')).text() : '';
+    const html = types.includes('text/html') ? await (await item.getType('text/html')).text() : null;
     if (generation === job && lastWritten === written && text !== written) {
       lastWritten = null;
     }
-    return text;
+    return { text, html, types };
   }
 
   /**
    * Reads candidate text; the offscreen writer checks the current snapshot before any write.
    *
    * @param embedded Also rewrite links inside longer text (only safe for plain-text clipboard contents).
-   * @param baseline Clipboard text before a polling gesture; unchanged contents are left alone.
+   * @param baseline Clipboard flavors before a polling gesture; unchanged contents are left alone.
    */
-  async function rewriteClipboard(embedded: boolean, baseline?: string, job = ++generation): Promise<boolean> {
+  async function rewriteClipboard(
+    embedded: boolean,
+    baseline?: ClipboardSnapshot | null,
+    job = ++generation,
+  ): Promise<boolean> {
     if (!clipboard || document.hidden || !document.hasFocus()) {
       return false;
     }
-    let text: string;
-    let types: readonly string[];
+    let snapshot: ClipboardSnapshot | null;
     let epoch: number;
     try {
       epoch = await deps.beginRead();
       if (generation !== job || listeners.signal.aborted || !active()) return false;
-      const items = await clipboard.read();
-      const item = items[0];
-      if (
-        items.length !== 1 ||
-        !item ||
-        item.types.length === 0 ||
-        item.types.some((type) => type !== 'text/plain' && type !== 'text/html')
-      ) {
-        return true;
-      }
-      types = item.types;
-      text = types.includes('text/plain') ? await (await item.getType('text/plain')).text() : '';
+      snapshot = await readClipboard(clipboard, job);
     } catch {
       return false;
     }
     if (generation !== job || !active()) {
       return false;
     }
-    if (lastWritten !== text) lastWritten = null;
-    if (text === baseline || text === lastWritten) return true;
+    if (!snapshot) return true;
+    const { text, html, types } = snapshot;
+    if (
+      text === baseline?.text &&
+      html === baseline.html &&
+      types.length === baseline.types.length &&
+      types.every((type) => baseline.types.includes(type))
+    )
+      return true;
+    // A synchronous text rewrite says nothing about a later HTML target with the same label.
+    if (html === null && text === lastWritten) return true;
     try {
-      await deps.reconcile(text, embedded, baseline, types, epoch);
+      await deps.reconcile(text, embedded, baseline?.text, types, epoch);
     } catch {
       return false;
     }
@@ -290,13 +309,13 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   }
 
   /** Checks after a gesture; an optional pre-gesture read distinguishes a new copy from existing text. */
-  function runSweep(offsets: number[], baseline?: () => Promise<string>): void {
+  function runSweep(offsets: number[], baseline?: () => Promise<ClipboardSnapshot | null>): void {
     sweep?.abort();
     const job = ++generation;
     const controller = new AbortController();
     sweep = controller;
     void (async () => {
-      let previous: string | undefined;
+      let previous: ClipboardSnapshot | null | undefined;
       try {
         previous = await baseline?.();
       } catch {
