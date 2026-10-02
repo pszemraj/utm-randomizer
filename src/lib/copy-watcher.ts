@@ -322,8 +322,15 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       let previous: ClipboardSnapshot | null | undefined;
       try {
         previous = await baseline?.();
-      } catch {
-        return;
+      } catch (error) {
+        // Chromium invalidates lazy format reads when a new copy replaces their snapshot.
+        // That proves the clipboard changed, so keep the scheduled polls without the old baseline.
+        if (!(
+          error instanceof DOMException &&
+          error.name === 'InvalidStateError' &&
+          error.message.includes('Clipboard data has changed')
+        ))
+          return;
       }
       let elapsed = 0;
       for (const offset of offsets) {

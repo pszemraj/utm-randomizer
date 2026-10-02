@@ -181,6 +181,69 @@ test.describe('copying on web pages', () => {
     expect(html).toContain('<b>');
   });
 
+  test('keeps polling when a page copy invalidates the native baseline read', async ({
+    playground,
+    context,
+    extensionId,
+    clipboardChange,
+    setSettings,
+    waitForWatcher,
+    readClipboard,
+    writeClipboardExternally,
+  }) => {
+    test.skip(clipboardChange, 'Only the polling path reads a pre-gesture baseline');
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    await writeClipboardExternally('before the new copy');
+    const session = await context.newCDPSession(playground);
+    const worlds: number[] = [];
+    session.on('Runtime.executionContextCreated', ({ context: world }: { context: { id: number; origin: string } }) => {
+      if (world.origin === `chrome-extension://${extensionId}`) worlds.push(world.id);
+    });
+    await session.send('Runtime.enable');
+    expect(worlds.length).toBeGreaterThan(0);
+    for (const contextId of worlds) {
+      await session.send('Runtime.evaluate', {
+        contextId,
+        expression: `(() => {
+          const getType = ClipboardItem.prototype.getType;
+          let first = true;
+          globalThis.baselineReadError = '';
+          ClipboardItem.prototype.getType = async function (type) {
+            if (first) {
+              first = false;
+              await new Promise(resolve => setTimeout(resolve, 250));
+            }
+            try { return await getType.call(this, type); }
+            catch (error) { globalThis.baselineReadError = String(error); throw error; }
+          };
+        })()`,
+      });
+    }
+    await playground.evaluate((text) => {
+      const button = document.createElement('button');
+      button.id = 'copy-during-baseline';
+      button.textContent = 'Copy during clipboard read';
+      button.onclick = () => {
+        setTimeout(() => void navigator.clipboard.writeText(text), 100);
+      };
+      document.body.append(button);
+    }, ARTICLE);
+    await playground.locator('#copy-during-baseline').click();
+    await expect.poll(readClipboard).toBe('https://example.com/article?id=42');
+    const errors = [];
+    for (const contextId of worlds) {
+      const { result } = await session.send('Runtime.evaluate', {
+        contextId,
+        expression: 'baselineReadError',
+        returnByValue: true,
+      });
+      errors.push(String(result.value));
+    }
+    expect(errors.join('\n')).toContain('Clipboard data has changed');
+    await session.detach();
+  });
+
   test('detects changed HTML with unchanged plain text after gestures and cached writes', async ({
     playground,
     context,

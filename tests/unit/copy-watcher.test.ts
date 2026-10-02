@@ -486,6 +486,31 @@ describe('gesture reconciliation', () => {
     expect(clipboard.writes).toEqual([]);
   });
 
+  it.each([
+    {
+      name: 'InvalidStateError',
+      message: "Failed to execute 'getType' on 'ClipboardItem': Clipboard data has changed",
+      changed: true,
+    },
+    { name: 'NotAllowedError', message: 'Read permission denied', changed: false },
+  ])('handles a baseline $name without losing an observed clipboard change', async ({ name, message, changed }) => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(false);
+    start(clipboard);
+    vi.spyOn(clipboard, 'read').mockResolvedValueOnce([
+      { types: ['text/plain'], getType: () => Promise.reject(new DOMException(message, name)) },
+    ]);
+    document.body.innerHTML = '<button id="copy">Copy link</button>';
+    document.getElementById('copy')?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
+    clipboard.text = TRACKED;
+    await vi.advanceTimersByTimeAsync(3000);
+    if (changed) {
+      expect(reconcile).toHaveBeenCalledWith(TRACKED, false, undefined, ['text/plain'], 0, true);
+    } else {
+      expect(reconcile).not.toHaveBeenCalled();
+    }
+  });
+
   it('leaves an unchanged legacy clipboard alone and cancels pending sweeps on stop', async () => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(false);
