@@ -1,6 +1,6 @@
 // Offscreen document: the single coordinator for post-copy clipboard writes. Reads and commits
 // run synchronously through execCommand because this document never has browser focus.
-import { rewriteHtml } from './lib/clipboard-html';
+import { hasRewritableClipboard, rewriteHtml } from './lib/clipboard-html';
 import { createLoopGuard } from './lib/loop-guard';
 import { isExtensionMessage, isWorkerSender, sendNotification, type WatchConfig } from './lib/messages';
 import { rewriteText, type RewriteOptions } from './lib/rewrite';
@@ -194,11 +194,7 @@ function check(): void {
     candidate = null;
     window.clearTimeout(graceTimer);
     if (previous === null || isIgnored(snapshot) || !supported(snapshot)) return;
-    if (
-      !rewriteText(snapshot.text, { mode: 'strip', embedded: true }) &&
-      (snapshot.html === null || !rewriteHtml(snapshot.html, { mode: 'strip' }))
-    )
-      return;
+    if (!hasRewritableClipboard(snapshot.text, snapshot.html, true)) return;
     candidate = snapshot;
     graceTimer = window.setTimeout(check, GRACE_MS);
     return;

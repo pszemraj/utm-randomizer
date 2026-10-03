@@ -1,4 +1,4 @@
-import { rewriteHtml } from './clipboard-html';
+import { hasRewritableClipboard, rewriteHtml } from './clipboard-html';
 import { rewriteText, type RewriteOptions } from './rewrite';
 import type { Settings } from './settings';
 
@@ -327,12 +327,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       return true;
     // A synchronous text rewrite says nothing about a later HTML target with the same label.
     if (html === null && text === lastWritten) return true;
-    const options: RewriteOptions = { mode: 'strip', baseUrl: pageCopy ? location.href : undefined };
-    if (
-      !rewriteText(text, { ...options, embedded: embedded || html !== null }) &&
-      (html === null || !rewriteHtml(html, options))
-    )
-      return true;
+    if (!hasRewritableClipboard(text, html, embedded, pageCopy ? location.href : undefined)) return true;
     try {
       await deps.reconcile(text, embedded, baseline?.text, types, epoch, pageCopy);
     } catch {

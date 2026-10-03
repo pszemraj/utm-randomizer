@@ -31,3 +31,17 @@ export function rewriteHtml(html: string, options: RewriteOptions): HtmlRewrite 
   }
   return urls ? { html: doc.head.innerHTML + doc.body.innerHTML, urls } : null;
 }
+
+/** Whether supported clipboard text or HTML contains rewritable tracking, independent of replacement keys. */
+export function hasRewritableClipboard(
+  text: string,
+  html: string | null,
+  embedded: boolean,
+  baseUrl?: string,
+): boolean {
+  const options: RewriteOptions = { mode: 'strip', baseUrl };
+  return (
+    rewriteText(text, { ...options, embedded: embedded || html !== null }) !== null ||
+    (html !== null && rewriteHtml(html, options) !== null)
+  );
+}
