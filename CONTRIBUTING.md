@@ -46,8 +46,8 @@ Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve th
 
 ## Submitting changes
 
-1. Create a branch named with a Conventional Commits type, for example `feat/threads-share-params` or `fix/amazon-variant-links`.
-2. Write commit messages in the same style: `feat: strip Threads share tracking`, `fix(params): keep Amazon variant selection`.
+1. Create a branch named with a Conventional Commits type, for example `feat/clipboard-undo` or `fix/relative-links`.
+2. Write commit messages in the same style: `feat: add clipboard Undo`, `fix(rewrite): preserve relative link bytes`.
 3. Complete the [checks](#checks).
 4. If behavior changes, update `README.md` and add an entry to `CHANGELOG.md`.
 5. Open a pull request describing what changed and how you tested it.

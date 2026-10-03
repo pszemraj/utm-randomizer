@@ -683,7 +683,7 @@ function sillyToken(random: Random): string {
  * returns the same replacement.
  *
  * Because the value is ignored beyond its shape, the replacement sometimes equals it: 1 in 10 for a
- * one-digit value such as `gad_source=1`, about 1 in the vocabulary size for a word. The link is
+ * one-digit value such as `gclid=1`, about 1 in the vocabulary size for a word. The link is
  * then already in its decoy form and `rewriteUrl` reports nothing to rewrite. This is deliberate.
  * Every replacement is a fixed point (that is what makes rewriting idempotent), so an original that
  * happens to equal it is one too; and picking another value whenever they match would make the
