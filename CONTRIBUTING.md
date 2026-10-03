@@ -1,92 +1,57 @@
 # Contributing to UTM Randomizer
 
-Thank you for your interest in contributing to UTM Randomizer! This document provides guidelines for contributing to the project.
+## Setup
 
-## Development Setup
+Use the [installation steps](README.md#install) to load the extension and the [development commands](README.md#development) to rebuild it.
 
-1. **Clone the repository**
+## Checks
 
-   ```bash
-   git clone <repository-url>
-   cd utm-randomizer
-   ```
+Run focused regression tests for changed behavior and the applicable [lint, formatting, type, and build checks](README.md#development). For documentation-only changes, check formatting, relative links, and examples against the current code. `npm run format` fixes formatting.
 
-2. **Install dependencies**
+A simulated DOM cannot establish native clipboard permissions, event trust, format preservation, focus behavior, or worker termination behavior. Changes to those paths require a real loaded-extension browser run in both configurations. Exercise real mouse/keyboard input and clipboard data; inject delays or failures when testing races. Cover newer copies, cross-frame Undo, lost acknowledgements, unsupported formats, stopped propagation, and synthetic-event attacks where relevant.
 
-   ```bash
-   npm install
-   ```
+## Code style
 
-3. **Build the extension**
+TypeScript runs in strict mode, ESLint uses `typescript-eslint`'s strict type-checked rules, and Prettier owns formatting; `npm run check` enforces all three.
 
-   ```bash
-   npm run build
-   ```
+Every function, class, method, interface, type alias, and exported constant needs a `/** ... */` doc comment that says what it is for, not how it is implemented. This includes internal and test helpers. The [JSDoc lint configuration](eslint.config.mjs) enforces comments on declarations and exports; function expressions and constructors need manual review. Types come from TypeScript, so `@param` and `@returns` tags are optional; add them when a parameter or return value needs explanation (units, `null` meaning "no change", and so on). Tags that are present must match the signature, and one blank line separates the description from the first tag:
 
-4. **Load in Chrome for testing**
-   - Open `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked" and select this directory
+```ts
+/**
+ * Rewrites the tracking parameters of a single link, editing the query string in place.
+ *
+ * @returns The rewritten link, or null when it is not a link or has nothing to rewrite.
+ */
+export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | null {
+```
 
-## Development Workflow
+In `scripts/*.mjs`, which are plain JavaScript, write types inside the tags (`@param {number} [port]`).
 
-### Scripts
+## Adding a tracking parameter
 
-- `npm run dev` - Build in development mode with watch
-- `npm run build` - Build for production
-- `npm run lint` - Run ESLint
-- `npm run type-check` - Run TypeScript type checking
-- `npm run test` - Run deterministic randomizer unit tests
+The exact allowlist lives in `src/lib/params.ts`. Keep coverage small and deliberate: missing tracking is preferable to breaking functional links. Add a name only for explicitly requested coverage, with vendor documentation establishing its tracking purpose and a source comment beside the entry. Leave uncertain or ambiguous names untouched; do not add site rules or prefix matches.
 
-### Adding New Funny Values
+Each entry declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](README.md#replacement-values). Use `id` for click IDs; it always takes the identifier path.
 
-To add new funny replacement values, edit `src/utm-randomizer.ts`:
+Every new entry needs a regression in [`tests/unit/rewrite.test.ts`](tests/unit/rewrite.test.ts) showing the link being cleaned while unrelated query bytes stay intact. Extend the existing preservation controls for names outside the allowlist. A rewriting test establishes the chosen behavior; vendor evidence establishes whether the name belongs in the allowlist.
 
-- `FUNNY_SOURCES` - For utm_source parameters
-- `FUNNY_MEDIUMS` - For utm_medium parameters
-- `FUNNY_CAMPAIGNS` - For utm_campaign parameters
-- `FUNNY_TERMS` - For utm_term parameters
-- `FUNNY_CONTENT` - For utm_content parameters
+## Adding replacement values
 
-Guidelines for new values:
+Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve the [stable per-link behavior](README.md#replacement-values) when editing the lists or generators.
 
-- Keep them humorous but not offensive
-- Avoid real company/brand names
-- Make them obviously fake to prevent confusion
-- Keep them relatively short
+- **Decoy lists** (`DECOY_SOURCES`, `DECOY_MEDIUMS`, and the parts used to compose campaigns, terms, and placements) should read like values real marketing tools produce (`google`, `newsletter`, `paid_social`). Every value must pass `isWordy` after percent-decoding and converting `+` to a space: start with a Unicode letter or number, contain a letter, use only letters, combining marks, numbers, spaces, `_`, `.`, and `-`, and not look like a hexadecimal ID. Otherwise the next copy would treat it as an identifier and change it again.
+- **Silly lists** (`FUNNY`, `FUNNY_TOKEN_PHRASES`) should be lowercase and hyphenated, humorous but not offensive, obviously fake, and free of real company or brand names.
 
-### Testing
+`npm run check` runs property tests (`tests/unit/values.test.ts` and the idempotency cases in `tests/unit/rewrite.test.ts`) that fail if a value would be rewritten again or is not URL-safe.
 
-Test your changes by:
+## Submitting changes
 
-1. Building the extension with `npm run build`
-2. Reloading the extension in Chrome
-3. Using the test URLs [on the repo wiki](https://github.com/pszemraj/utm-randomizer/wiki/Test-URLs)
-4. Copying URLs with UTM parameters and verifying they're randomized
+1. Create a branch named with a Conventional Commits type, for example `feat/clipboard-undo` or `fix/relative-links`.
+2. Write commit messages in the same style: `feat: add clipboard Undo`, `fix(rewrite): preserve relative link bytes`.
+3. Complete the [checks](#checks).
+4. If behavior changes, update `README.md` and add an entry to `CHANGELOG.md`.
+5. Open a pull request describing what changed and how you tested it.
 
-## Code Style
+## Reporting issues
 
-- Use TypeScript for all new code
-- Follow the existing ESLint configuration
-- Write descriptive variable and function names
-- Add comments for complex logic
-
-## Submitting Changes
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests: `npm run lint && npm run type-check && npm run test`
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-## Reporting Issues
-
-When reporting issues, please include:
-
-- Chrome version
-- Extension version
-- Steps to reproduce
-- Example URLs (if applicable)
-- Expected vs actual behavior
+Include your Chrome version, the extension version (shown in the popup), steps to reproduce, the link before and after (remove anything personal), and what you expected instead. For a link that broke after being rewritten, the site's domain and the parameter name are usually enough.

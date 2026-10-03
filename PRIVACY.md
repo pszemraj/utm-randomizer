@@ -1,43 +1,43 @@
 # Privacy Policy
 
-**UTM Randomizer** is designed with privacy as a core principle.
+UTM Randomizer processes copied text and page addresses inside your browser. It makes no network requests, uses no analytics or telemetry, and sets no cookies.
 
-## Data Collection
+## What the extension reads
 
-This extension **does not collect, store, or transmit any user data**. Specifically:
+- **Copied text and HTML on web pages**, from copy events and clipboard reads around relevant interactions. On older Chrome, a gesture can trigger a clipboard read before a copy occurs. See the [copy detection limits](README.md#page-copies).
+- **Clipboard text, HTML, and format information in the background**, while [whole-clipboard watching](README.md#background-watching) is enabled. Background reads can cause system clipboard-access prompts.
+- **The page address**, while "Clean the address bar" is on, and the current tab's address when you use an [explicit copy action](README.md#usage).
 
-- No personal information is collected
-- No browsing history is recorded
-- No data is sent to external servers
-- No analytics or telemetry is used
-- No cookies are set by the extension
+Clipboard contents and addresses are never written to extension storage, logged, or transmitted outside your browser.
 
-## How the Extension Works
+## What the extension stores
 
-When you copy a URL to your clipboard, this extension:
+Stored locally in Chrome's extension storage and never synced or transmitted:
 
-1. Reads the clipboard content locally in your browser
-2. Checks if the URL contains tracking parameters (UTM codes, click IDs, etc.)
-3. Replaces those parameters with random nonsense values
-4. Writes the modified URL back to your clipboard
+- your settings (on/off, Decoy, Silly, Hybrid, or Remove, and which cleaning layers and notifications are on);
+- a count of how many links were rewritten, in total and in the current browser session. Only the numbers are stored, not the links;
+- a random per-install key used to generate [replacement values](README.md#replacement-values).
 
-**All processing happens entirely within your browser.** The extension makes no network requests.
+Notifications and clipboard watchers keep recent text, HTML, links, and format snapshots in memory for Undo, detecting changes, and preventing repeated rewrites. Later rewrites and observed changes can replace these values; closing their page or [offscreen document](README.md#clipboard-coordination) releases them. Closing a notification alone does not clear all watcher state.
 
-## Permissions Used
+## Permissions
 
-- **clipboardRead**: Required to detect when you copy a URL with tracking parameters
-- **clipboardWrite**: Required to replace the tracking parameters with randomized values
+| Permission                      | Why it is needed                                                                   |
+| ------------------------------- | ---------------------------------------------------------------------------------- |
+| Content script on http(s) pages | Copy detection and address-bar cleaning on supported pages                         |
+| `clipboardRead`                 | Reading a link a page just copied, and the background watcher's clipboard checks   |
+| `clipboardWrite`                | Writing the cleaned link back to the clipboard                                     |
+| `contextMenus`                  | The "Copy link with ... tracking" menu entries                                     |
+| `offscreen`                     | The background clipboard watcher, and clipboard writes from the service worker     |
+| `activeTab`                     | Reading the current tab's address when you use the shortcut, menu, or popup button |
+| `storage`                       | Saving settings, the rewrite counter, and the key for decoys                       |
 
-These permissions are used solely for the extension's core functionality.
+## Open source
 
-## Open Source
-
-This extension is open source. You can review the code at any time to verify these privacy claims.
+The [source code](src/) is public and available for inspection.
 
 ## Contact
 
-If you have privacy concerns, please open an issue on the project's GitHub repository.
+For privacy questions or concerns, [open an issue](https://github.com/pszemraj/utm-randomizer/issues).
 
----
-
-*Last updated: December 2024*
+_Last updated: October 2, 2026_

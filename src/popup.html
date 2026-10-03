@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>UTM Randomizer</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <img src="icons/icon32.png" width="28" height="28" alt="" />
+      <h1>UTM Randomizer</h1>
+      <span class="version" id="version"></span>
+    </header>
+
+    <section class="card" aria-label="Settings">
+      <label class="row">
+        <span class="row-text">
+          <span class="row-title">Clean links automatically</span>
+          <span class="row-hint" id="enabledHint">Rewrites tracking in links you copy</span>
+        </span>
+        <input type="checkbox" role="switch" class="switch" id="enabled" />
+      </label>
+
+      <div class="row row-stack">
+        <div class="row-line">
+          <span class="row-title" id="modeLabel">Tracking</span>
+          <div class="segmented" role="radiogroup" aria-labelledby="modeLabel">
+            <input type="radio" name="mode" id="mode-decoy" value="decoy" />
+            <label for="mode-decoy">Decoy</label>
+            <input type="radio" name="mode" id="mode-silly" value="silly" />
+            <label for="mode-silly">Silly</label>
+            <input type="radio" name="mode" id="mode-hybrid" value="hybrid" />
+            <label for="mode-hybrid">Hybrid</label>
+            <input type="radio" name="mode" id="mode-strip" value="strip" />
+            <label for="mode-strip">Remove</label>
+          </div>
+        </div>
+        <p class="row-hint" id="modeHint"></p>
+      </div>
+
+      <label class="row automatic">
+        <span class="row-text">
+          <span class="row-title">Clean the address bar</span>
+          <span class="row-hint">So copying or sharing the page's address is already clean</span>
+        </span>
+        <input type="checkbox" role="switch" class="switch" id="cleanAddressBar" />
+      </label>
+
+      <label class="row automatic">
+        <span class="row-text">
+          <span class="row-title">Watch the whole clipboard</span>
+          <span class="row-hint">Also catches links copied in other apps and browser pages</span>
+        </span>
+        <input type="checkbox" role="switch" class="switch" id="watchClipboard" />
+      </label>
+
+      <label class="row">
+        <span class="row-text">
+          <span class="row-title">Show notifications</span>
+          <span class="row-hint">A short on-page note with an Undo button</span>
+        </span>
+        <input type="checkbox" role="switch" class="switch" id="notify" />
+      </label>
+    </section>
+
+    <section class="card card-action">
+      <button type="button" class="primary" id="copyPage" disabled>Copy this page's link</button>
+      <p class="status" id="copyStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <footer class="footer">
+      <p><strong id="totalCount">0</strong> links cleaned · <strong id="sessionCount">0</strong> this session</p>
+      <p>Shortcut <kbd id="shortcut">not set</kbd> · <a href="#" id="changeShortcut">change</a></p>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
