@@ -53,14 +53,14 @@ Values are derived from a per-install key, the link, and the value's format. An 
 
 ## What gets rewritten
 
-Only parameters known to be tracking are touched, in two tiers:
+Only these exact names are rewritten, case-insensitively, on every website:
 
-- **Everywhere:** names that only ever mean tracking, such as `utm_*`, `gclid`, `gbraid`, `fbclid`, `msclkid`, `ttclid`, `twclid`, `li_fat_id`, `igsh`, `srsltid`, `gad_source`, `_gl`, Mailchimp's `mc_eid`, HubSpot's `_hsenc` and `__hstc`, Marketo's `mkt_tok`, Matomo's `pk_*` and `mtm_*`, and affiliate click IDs from Impact, CJ, Awin, and Rakuten.
-- **On specific sites:** names that are functional elsewhere but tracking on a known site, such as `si` on YouTube and Spotify, `s` and `t` on X, `share_id` on Reddit, `rcm` and `trk*` on LinkedIn, `ref`, `qid`, and `pd_rd_*` on Amazon, `ved` and `ei` on Google Search, and `smid` on The New York Times.
+- **UTM campaign fields:** `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `utm_id`, `utm_source_platform`, `utm_creative_format`, and `utm_marketing_tactic`.
+- **Ad click IDs:** `gclid`, `dclid`, `gbraid`, `wbraid`, `fbclid`, `msclkid`, `ttclid`, `twclid`, and `li_fat_id`.
 
-Ambiguous names like `ref`, `source`, `src`, `campaign`, `keywords`, `cid`, and `session_id` are left alone everywhere else, because they carry real meaning on many sites: YouTube searches (`search_query`), LinkedIn job searches (`keywords`), Google Maps places (`cid`), Bing Maps pins and addresses (`sp`), TikTok player display controls (`timestamp`), Amazon store searches (`srs`), and New York Times gift links (`unlocked_article_code`) all keep working. The complete list, with the sources it was curated from, is in [`src/lib/params.ts`](src/lib/params.ts).
+All other parameters stay untouched. Coverage is deliberately limited: YouTube and Spotify's `si`, X's `s` and `t`, Amazon's `ref` and `qid`, email and affiliate markers such as `mc_eid` and `irclickid`, and unknown fields such as `utm_custom` remain in shared links. Supported UTM fields and click IDs are still rewritten on those sites. There are no site-specific rules or prefix matches. The parameter categories and vendor references are in [`src/lib/params.ts`](src/lib/params.ts).
 
-Non-tracking query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less links such as `www.example.com/page?utm_source=x` are supported. Relative links copied by a page, including named paths such as `article?utm_source=email` and asynchronous text and HTML copies, use the originating frame's URL for classification and retain their relative form.
+Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less links such as `www.example.com/page?utm_source=x` are supported. Relative links copied by a page, including named paths such as `article?utm_source=email` and asynchronous text and HTML copies, use the originating frame's URL for parsing and stable replacements and retain their relative form.
 
 Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. Explicit Copy still copies longer links unchanged and accepts replacements that grow beyond that input bound.
 

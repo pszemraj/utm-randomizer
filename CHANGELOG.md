@@ -7,13 +7,13 @@
 - The unpacked extension now lives in `dist/`: load that folder in `chrome://extensions` instead of the repository root.
 - Requires Chrome 123 or newer (was 102).
 - Decoy is the default replacement style. The old nonsense values are still available as Silly mode.
-- Only [known tracking parameters](README.md#what-gets-rewritten) are rewritten; ambiguous names retain their functional uses on other sites.
+- Only the exact [UTM and ad click-ID allowlist](README.md#what-gets-rewritten) is rewritten. Site-specific, email, affiliate, and unknown prefix fields remain untouched, favoring functional links over tracking coverage.
 
 ### Added
 
 - Decoy, Hybrid, and Remove [replacement modes](README.md#replacement-values).
 - [Automatic cleaning, Undo, and explicit copy actions](README.md#usage), with [page-copy detection](README.md#page-copies) and [background watching](README.md#background-watching).
-- Global and site-specific [tracking rules](README.md#what-gets-rewritten).
+- A compact global [tracking allowlist](README.md#what-gets-rewritten), backed by vendor references.
 - Popup controls for cleaning layers, notifications, and mode, with statistics and automatic light/dark styling.
 - [Development tools](README.md#development) for builds, tests, manual checks, icons, and Web Store packaging, with CI artifacts.
 
@@ -36,7 +36,7 @@
 - [Background watching](README.md#background-watching) skips unrelated clipboard contents and retries tracked links after unavailable readers or custom-format removal. Page copies without rewritable links skip writer reconciliation; settings updates no longer depend on context-menu updates.
 - Synthetic copy, gesture, and Undo events and malformed or forged runtime messages are rejected.
 - [URL rewriting](README.md#what-gets-rewritten) preserves Bing Maps collections, TikTok player display controls, Amazon store selectors, signed links, standalone punctuation, and relative page-link forms, and handles standalone Markdown links.
-- [Replacement values](README.md#replacement-values) stay stable for encoded, mixed-case hexadecimal, non-Latin, malformed-percent, and `magic-8-ball` inputs. HubSpot's `__hssc`, `__hstc`, and `__hsfp` are matched.
+- [Replacement values](README.md#replacement-values) stay stable for encoded, mixed-case hexadecimal, non-Latin, malformed-percent, and `magic-8-ball` inputs.
 - Synchronous rewriting is bounded and avoids repeated full-link hashing; explicit Copy accepts unchanged or generated links beyond the automatic input bound.
 - [Notifications and statistics](README.md#usage) resume expiry after keyboard focus leaves and count rich-copy links without duplicate text/HTML counts.
 - [Browser tests](README.md#development) explicitly select and verify clipboard events and polling instead of relying on Chromium feature flags.

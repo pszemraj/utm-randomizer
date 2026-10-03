@@ -174,17 +174,20 @@
           <button data-copy="execCommand" data-testid="copy-execcommand">execCommand('copy')</button>
           <span class="url"></span>
         </div>
-        <div class="row" data-url="https://example.com/post?ref=share&mc_cid=abc123&mc_eid=def456&keep=yes">
+        <div
+          class="row"
+          data-url="https://example.com/post?ref=share&mc_cid=abc123&mc_eid=def456&gclid=abc123&keep=yes"
+        >
           <button data-copy="setData" data-testid="copy-setdata">copy event + setData</button>
           <span class="url"></span>
         </div>
-        <div class="row" data-url="https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123456">
+        <div class="row" data-url="https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123456&fbclid=AbCdEf123456">
           <button data-copy="delayed" data-testid="copy-delayed">writeText() after 800 ms</button>
           <span class="url"></span>
         </div>
         <div
           class="row"
-          data-text="Check this out: https://example.com/a?utm_source=twitter&amp;x=1 and https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c3d"
+          data-text="Check this out: https://example.com/a?utm_source=twitter&amp;x=1 and https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c3d&amp;utm_source=share"
         >
           <button data-copy="writeText" data-testid="copy-sharetext">Share text with 2 links</button>
           <span class="url"></span>
@@ -238,7 +241,7 @@
             >
           </li>
           <li>
-            <a href="https://x.com/jack/status/20?s=20&t=AbCdEfGh">Post on X with share tracking</a>
+            <a href="https://x.com/jack/status/20?s=20&t=AbCdEfGh">Post on X (parameters preserved)</a>
           </li>
           <li>
             <a href="https://www.instagram.com/p/C0abc/?igsh=MWt4bXZ2cGx">Instagram post</a>
@@ -271,7 +274,10 @@
         </div>
         <div class="row">
           <span>Text field</span>
-          <input data-testid="select-input" value="https://www.example.org/?srsltid=AfmBOoq123&gad_source=1&page=2" />
+          <input
+            data-testid="select-input"
+            value="https://www.example.org/?gclid=Abc123xyz&utm_source=example&page=2"
+          />
         </div>
         <div class="row">
           <span>Text area (links inside text)</span>

@@ -29,14 +29,11 @@ In `scripts/*.mjs`, which are plain JavaScript, write types inside the tags (`@p
 
 ## Adding a tracking parameter
 
-Parameters are defined in `src/lib/params.ts`. Pick the narrowest rule that covers the parameter:
+The exact allowlist lives in `src/lib/params.ts`. Keep coverage small and deliberate: missing tracking is preferable to breaking functional links. Add a name only for explicitly requested coverage, with vendor documentation establishing its tracking purpose and a source comment beside the entry. Leave uncertain or ambiguous names untouched; do not add site rules or prefix matches.
 
-- `GLOBAL_PARAMS` or `GLOBAL_PREFIXES` only for names that mean tracking on every site, such as a vendor's click ID. Cite the vendor with a trailing comment.
-- A `SITE_RULES` entry for names that are functional somewhere else (`ref`, `source`, `si`, `t`, ...). Add a `path` pattern if the name is functional on other pages of the same site.
+Each entry declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](README.md#replacement-values). Use `id` for click IDs; it always takes the identifier path.
 
-Each rule declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](README.md#replacement-values). Use `id` for click IDs and share tokens; it always takes the identifier path.
-
-Every new rule needs a regression in [`tests/unit/rewrite.test.ts`](tests/unit/rewrite.test.ts) showing the link being cleaned. For an ambiguous name, also add a functional-link control using the same name that must not change. Put global and site-specific cases in the corresponding test groups.
+Every new entry needs a regression in [`tests/unit/rewrite.test.ts`](tests/unit/rewrite.test.ts) showing the link being cleaned while unrelated query bytes stay intact. Extend the existing preservation controls for names outside the allowlist. A rewriting test establishes the chosen behavior; vendor evidence establishes whether the name belongs in the allowlist.
 
 ## Adding replacement values
 

@@ -232,41 +232,61 @@ test.describe('copying on web pages', () => {
       await context.route('https://example.com/**', (route) =>
         route.fulfill({
           contentType: 'text/html',
-          body: '<textarea id="copy-field"></textarea><button id="copy">Copy link</button>',
+          body: '<button id="copy">Copy link</button>',
         }),
       );
-      await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://www.youtube.com' });
+      for (const origin of ['https://www.youtube.com', 'https://example.com']) {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+      }
       const older = await context.newPage();
       await older.goto('https://www.youtube.com/feed');
       const newer = await context.newPage();
       await newer.goto('https://example.com/control');
-      const session = await context.newCDPSession(older);
-      const worlds: number[] = [];
-      session.on(
-        'Runtime.executionContextCreated',
-        ({ context: world }: { context: { id: number; origin: string } }) => {
-          if (world.origin === `chrome-extension://${extensionId}`) worlds.push(world.id);
-        },
-      );
-      await session.send('Runtime.enable');
-      const contextId = worlds[0];
-      expect(contextId).toBeDefined();
-      await session.send('Runtime.evaluate', {
-        contextId,
-        expression: `(() => {
-        const original = chrome.runtime.sendMessage.bind(chrome.runtime);
-        globalThis.heldReconciles = [];
-        chrome.runtime.sendMessage = (...args) => {
-          if (args[0]?.type === 'reconcile-clipboard') {
-            return new Promise((resolve, reject) => {
-              globalThis.heldReconciles.push(() => original(...args).then(resolve, reject));
+      /** Holds reads after the native snapshot, while shared intent messages still advance the epoch. */
+      async function holdReconciliations(page: typeof older) {
+        const session = await context.newCDPSession(page);
+        const worlds: number[] = [];
+        session.on(
+          'Runtime.executionContextCreated',
+          ({ context: world }: { context: { id: number; origin: string } }) => {
+            if (world.origin === `chrome-extension://${extensionId}`) worlds.push(world.id);
+          },
+        );
+        await session.send('Runtime.enable');
+        const contextId = worlds[0];
+        expect(contextId).toBeDefined();
+        await session.send('Runtime.evaluate', {
+          contextId,
+          expression: `(() => {
+          const original = chrome.runtime.sendMessage.bind(chrome.runtime);
+          globalThis.heldReconciles = [];
+          chrome.runtime.sendMessage = (...args) => {
+            if (args[0]?.type === 'reconcile-clipboard') {
+              return new Promise((resolve, reject) => {
+                globalThis.heldReconciles.push(() => original(...args).then(resolve, reject));
+              });
+            }
+            return original(...args);
+          };
+        })()`,
+        });
+        return { session, contextId };
+      }
+      const [oldReader, newReader] = await Promise.all([holdReconciliations(older), holdReconciliations(newer)]);
+      /** Waits until the page has a supported snapshot waiting to be reconciled. */
+      async function waitForHeld(reader: typeof oldReader) {
+        await expect
+          .poll(async () => {
+            const { result } = await reader.session.send('Runtime.evaluate', {
+              contextId: reader.contextId,
+              expression: 'globalThis.heldReconciles.length',
+              returnByValue: true,
             });
-          }
-          return original(...args);
-        };
-      })()`,
-      });
-      const relative = '/watch?v=1&si=abcdefgh';
+            return Number(result.value);
+          })
+          .toBeGreaterThan(0);
+      }
+      const relative = 'watch?v=1&si=abcdefgh&utm_source=email';
       await writeClipboardExternally('before the cross-context copies');
       await older.evaluate((text) => {
         const button = document.querySelector<HTMLButtonElement>('#copy');
@@ -274,51 +294,43 @@ test.describe('copying on web pages', () => {
       }, relative);
       await older.bringToFront();
       await older.locator('#copy').click();
-      await expect
-        .poll(async () => {
-          const { result } = await session.send('Runtime.evaluate', {
-            contextId,
-            expression: 'globalThis.heldReconciles.length',
-            returnByValue: true,
-          });
-          return Number(result.value);
-        })
-        .toBeGreaterThan(0);
+      await waitForHeld(oldReader);
       if (recreate) {
         await setSettings({ enabled: false });
         await waitForWatcher(false);
         await setSettings({ enabled: true });
         await waitForWatcher(false);
       }
+      await newer.evaluate((text) => {
+        const button = document.querySelector<HTMLButtonElement>('#copy');
+        if (button)
+          button.onclick = () =>
+            void navigator.clipboard.writeText(text).then(() => {
+              button.dataset.copied = String(Number(button.dataset.copied ?? 0) + 1);
+            });
+      }, relative);
       await newer.bringToFront();
-      if (recreate) {
-        await newer.evaluate((text) => {
-          const button = document.querySelector<HTMLButtonElement>('#copy');
-          if (button)
-            button.onclick = () =>
-              void navigator.clipboard.writeText(text).then(() => {
-                button.dataset.copied = String(Number(button.dataset.copied ?? 0) + 1);
-              });
-        }, relative);
-        // Two ordinary gestures reused the old numeric generation after coordinator recreation.
-        for (const count of [1, 2]) {
-          await newer.locator('#copy').click();
-          await expect(newer.locator('#copy')).toHaveAttribute('data-copied', String(count));
-        }
-      } else {
-        const field = newer.locator('#copy-field');
-        await field.fill(relative);
-        await field.press('ControlOrMeta+A');
-        await field.press('ControlOrMeta+C');
+      // Coordinator recreation must not reuse the generation from the older page's read.
+      for (const count of recreate ? [1, 2] : [1]) {
+        await newer.locator('#copy').click();
+        await expect(newer.locator('#copy')).toHaveAttribute('data-copied', String(count));
       }
+      await waitForHeld(newReader);
       expect(await expectStable(readClipboard, 600)).toBe(relative);
-      await session.send('Runtime.evaluate', {
-        contextId,
+      await oldReader.session.send('Runtime.evaluate', {
+        contextId: oldReader.contextId,
         expression: 'Promise.all(globalThis.heldReconciles.map(release => release()))',
         awaitPromise: true,
       });
       expect(await expectStable(readClipboard, 600)).toBe(relative);
-      await session.detach();
+      await newReader.session.send('Runtime.evaluate', {
+        contextId: newReader.contextId,
+        expression: 'Promise.all(globalThis.heldReconciles.map(release => release()))',
+        awaitPromise: true,
+      });
+      await expect.poll(readClipboard).toBe('watch?v=1&si=abcdefgh');
+      await oldReader.session.detach();
+      await newReader.session.detach();
       await older.close();
       await newer.close();
     });
@@ -481,7 +493,7 @@ test.describe('copying on web pages', () => {
 
   test('bounds synchronous work for an HTML anchor with many tracking parameters', async ({ playground }) => {
     await playground.evaluate(() => {
-      const link = 'https://example.com/?' + Array.from({ length: 5000 }, () => 'utm_a=x').join('&');
+      const link = 'https://example.com/?' + Array.from({ length: 5000 }, () => 'utm_id=x').join('&');
       const button = document.createElement('button');
       button.id = 'copy-many-parameters';
       button.textContent = 'Copy many parameters';
@@ -497,7 +509,7 @@ test.describe('copying on web pages', () => {
               const html = copied.clipboardData?.getData('text/html') ?? '';
               const doc = new DOMParser().parseFromString(html, 'text/html');
               const href = doc.querySelector('a')?.getAttribute('href') ?? '';
-              button.dataset.changed = String(new URL(href).searchParams.get('utm_a') !== 'x');
+              button.dataset.changed = String(new URL(href).searchParams.get('utm_id') !== 'x');
             },
             { once: true },
           );
@@ -733,8 +745,10 @@ test.describe('copying on web pages', () => {
 
   test('rewrites clipboard data set by page copy handlers', async ({ playground, readClipboard }) => {
     await playground.getByTestId('copy-setdata').click();
-    const copied = await waitForClipboard(readClipboard, (text) => !text.includes('mc_eid=def456'));
-    expect(copied).toMatch(/^https:\/\/example\.com\/post\?ref=share&mc_cid=[^&]+&mc_eid=[0-9a-f]{6}&keep=yes$/);
+    const copied = await waitForClipboard(readClipboard, (text) => !text.includes('gclid=abc123'));
+    expect(copied).toMatch(
+      /^https:\/\/example\.com\/post\?ref=share&mc_cid=abc123&mc_eid=def456&gclid=[0-9a-f]{6}&keep=yes$/,
+    );
   });
 
   test('preserves custom copy formats without offering destructive plain-text Undo', async ({
@@ -785,11 +799,12 @@ test.describe('copying on web pages', () => {
     await playground.getByTestId('copy-delayed').click();
     const copied = await waitForClipboard(
       readClipboard,
-      (text) => text.startsWith('https://youtu.be/') && !text.includes('AbCdEf123456'),
+      (text) => text.startsWith('https://youtu.be/') && !text.includes('fbclid=AbCdEf123456'),
     );
     // Decoy identifiers keep the original's format: prefix, case pattern, and length.
-    expect(copied).toMatch(/^https:\/\/youtu\.be\/dQw4w9WgXcQ\?si=AbCd[A-Z][a-z][0-9]{6}$/);
-    expect(copied).not.toContain('AbCdEf123456');
+    expect(copied).toMatch(/^https:\/\/youtu\.be\/dQw4w9WgXcQ\?si=AbCdEf123456&fbclid=AbCd[A-Z][a-z][0-9]{6}$/);
+    expect(new URL(copied).searchParams.get('si')).toBe('AbCdEf123456');
+    expect(new URL(copied).searchParams.get('fbclid')).not.toBe('AbCdEf123456');
   });
 
   test('keeps ordinary typing local and rewrites keyboard copies', async ({

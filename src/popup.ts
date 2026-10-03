@@ -95,7 +95,7 @@ async function copyPageLink(): Promise<void> {
     // The address bar was already cleaned, so the link carries replacements already.
     setStatus(`${emoji} Copied, tracking already ${done}`);
   } else {
-    setStatus('Copied (no tracking found)');
+    setStatus('Copied unchanged');
   }
 }
 

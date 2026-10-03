@@ -276,7 +276,7 @@ async function copyCleanLink(url: string, tabId: number | undefined): Promise<vo
         ? '📋 Signed link copied unchanged'
         : hasTrackingParams(url)
           ? `${emoji} Link copied, tracking already ${done}`
-          : '📋 Link copied (no tracking found)';
+          : '📋 Link copied unchanged';
     await notifyTab(tabId, { message }, true);
   }
 }

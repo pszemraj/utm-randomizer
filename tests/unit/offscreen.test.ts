@@ -146,8 +146,7 @@ it.each([undefined, 'https://example.com/page', 'https://www.youtube.com/feed'])
       config: CONFIG,
       baseUrl,
     });
-    const expected =
-      baseUrl === undefined ? original : baseUrl.includes('youtube.com') ? '/watch?v=1' : '/watch?v=1&si=abcdefgh';
+    const expected = baseUrl === undefined ? original : '/watch?v=1&si=abcdefgh';
     expect(clipboard.text).toBe(expected);
     const html = new DOMParser().parseFromString(clipboard.html, 'text/html');
     expect(html.querySelector('a')?.getAttribute('href')).toBe(expected);
@@ -296,9 +295,9 @@ it('rejects stale reconciliation without overwriting the newer clipboard content
   expect(writes).not.toHaveBeenCalled();
 });
 
-it('rejects an older page context after newer intent copies identical functional text', async () => {
+it('rejects an older page read and accepts a fresh read of identical tracked text', async () => {
   const { clipboard, writes, message, readEpoch } = await start();
-  const text = '/watch?v=1&si=abcdefgh';
+  const text = '/watch?v=1&si=abcdefgh&utm_source=email';
   clipboard.text = text;
   const oldEpoch = readEpoch();
   expect(message({ type: 'offscreen-intent' })).toHaveBeenCalledWith({ ok: true, epoch: readEpoch() });
@@ -323,8 +322,8 @@ it('rejects an older page context after newer intent copies identical functional
     config: CONFIG,
     baseUrl: 'https://example.com/control',
   });
-  expect(clipboard.text).toBe(text);
-  expect(writes).not.toHaveBeenCalled();
+  expect(clipboard.text).toBe('/watch?v=1&si=abcdefgh');
+  expect(writes).toHaveBeenCalledOnce();
 });
 
 it('expires Undo suppression only when a fresh copy has a different observed baseline', async () => {
@@ -657,7 +656,7 @@ it('rejects tab-origin control messages and leaves unrelated requests unanswered
 });
 
 it('rejects a delayed page reconciliation after the coordinator is recreated', async () => {
-  const text = '/watch?v=1&si=abcdefgh';
+  const text = '/watch?v=1&si=abcdefgh&utm_source=email';
   const older = await start();
   older.message({ type: 'offscreen-intent' });
   older.message({ type: 'offscreen-intent' });
@@ -678,12 +677,10 @@ it('rejects a delayed page reconciliation after the coordinator is recreated', a
   newer.message({ type: 'offscreen-intent' });
   newer.clipboard.text = text;
   expect(newer.readEpoch()).not.toBe(delayed.epoch);
-  newer.message({ ...delayed, epoch: newer.readEpoch(), baseUrl: 'https://example.com/control' });
-  expect(newer.clipboard.text).toBe(text);
   expect(newer.message(delayed)).toHaveBeenCalledWith({ ok: true });
   expect(newer.clipboard.text).toBe(text);
   expect(newer.writes).not.toHaveBeenCalled();
   newer.message({ ...delayed, epoch: newer.readEpoch() });
-  expect(newer.clipboard.text).toBe('/watch?v=1');
+  expect(newer.clipboard.text).toBe('/watch?v=1&si=abcdefgh');
   expect(newer.writes).toHaveBeenCalledOnce();
 });

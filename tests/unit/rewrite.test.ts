@@ -24,11 +24,21 @@ function params(url: string): URLSearchParams {
 describe('rewriteUrl (decoy)', () => {
   it('replaces every standard UTM value with a believable word value', () => {
     const original =
-      'https://example.com/?utm_source=newsletter&utm_medium=email&utm_campaign=spring&utm_term=shoes&utm_content=hero';
+      'https://example.com/?utm_source=newsletter&utm_medium=email&utm_campaign=spring&utm_term=shoes&utm_content=hero&utm_id=launch2025&utm_source_platform=network&utm_creative_format=video&utm_marketing_tactic=prospecting';
     const result = rewriteUrl(original, decoy);
     expect(result?.params).toBeGreaterThanOrEqual(4);
     const query = params(result?.url ?? '');
-    expect([...query.keys()]).toEqual(['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']);
+    expect([...query.keys()]).toEqual([
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'utm_term',
+      'utm_content',
+      'utm_id',
+      'utm_source_platform',
+      'utm_creative_format',
+      'utm_marketing_tactic',
+    ]);
     for (const value of query.values()) {
       expect(value).toMatch(/^[A-Za-z0-9][A-Za-z0-9_. -]*$/);
     }
@@ -37,7 +47,7 @@ describe('rewriteUrl (decoy)', () => {
   it('keeps the exact format of click IDs', () => {
     const gclid = 'Cj0KCQjw9-KzBhDVARIsAFLvbqRZQ8x9Xk1_xYz2vT4mW7n8pL0aBcDeFgHiJkLmNoPq_BwE';
     const msclkid = '3f2a9c0b1d4e5f60718293a4b5c6d7e8';
-    const result = rewriteUrl(`https://example.com/?gclid=${gclid}&msclkid=${msclkid}&_hsmi=123456789`, decoy);
+    const result = rewriteUrl(`https://example.com/?gclid=${gclid}&msclkid=${msclkid}&dclid=123456789`, decoy);
     const query = params(result?.url ?? '');
     const fakeGclid = query.get('gclid') ?? '';
     expect(fakeGclid).not.toBe(gclid);
@@ -45,12 +55,13 @@ describe('rewriteUrl (decoy)', () => {
     expect(fakeGclid.slice(0, 4)).toBe('Cj0K');
     expect(fakeGclid.replace(/[A-Za-z0-9]/g, '')).toBe(gclid.replace(/[A-Za-z0-9]/g, ''));
     expect(query.get('msclkid')).toMatch(/^[0-9a-f]{32}$/);
-    expect(query.get('_hsmi')).toMatch(/^[1-9][0-9]{8}$/);
+    expect(query.get('dclid')).toMatch(/^[1-9][0-9]{8}$/);
   });
 
   it('keeps percent-encoding in replaced values', () => {
-    const result = rewriteUrl('https://www.youtube.com/watch?v=x&pp=ygUEdGVzdA%3D%3D', decoy);
-    expect(result?.url).toMatch(/^https:\/\/www\.youtube\.com\/watch\?v=x&pp=ygUE[A-Za-z]{6}%3D%3D$/);
+    const result = rewriteUrl('https://www.youtube.com/watch?v=x&gclid=ygUEdGVzdA%3D%3D', decoy);
+    expect(result?.url).toMatch(/^https:\/\/www\.youtube\.com\/watch\?v=x&gclid=[A-Za-z]{10}%3D%3D$/);
+    expect(result?.url).not.toContain('gclid=ygUEdGVzdA');
   });
 
   it('replaces an encoded non-Latin source without touching other query values', () => {
@@ -98,8 +109,8 @@ describe('rewriteUrl (decoy)', () => {
     expect(rewriteUrl('www.example.com/p?utm_source=xx', decoy)?.url).toMatch(/^www\.example\.com\/p\?utm_source=/);
     expect(rewriteUrl('example.com?utm_source=xx', decoy)?.url).toMatch(/^example\.com\?utm_source=/);
     expect(rewriteUrl('//example.com/p?utm_source=xx', decoy)?.url).toMatch(/^\/\/example\.com\/p\?utm_source=/);
-    expect(rewriteUrl('/watch?v=1&si=abcdefgh', { ...decoy, baseUrl: 'https://www.youtube.com/feed' })?.url).toMatch(
-      /^\/watch\?v=1&si=[a-z]{8}$/,
+    expect(rewriteUrl('/watch?v=1&gclid=abcdefgh', { ...decoy, baseUrl: 'https://www.youtube.com/feed' })?.url).toMatch(
+      /^\/watch\?v=1&gclid=[a-z]{8}$/,
     );
     expect(rewriteUrl('/p?utm_source=xx', decoy)).toBeNull();
   });
@@ -120,10 +131,12 @@ describe('rewriteUrl (decoy)', () => {
   it('resolves named relative paths only with an originating page', () => {
     const baseUrl = 'https://www.youtube.com/feed';
     for (const path of ['watch', 'folder/watch', 'folder/watch:detail']) {
-      const link = `${path}?v=abc&si=secret&keep=a%2Fb#part`;
-      expect(rewriteUrl(link, { ...strip, baseUrl })?.url).toBe(`${path}?v=abc&keep=a%2Fb#part`);
+      const link = `${path}?v=abc&si=secret&gclid=abc123&keep=a%2Fb#part`;
+      expect(rewriteUrl(link, { ...strip, baseUrl })?.url).toBe(`${path}?v=abc&si=secret&keep=a%2Fb#part`);
       expect(rewriteUrl(link, strip)).toBeNull();
-      expect(rewriteUrl(link, { ...strip, baseUrl: 'https://example.com/' })).toBeNull();
+      expect(rewriteUrl(link, { ...strip, baseUrl: 'https://example.com/' })?.url).toBe(
+        `${path}?v=abc&si=secret&keep=a%2Fb#part`,
+      );
     }
     expect(rewriteUrl('article?utm_source=email&next=https://example.com', { ...strip, baseUrl })?.url).toBe(
       'article?next=https://example.com',
@@ -195,10 +208,10 @@ describe('idempotency', () => {
   const links = [
     'https://example.com/?utm_source=fb&utm_medium=social&utm_campaign=2025_launch&fbclid=abc123&gclid=xyz',
     'https://shop.example/p?gclid=Cj0KCQjw9-KzBhDVARIsAFLvbqRZQ8x9Xk1_BwE&utm_term=running+shoes&utm_content=a%20b',
-    'https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=AbCdEf123456&pp=ygUEdGVzdA%3D%3D',
-    'https://x.com/jack/status/20?s=20&t=AbCdEfGhIjKlMn',
-    'https://www.amazon.com/dp/B0ABC/ref=sr_1_1?crid=2X9Z&qid=1700000000&sprefix=usb%2Caps%2C181&sr=8-1',
-    'https://example.com/?_ga=2.123456789.1234567890-1234567890.1700000000&_gl=1*abc12*_ga*MTIzNA..&mc_eid=a1b2c3d4e5',
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=AbCdEf123456&gclid=ygUEdGVzdA%3D%3D',
+    'https://x.com/jack/status/20?s=20&t=AbCdEfGhIjKlMn&twclid=AbCdEf123',
+    'https://www.amazon.com/dp/B0ABC/ref=sr_1_1?crid=2X9Z&qid=1700000000&sprefix=usb%2Caps%2C181&sr=8-1&utm_campaign=launch',
+    'https://example.com/?_ga=2.123456789.1234567890-1234567890.1700000000&_gl=1*abc12*_ga*MTIzNA..&mc_eid=a1b2c3d4e5&li_fat_id=a1b2c3d4e5',
   ];
 
   it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('rewriting a rewritten link changes nothing (%s)', (mode) => {
@@ -224,7 +237,7 @@ describe('rewriteUrl (strip)', () => {
     expect(rewriteUrl('https://example.com/p?utm_source=x&utm_medium#top', strip)?.url).toBe(
       'https://example.com/p#top',
     );
-    expect(rewriteUrl('https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123', strip)?.url).toBe('https://youtu.be/dQw4w9WgXcQ');
+    expect(rewriteUrl('https://youtu.be/dQw4w9WgXcQ?gclid=AbCdEf123', strip)?.url).toBe('https://youtu.be/dQw4w9WgXcQ');
   });
 });
 
@@ -264,7 +277,7 @@ describe('core URL work limits', () => {
 
   it('processes many tracking parameters within a practical synchronous budget', () => {
     for (const count of [1000, 5000, 10_000]) {
-      const link = 'https://example.com/?' + Array.from({ length: count }, () => 'utm_a=x').join('&');
+      const link = 'https://example.com/?' + Array.from({ length: count }, () => 'utm_id=x').join('&');
       const started = performance.now();
       const result = rewriteUrl(link, decoy);
       const elapsed = performance.now() - started;
@@ -274,101 +287,54 @@ describe('core URL work limits', () => {
   });
 });
 
-describe('site-specific tracking', () => {
+describe('omitted global and former site parameters', () => {
   it.each([
-    ['https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123456', 'https://youtu.be/dQw4w9WgXcQ'],
-    ['https://www.youtube.com/watch?v=dQw4w9WgXcQ&pp=ygUEdGVzdA%3D%3D', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
-    [
-      'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c',
-      'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
-    ],
-    ['https://x.com/jack/status/20?s=20&t=AbCdEf', 'https://x.com/jack/status/20'],
-    ['https://twitter.com/jack/status/20?s=20&t=AbCdEf', 'https://twitter.com/jack/status/20'],
-    ['https://www.bing.com/search?q=cats&sp=1&pq=ca&form=QBRE&cvid=abc', 'https://www.bing.com/search?q=cats'],
-    [
-      'https://www.tiktok.com/@scout2015/video/6718335390845095173?lang=en&_t=Ab12&_r=1',
-      'https://www.tiktok.com/@scout2015/video/6718335390845095173?lang=en',
-    ],
-    [
-      'https://cgi.ebay.com/ws/eBayISAPI.dll?ViewItem&item=123456789012&_trksid=p123&mkevt=1&mkcid=1',
-      'https://cgi.ebay.com/ws/eBayISAPI.dll?ViewItem&item=123456789012',
-    ],
-    [
-      'https://www.aliexpress.com/item/1005001234567890.html?algo_pvid=Ab12&aff_trace_key=Cd34#product-description',
-      'https://www.aliexpress.com/item/1005001234567890.html#product-description',
-    ],
-    // Apple's campaign-link example keeps the media type and iMessage product-page selector.
-    [
-      'https://apps.apple.com/us/app/apple-store/id439104108?pt=8668&ct=test123&mt=8&app=messages',
-      'https://apps.apple.com/us/app/apple-store/id439104108?mt=8&app=messages',
-    ],
-    [
-      'https://genome.ch.bbc.co.uk/search/0/20?order=asc&q=%22rock+around+the+clock%22&ns_mchannel=social&ns_source=twitter',
-      'https://genome.ch.bbc.co.uk/search/0/20?order=asc&q=%22rock+around+the+clock%22',
-    ],
-    ['https://www.bbc.com/news?ocid=social&ns_campaign=share#main-content', 'https://www.bbc.com/news#main-content'],
-    [
-      'https://www.etsy.com/search?q=ceramic+mug&ref=search_bar&click_key=Ab12&click_sum=Cd34',
-      'https://www.etsy.com/search?q=ceramic+mug',
-    ],
-    [
-      'https://www.imdb.com/search/title/?genres=drama&my_ratings=restrict&ref_=adv&pf_rd_p=Ab12',
-      'https://www.imdb.com/search/title/?genres=drama&my_ratings=restrict',
-    ],
-    ['https://www.walmart.com/search?q=laptop&athbdg=L1100&u1=Ab12', 'https://www.walmart.com/search?q=laptop'],
-    // Twitch's embed contract requires parent and preserves the requested playback time.
-    [
-      'https://player.twitch.tv/?video=v40464143&parent=streamernews.example.com&time=1h2m3s&tt_medium=embed&tt_content=vod',
-      'https://player.twitch.tv/?video=v40464143&parent=streamernews.example.com&time=1h2m3s',
-    ],
-    ['https://www.msn.com/?ocid=share&cvid=Ab12#main', 'https://www.msn.com/#main'],
-    [
-      'https://www.microsoft.com/en-us/download/details.aspx?id=54616&ocid=affiliate&epi=Ab12',
-      'https://www.microsoft.com/en-us/download/details.aspx?id=54616',
-    ],
-    [
-      'https://www.xbox.com/en-US/games/halo-infinite?ocid=share&nclid=Ab12#overview',
-      'https://www.xbox.com/en-US/games/halo-infinite#overview',
-    ],
-    ['https://www.theguardian.com/world?page=2&CMP=share_btn_link', 'https://www.theguardian.com/world?page=2'],
-    [
-      'https://www.washingtonpost.com/search/?query=climate&itid=search',
-      'https://www.washingtonpost.com/search/?query=climate',
-    ],
-    ['https://www.snapchat.com/add/scout2015?share_id=Ab12', 'https://www.snapchat.com/add/scout2015'],
-    ['https://www.quora.com/search?q=rust&share=1', 'https://www.quora.com/search?q=rust'],
-    [
-      'https://play.google.com/store/apps/details?id=com.google.android.apps.maps&pcampaignid=share&referrer=utm_source%3Demail',
-      'https://play.google.com/store/apps/details?id=com.google.android.apps.maps',
-    ],
-    ['https://www.instagram.com/p/C0abc/?igsh=MWt4bXZ2', 'https://www.instagram.com/p/C0abc/'],
-    [
-      'https://www.reddit.com/r/rust/comments/abc/title/?share_id=Xy12&utm_medium=android_app&utm_source=share',
-      'https://www.reddit.com/r/rust/comments/abc/title/',
-    ],
-    [
-      'https://www.linkedin.com/posts/someone_activity-123?utm_source=share&rcm=ACoAAB&trk=public_post',
-      'https://www.linkedin.com/posts/someone_activity-123',
-    ],
-    [
-      'https://www.amazon.com/dp/B0ABC/ref=sr_1_1?crid=2X&keywords=usb+cable&qid=1700&sprefix=usb&sr=8-1',
-      'https://www.amazon.com/dp/B0ABC/ref=sr_1_1?keywords=usb+cable',
-    ],
-    [
-      'https://www.nytimes.com/2025/01/01/us/story.html?unlocked_article_code=1.abc.XYZ&smid=url-share',
-      'https://www.nytimes.com/2025/01/01/us/story.html?unlocked_article_code=1.abc.XYZ',
-    ],
-    [
-      'https://www.google.com/search?q=cats&sca_esv=abc&ei=xyz&ved=0ah&udm=14',
-      'https://www.google.com/search?q=cats&udm=14',
-    ],
-    ['https://shop.example/p?srsltid=AfmBOoq&gad_source=1&gad_campaignid=123&id=9', 'https://shop.example/p?id=9'],
-    ['https://example.com/?__hssc=1.1.1&__hstc=abc&__hsfp=9&keep=1', 'https://example.com/?keep=1'],
-  ])('cleans %s', (input, expected) => {
-    expect(rewriteUrl(input, strip)?.url).toBe(expected);
-    expect(hasTrackingParams(expected)).toBe(false);
+    'https://example.com/?utm_unknown=a%2Fb&ga_extra=1&itm_extra=2&elqAnything=3&cm_mmcExtra=4&hsa_extra=5&ref=a&ref=b&empty=&flag#part',
+    'https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123456',
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ&pp=ygUEdGVzdA%3D%3D',
+    'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c',
+    'https://x.com/jack/status/20?s=20&t=AbCdEf',
+    'https://twitter.com/jack/status/20?s=20&t=AbCdEf',
+    'https://www.bing.com/search?q=cats&sp=1&pq=ca&form=QBRE&cvid=abc',
+    'https://www.tiktok.com/@scout2015/video/6718335390845095173?lang=en&_t=Ab12&_r=1',
+    'https://cgi.ebay.com/ws/eBayISAPI.dll?ViewItem&item=123456789012&_trksid=p123&mkevt=1&mkcid=1',
+    'https://www.aliexpress.com/item/1005001234567890.html?algo_pvid=Ab12&aff_trace_key=Cd34#product-description',
+    'https://apps.apple.com/us/app/apple-store/id439104108?pt=8668&ct=test123&mt=8&app=messages',
+    'https://genome.ch.bbc.co.uk/search/0/20?order=asc&q=%22rock+around+the+clock%22&ns_mchannel=social&ns_source=twitter',
+    'https://www.bbc.com/news?ocid=social&ns_campaign=share#main-content',
+    'https://www.etsy.com/search?q=ceramic+mug&ref=search_bar&click_key=Ab12&click_sum=Cd34',
+    'https://www.imdb.com/search/title/?genres=drama&my_ratings=restrict&ref_=adv&pf_rd_p=Ab12',
+    'https://www.walmart.com/search?q=laptop&athbdg=L1100&u1=Ab12',
+    'https://player.twitch.tv/?video=v40464143&parent=streamernews.example.com&time=1h2m3s&tt_medium=embed&tt_content=vod',
+    'https://www.msn.com/?ocid=share&cvid=Ab12#main',
+    'https://www.microsoft.com/en-us/download/details.aspx?id=54616&ocid=affiliate&epi=Ab12',
+    'https://www.xbox.com/en-US/games/halo-infinite?ocid=share&nclid=Ab12#overview',
+    'https://www.theguardian.com/world?page=2&CMP=share_btn_link',
+    'https://www.washingtonpost.com/search/?query=climate&itid=search',
+    'https://www.snapchat.com/add/scout2015?share_id=Ab12',
+    'https://www.quora.com/search?q=rust&share=1',
+    'https://play.google.com/store/apps/details?id=com.google.android.apps.maps&pcampaignid=share&referrer=utm_source%3Demail',
+    'https://www.instagram.com/p/C0abc/?igsh=MWt4bXZ2',
+    'https://www.reddit.com/r/rust/comments/abc/title/?share_id=Xy12',
+    'https://www.linkedin.com/posts/someone_activity-123?rcm=ACoAAB&trk=public_post',
+    'https://www.amazon.com/dp/B0ABC/ref=sr_1_1?crid=2X&keywords=usb+cable&qid=1700&sprefix=usb&sr=8-1',
+    'https://www.nytimes.com/2025/01/01/us/story.html?unlocked_article_code=1.abc.XYZ&smid=url-share',
+    'https://www.google.com/search?q=cats&sca_esv=abc&ei=xyz&ved=0ah&udm=14',
+    'https://shop.example/p?srsltid=AfmBOoq&gad_source=1&gad_campaignid=123&id=9',
+    'https://example.com/?__hssc=1.1.1&__hstc=abc&__hsfp=9&keep=1',
+  ])('preserves %s while cleaning retained parameters', (url) => {
+    expect(hasTrackingParams(url)).toBe(false);
+    const mixed = url.replace(/(#.*)?$/, '&utm_source=retired_rule_control&fbclid=AbCdEf123$1');
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
-      expect(rewriteUrl(expected, { mode, key: 'review-key' })).toBeNull();
+      const options = { mode, key: 'review-key' };
+      expect(rewriteUrl(url, options)).toBeNull();
+      const rewritten = rewriteUrl(mixed, options);
+      expect(rewritten).not.toBeNull();
+      expect(rewritten?.params).toBe(2);
+      expect(rewritten?.url).not.toContain('utm_source=retired_rule_control');
+      expect(rewritten?.url).not.toContain('fbclid=AbCdEf123');
+      if (mode === 'strip') expect(rewritten?.url).toBe(url);
+      else expect(rewritten?.url.replace(/&utm_source=[^&#]*&fbclid=[^&#]*/, '')).toBe(url);
     }
   });
 });
@@ -383,10 +349,10 @@ describe('functional links stay intact', () => {
         const player = `https://www.tiktok.com/player/v1/6718335390845095173?timestamp=${timestamp}&controls=1`;
         expect(rewriteUrl(player, options)).toBeNull();
         expect(hasTrackingParams(player)).toBe(false);
-        const rewritten = rewriteUrl(`${player}&_t=Ab12`, options)?.url;
+        const rewritten = rewriteUrl(`${player}&ttclid=Ab12`, options)?.url;
         expect(rewritten).toBeDefined();
         expect(rewritten).toContain(`timestamp=${timestamp}&controls=1`);
-        expect(rewritten).not.toContain('_t=Ab12');
+        expect(rewritten).not.toContain('ttclid=Ab12');
       }
     },
   );
@@ -453,9 +419,9 @@ describe('functional links stay intact', () => {
     'https://www.netflix.com/browse?jbv=80057281',
     'https://substack.com/app-link/post?publication_id=1&post_id=2',
   ])('%s', (url) => {
-    expect(rewriteUrl(url, decoy)).toBeNull();
-    expect(rewriteUrl(url, silly)).toBeNull();
-    expect(rewriteUrl(url, strip)).toBeNull();
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      expect(rewriteUrl(url, { mode, key: 'test-key' })).toBeNull();
+    }
     expect(hasTrackingParams(url)).toBe(false);
   });
 });

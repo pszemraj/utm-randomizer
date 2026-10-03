@@ -42,7 +42,8 @@ configurations must pass when browser checks apply.
    Preserve the [URL byte and input-bound contracts](README.md#what-gets-rewritten).
 2. **Classify tracking conservatively.** Favor a small, evidence-backed rule set.
    Missing some tracking is preferable to breaking a functional link; leave
-   uncertain or ambiguous parameters untouched. Keep one generic rewrite engine.
+   uncertain or ambiguous parameters untouched. Keep one generic rewrite engine
+   and an exact global allowlist; do not restore site-specific or prefix rules.
    Prefer removing or narrowing an overbroad rule to accumulating site-specific
    exceptions, and do not expand site coverage opportunistically during fixes.
    Follow the [parameter rules and required control tests](CONTRIBUTING.md#adding-a-tracking-parameter).

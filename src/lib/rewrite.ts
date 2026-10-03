@@ -1,4 +1,4 @@
-import { paramClassifier } from './params';
+import { classifyParam } from './params';
 import { compactSeed } from './prng';
 import { replacementValue } from './values';
 
@@ -17,7 +17,7 @@ export interface RewriteOptions {
    * tell replacements from real values.
    */
   key?: string;
-  /** Resolves relative links (`/path?utm_source=x`) so site-specific rules can apply. */
+  /** Resolves relative links (`/path?utm_source=x`) for parsing and stable replacement seeds. */
   baseUrl?: string;
 }
 
@@ -139,7 +139,6 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
     return null;
   }
 
-  const classify = paramClassifier(url.hostname, url.pathname);
   const queryEnd = fragmentStart === -1 ? link.length : fragmentStart;
   const segments = link
     .slice(queryStart + 1, queryEnd)
@@ -151,7 +150,7 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
         segment,
         rawKey,
         rawValue: separator === -1 ? '' : segment.slice(separator + 1),
-        category: rawKey ? classify(safeDecode(rawKey)) : null,
+        category: rawKey ? classifyParam(safeDecode(rawKey)) : null,
       };
     });
 
@@ -279,8 +278,8 @@ export function rewriteText(text: string, options: RewriteOptions & { embedded?:
 }
 
 /**
- * `text` with all tracking parameters removed: two texts with the same result carry the same links,
- * whatever their tracking values. The watchers use this to avoid rewriting a link they just handled.
+ * `text` with supported tracking parameters removed. The watchers use this to recognize links
+ * they just handled, regardless of their supported tracking values.
  */
 export function withoutTracking(text: string, baseUrl?: string): string {
   return rewriteText(text, { mode: 'strip', embedded: true, baseUrl })?.text ?? text;
