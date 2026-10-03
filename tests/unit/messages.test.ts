@@ -72,6 +72,22 @@ describe('runtime message payloads', () => {
     expect(isExtensionMessage(message)).toBe(true);
   });
 
+  it.each(['reconcile-clipboard', 'offscreen-reconcile'])('bounds current text but not the $type baseline', (type) => {
+    const message = {
+      type,
+      pageCopy: true,
+      text: 'https://example.com/page?utm_source=newsletter',
+      embedded: false,
+      types: ['text/plain'],
+      epoch: EPOCH,
+      baseline: 'x'.repeat(150_000),
+      config,
+    };
+    expect(isExtensionMessage(message)).toBe(true);
+    expect(isExtensionMessage({ ...message, text: 'x'.repeat(100_001) })).toBe(false);
+    expect(isExtensionMessage({ ...message, baseline: 5 })).toBe(false);
+  });
+
   it.each([
     null,
     [],

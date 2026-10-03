@@ -59,6 +59,7 @@ export interface ReconcileClipboardMessage {
   types: string[];
   /** Coordinator generation captured before the clipboard read. */
   epoch: string;
+  /** Previous clipboard text used only for comparison, not as rewrite input. */
   baseline?: string;
 }
 
@@ -81,6 +82,7 @@ export interface OffscreenReconcileMessage {
   embedded: boolean;
   types: string[];
   epoch: string;
+  /** Previous clipboard text used only for comparison, not as rewrite input. */
   baseline?: string;
   /** Originating frame URL for relative page copies; absent for whole-clipboard inspection. */
   baseUrl?: string;
@@ -243,7 +245,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
         typeof value.embedded === 'boolean' &&
         isTypes(value.types) &&
         isClipboardEpoch(value.epoch) &&
-        (value.baseline === undefined || isText(value.baseline)) &&
+        (value.baseline === undefined || typeof value.baseline === 'string') &&
         (value.baseUrl === undefined || isText(value.baseUrl)) &&
         isWatchConfig(value.config) &&
         (value.tabId === undefined || isNonnegativeInteger(value.tabId))
@@ -255,7 +257,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
         typeof value.pageCopy === 'boolean' &&
         isTypes(value.types) &&
         isClipboardEpoch(value.epoch) &&
-        (value.baseline === undefined || isText(value.baseline))
+        (value.baseline === undefined || typeof value.baseline === 'string')
       );
     case 'offscreen-copy':
     case 'copy-clipboard':

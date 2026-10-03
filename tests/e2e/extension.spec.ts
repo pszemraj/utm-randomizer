@@ -336,6 +336,49 @@ test.describe('copying on web pages', () => {
     });
   }
 
+  test('cleans a small legacy copy after oversized clipboard contents', async ({
+    playground,
+    serviceWorker,
+    clipboardChange,
+    setSettings,
+    waitForWatcher,
+    readClipboard,
+    writeClipboardExternally,
+  }) => {
+    test.skip(clipboardChange, 'Only the polling path reads a pre-gesture baseline');
+    await setSettings({ mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    await serviceWorker.evaluate(() => {
+      const state = globalThis as typeof globalThis & { baselineLengths: number[] };
+      state.baselineLengths = [];
+      chrome.runtime.onMessage.addListener((message: unknown) => {
+        if (
+          typeof message === 'object' &&
+          message !== null &&
+          'type' in message &&
+          message.type === 'reconcile-clipboard' &&
+          'baseline' in message &&
+          typeof message.baseline === 'string'
+        )
+          state.baselineLengths.push(message.baseline.length);
+      });
+    });
+    await writeClipboardExternally('x'.repeat(150_000));
+    await playground.evaluate((text) => {
+      const button = document.createElement('button');
+      button.id = 'copy-after-large-baseline';
+      button.textContent = 'Copy link after large clipboard value';
+      button.onclick = () => {
+        setTimeout(() => void navigator.clipboard.writeText(text), 500);
+      };
+      document.body.append(button);
+    }, ARTICLE);
+    await playground.locator('#copy-after-large-baseline').click();
+    await expect.poll(readClipboard).toBe('https://example.com/article?id=42');
+    expect(await serviceWorker.evaluate('globalThis.baselineLengths')).toContain(150_000);
+    expect(await expectStable(readClipboard, 1000)).toBe('https://example.com/article?id=42');
+  });
+
   test('keeps polling when a page copy invalidates the native baseline read', async ({
     playground,
     context,

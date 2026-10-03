@@ -9,6 +9,7 @@ import {
 } from '../../src/lib/copy-watcher';
 import { DEFAULT_SETTINGS, type Settings } from '../../src/lib/settings';
 import { rewriteUrl } from '../../src/lib/rewrite';
+import { isExtensionMessage } from '../../src/lib/messages';
 
 const EPOCH = '00000000-0000-4000-8000-000000000001';
 const TRACKED = 'https://example.com/page?id=7&utm_source=newsletter&fbclid=IwAR3abc';
@@ -752,17 +753,31 @@ describe('gesture reconciliation', () => {
     expect(reconcile).not.toHaveBeenCalled();
   });
 
-  it('compares legacy copies with the pre-gesture baseline', async () => {
+  it.each([
+    { size: 'short', baseline: 'previous contents' },
+    { size: 'oversized', baseline: 'x'.repeat(150_000) },
+  ])('cleans legacy copies after a $size prior clipboard value', async ({ baseline }) => {
     vi.useFakeTimers();
     const clipboard = new FakeClipboard(false);
-    clipboard.text = 'previous contents';
-    start(clipboard);
+    clipboard.text = baseline;
+    start(clipboard, { watchClipboard: false });
+    reconcile.mockImplementation(async (text, embedded, previous, types, epoch, pageCopy) => {
+      const request = { type: 'reconcile-clipboard', text, embedded, baseline: previous, types, epoch, pageCopy };
+      const forwarded = {
+        ...request,
+        type: 'offscreen-reconcile',
+        config: { mode: settings.mode, key },
+      };
+      if (!isExtensionMessage(request) || !isExtensionMessage(forwarded)) throw new Error('Rejected reconciliation');
+      const result = rewriteUrl(text, { mode: settings.mode });
+      if (result) await clipboard.writeText(result.url);
+    });
     document.body.innerHTML = '<button id="copy">Copy link</button>';
     document.getElementById('copy')?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
     clipboard.text = TRACKED;
     await vi.advanceTimersByTimeAsync(3000);
-    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, 'previous contents', ['text/plain'], EPOCH, true);
-    expect(clipboard.writes).toEqual([]);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, false, baseline, ['text/plain'], EPOCH, true);
+    expect(clipboard.writes).toEqual([CLEAN]);
   });
 
   it.each([

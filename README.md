@@ -56,7 +56,7 @@ All other parameters stay untouched. Coverage is deliberately limited: YouTube a
 
 Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less links such as `www.example.com/page?utm_source=x` are supported. Relative links copied by a page, including named paths such as `article?utm_source=email` and asynchronous text and HTML copies, use the originating frame's URL for parsing and stable replacements and retain their relative form.
 
-Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. Explicit Copy still copies longer links unchanged and accepts replacements that grow beyond that input bound.
+Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. A larger previous clipboard value does not prevent cleaning a smaller new copy. Explicit Copy still copies longer links unchanged and accepts replacements that grow beyond that input bound.
 
 Standalone URLs retain trailing punctuation as part of the URL; sentence-punctuation heuristics apply only to links extracted from prose.
 

@@ -30,7 +30,7 @@
 
 ### Fixed
 
-- [Copy detection](README.md#page-copies) handles shadow-root text fields, stopped propagation, late page handlers, and interrupted baseline reads.
+- [Copy detection](README.md#page-copies) handles shadow-root text fields, stopped propagation, late page handlers, interrupted baseline reads, and oversized previous clipboard values.
 - [Clipboard formats](README.md#clipboard-formats) survive rich-copy cleaning; changed HTML is detected even with unchanged text, and plain-text Undo no longer discards formatting.
 - [Clipboard coordination](README.md#clipboard-coordination) rejects stale reads after newer copies, settings changes, Undo, and coordinator recreation without worker requests for ordinary typing. Undo suppression survives cross-frame work and worker restarts; lost acknowledgements report failure.
 - [Background watching](README.md#background-watching) skips unrelated clipboard contents and retries tracked links after unavailable readers, invalidated inspections, or custom-format removal. Page copies without rewritable links skip writer reconciliation; settings updates no longer depend on context-menu updates.
