@@ -40,8 +40,12 @@ configurations must pass when browser checks apply.
 1. **Keep URL rewriting pure.** The parameter rules, rewrite functions, and
    replacement generators do not read the DOM, clipboard, or `chrome.*`.
    Preserve the [URL byte and input-bound contracts](README.md#what-gets-rewritten).
-2. **Classify tracking conservatively.** Follow the [parameter rules and required
-   control tests](CONTRIBUTING.md#adding-a-tracking-parameter).
+2. **Classify tracking conservatively.** Favor a small, evidence-backed rule set.
+   Missing some tracking is preferable to breaking a functional link; leave
+   uncertain or ambiguous parameters untouched. Keep one generic rewrite engine.
+   Prefer removing or narrowing an overbroad rule to accumulating site-specific
+   exceptions, and do not expand site coverage opportunistically during fixes.
+   Follow the [parameter rules and required control tests](CONTRIBUTING.md#adding-a-tracking-parameter).
 3. **Keep replacements stable.** Preserve the [replacement behavior](README.md#replacement-values).
    The service worker creates the per-install key; other contexts request it.
 4. **DOM events are a trust boundary.** Content scripts run in the isolated
