@@ -2,13 +2,7 @@
 
 A Chrome extension that rewrites tracking parameters in copied links and the address bar. Choose [Decoy, Silly, Hybrid, or Remove](#replacement-values) to change what shared links report to analytics. [Processing stays inside your browser](PRIVACY.md).
 
-```text
-Copied  https://example.com/article?id=42&utm_source=newsletter&utm_medium=email&utm_campaign=spring_sale&fbclid=IwAR3xYz123AbC456dEf789
-Decoy   https://example.com/article?id=42&utm_source=outbrain&utm_medium=notification&utm_campaign=holiday_smb&fbclid=IwAR1hOl802PeN816eVz897
-Silly   https://example.com/article?id=42&utm_source=a-very-confused-cat&utm_medium=shouting-really-loud&utm_campaign=operation-click-bait&fbclid=tracking-troll-the-utm-rebellion-in94ro
-Hybrid  https://example.com/article?id=42&utm_source=a-very-confused-cat&utm_medium=notification&utm_campaign=operation-click-bait&fbclid=IwAR1hOl802PeN816eVz897
-Remove  https://example.com/article?id=42
-```
+![A copied link keeps its destination and id=42: Decoy uses plausible tracking values, Silly uses nonsense, Hybrid mixes both, and Remove deletes tracking.](assets/modes.svg)
 
 ## Install
 
@@ -23,7 +17,7 @@ npm run build
 
 Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select the `dist/` folder. Chrome 123 or newer is required. After rebuilding, reload the extension's card and refresh open web pages so they receive the updated content script.
 
-To verify the installation, copy the example's `Copied` URL from a web page and paste it into a text field. In the default Decoy mode, the tracking values should change while `id=42` stays intact.
+To verify the installation, right-click [this test link](https://example.com/article?id=42&utm_source=newsletter&utm_medium=email), select **Copy link address**, and paste it into a text field. In the default Decoy mode, the tracking values should change while `id=42` stays intact.
 
 ## Usage
 
@@ -137,7 +131,7 @@ CI runs the checks, the end-to-end tests, and packaging on every pull request, a
 | `src/background.ts`              | Service worker: context menu, shortcut, statistics, key, clipboard watcher lifecycle |
 | `src/offscreen.ts`               | Background clipboard watcher and clipboard writer                                    |
 | `src/popup.*`                    | Toolbar popup                                                                        |
-| `src/lib/params.ts`              | Tracking-parameter rules, global and per site                                        |
+| `src/lib/params.ts`              | Exact global tracking-parameter allowlist                                            |
 | `src/lib/rewrite.ts`             | In-place link and text rewriting                                                     |
 | `src/lib/values.ts`, `prng.ts`   | Decoy, silly, and hybrid replacement values, seeded per install                      |
 | `src/lib/copy-watcher.ts`        | Copy detection on pages: copy events, `clipboardchange`, polling fallback            |
