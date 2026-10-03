@@ -1289,6 +1289,38 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
     await popup.close();
   });
 
+  test('retries an invalidated background inspection without a new copy', async ({
+    serviceWorker,
+    readClipboard,
+    writeClipboardExternally,
+    waitForWatcher,
+    setSettings,
+  }) => {
+    await setSettings({ mode: 'strip' });
+    await waitForWatcher(true);
+    // Advance intent between the native reader's epoch capture and the writer's reconciliation.
+    await serviceWorker.evaluate(`(() => {
+      const original = chrome.runtime.sendMessage.bind(chrome.runtime);
+      const gate = globalThis.inspectionGate = { attempts: 0 };
+      chrome.runtime.sendMessage = async (...args) => {
+        if (args[0]?.type === 'offscreen-reconcile') {
+          gate.attempts += 1;
+          if (gate.attempts === 1) {
+            await original({ type: 'offscreen-intent' });
+            const response = await original(...args);
+            gate.firstResponse = response;
+            return response;
+          }
+        }
+        return original(...args);
+      };
+    })()`);
+    await writeClipboardExternally(OUTSIDE);
+    await expect.poll(readClipboard).toBe('https://example.com/story?id=11');
+    const inspection = await serviceWorker.evaluate('globalThis.inspectionGate');
+    expect(inspection).toEqual({ attempts: 2, firstResponse: { ok: false } });
+  });
+
   test('rewrites links copied outside any page, such as from the address bar or another app', async ({
     playground,
     readClipboard,

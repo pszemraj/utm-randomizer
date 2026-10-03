@@ -99,7 +99,7 @@ The offscreen document coordinates all post-copy writes. It remains available wh
 
 ### Background watching
 
-The background watcher leaves existing contents alone when starting and checks every 0.75 seconds. Only changed payloads with rewritable text or HTML links are staged for inspection; unrelated contents stay in the offscreen document. After a 250 ms grace period, a focused page uses the Clipboard API to inspect the [format inventory](#clipboard-formats): offscreen synthetic paste alone cannot see web custom formats. Without that inspection, no automatic write occurs. Inspection retries until a reader and supported formats are available, even if a later copy removes a custom format without changing the text. Competing tracked versions of the same link are skipped for 5 seconds after a rewrite.
+The background watcher leaves existing contents alone when starting and checks every 0.75 seconds. Only changed payloads with rewritable text or HTML links are staged for inspection; unrelated contents stay in the offscreen document. After a 250 ms grace period, a focused page uses the Clipboard API to inspect the [format inventory](#clipboard-formats): offscreen synthetic paste alone cannot see web custom formats. Without that inspection, no automatic write occurs. Inspection retries after unavailable readers or invalidated reads and waits for supported formats, even if a later copy removes a custom format without changing the text. Competing tracked versions of the same link are skipped for 5 seconds after a rewrite.
 
 ## Permissions
 

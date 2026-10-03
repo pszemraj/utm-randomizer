@@ -207,6 +207,34 @@ it('rewrites a pending candidate normally', async () => {
   expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rewritten', urls: 1 }));
 });
 
+it('retries an invalidated background inspection without waiting for the clipboard to change', async () => {
+  const { clipboard, writes, sendMessage, message, readEpoch } = await start();
+  sendMessage.mockImplementationOnce(() => {
+    const staleEpoch = readEpoch();
+    // Another frame advances intent after this inspection captured its generation.
+    message({ type: 'offscreen-intent' });
+    const response: unknown = message({
+      type: 'offscreen-reconcile',
+      epoch: staleEpoch,
+      types: clipboard.types,
+      text: clipboard.text,
+      embedded: true,
+      config: CONFIG,
+    }).mock.calls[0]?.[0];
+    return Promise.resolve(response);
+  });
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+  expect(sendMessage.mock.calls.filter(([payload]) => payload.type === 'inspect-clipboard')).toHaveLength(1);
+
+  await vi.advanceTimersByTimeAsync(500);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+  expect(sendMessage.mock.calls.filter(([payload]) => payload.type === 'inspect-clipboard')).toHaveLength(2);
+});
+
 it('leaves the clipboard untouched without a focused native reader, then retries when one is available', async () => {
   const { clipboard, writes, sendMessage, inspector } = await start();
   inspector.enabled = false;
@@ -677,7 +705,7 @@ it('rejects a delayed page reconciliation after the coordinator is recreated', a
   newer.message({ type: 'offscreen-intent' });
   newer.clipboard.text = text;
   expect(newer.readEpoch()).not.toBe(delayed.epoch);
-  expect(newer.message(delayed)).toHaveBeenCalledWith({ ok: true });
+  expect(newer.message(delayed)).toHaveBeenCalledWith({ ok: false });
   expect(newer.clipboard.text).toBe(text);
   expect(newer.writes).not.toHaveBeenCalled();
   newer.message({ ...delayed, epoch: newer.readEpoch() });

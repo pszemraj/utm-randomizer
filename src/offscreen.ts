@@ -118,7 +118,8 @@ function reconcile(
   tabId?: number,
   baseline?: string,
 ): boolean {
-  if (readEpoch !== epoch) return true;
+  // An invalidated inspection must leave its background candidate available for a fresh read.
+  if (readEpoch !== epoch) return false;
   const snapshot = readClipboard();
   if (!snapshot) return false;
   observe(snapshot);
