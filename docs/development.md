@@ -38,7 +38,7 @@ The playground has one control for each copy path, a tracked address-bar link, a
 
 `npm run package` creates `release/utm-randomizer-<version>.zip`, with `manifest.json` at the ZIP's root. Attach that file to a GitHub release as the extension download.
 
-CI runs the checks, the end-to-end tests, and packaging on every pull request, and attaches the Web Store ZIP to the run. See [CONTRIBUTING.md](../CONTRIBUTING.md) for adding parameters and replacement values and for submitting changes.
+CI runs only lint, formatting, and type checks. Run tests and packaging locally when relevant. See [CONTRIBUTING.md](../CONTRIBUTING.md) for adding parameters and replacement values and for submitting changes.
 
 ## Source map
 

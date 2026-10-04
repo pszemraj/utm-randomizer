@@ -15,7 +15,7 @@
 - [Automatic cleaning, Undo, and explicit copy actions](README.md#usage), with [page-copy detection](docs/behavior.md#page-copies) and [background watching](docs/behavior.md#background-watching).
 - A compact global [tracking allowlist](docs/behavior.md#what-gets-rewritten), backed by vendor references.
 - Popup controls for cleaning layers, notifications, and mode, with statistics and automatic light/dark styling.
-- [Development tools](docs/development.md) for builds, tests, manual checks, icons, and Web Store packaging, with CI artifacts.
+- [Development tools](docs/development.md) for builds, tests, manual checks, icons, and Web Store packaging.
 
 ### Changed
 
