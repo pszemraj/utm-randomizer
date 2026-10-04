@@ -7,20 +7,20 @@
 - The unpacked extension now lives in `dist/`: load that folder in `chrome://extensions` instead of the repository root.
 - Requires Chrome 123 or newer (was 102).
 - Decoy is the default replacement style. The old nonsense values are still available as Silly mode.
-- Only the exact [UTM and ad click-ID allowlist](README.md#what-gets-rewritten) is rewritten. Site-specific, email, affiliate, and unknown prefix fields remain untouched, favoring functional links over tracking coverage.
+- Only the exact [UTM and ad click-ID allowlist](docs/behavior.md#what-gets-rewritten) is rewritten. Site-specific, email, affiliate, and unknown prefix fields remain untouched, favoring functional links over tracking coverage.
 
 ### Added
 
-- Decoy, Hybrid, and Remove [replacement modes](README.md#replacement-values).
-- [Automatic cleaning, Undo, and explicit copy actions](README.md#usage), with [page-copy detection](README.md#page-copies) and [background watching](README.md#background-watching).
-- A compact global [tracking allowlist](README.md#what-gets-rewritten), backed by vendor references.
+- Decoy, Hybrid, and Remove [replacement modes](docs/behavior.md#replacement-values).
+- [Automatic cleaning, Undo, and explicit copy actions](README.md#usage), with [page-copy detection](docs/behavior.md#page-copies) and [background watching](docs/behavior.md#background-watching).
+- A compact global [tracking allowlist](docs/behavior.md#what-gets-rewritten), backed by vendor references.
 - Popup controls for cleaning layers, notifications, and mode, with statistics and automatic light/dark styling.
-- [Development tools](README.md#development) for builds, tests, manual checks, icons, and Web Store packaging, with CI artifacts.
+- [Development tools](docs/development.md) for builds, tests, manual checks, icons, and Web Store packaging, with CI artifacts.
 
 ### Changed
 
-- [In-place URL rewriting](README.md#what-gets-rewritten) replaces URL re-serialization, preserving unrelated query bytes, duplicate keys, and link forms.
-- [Page clipboard reads](README.md#page-copies) follow user intent instead of every button or link click on Chrome 144+.
+- [In-place URL rewriting](docs/behavior.md#what-gets-rewritten) replaces URL re-serialization, preserving unrelated query bytes, duplicate keys, and link forms.
+- [Page clipboard reads](docs/behavior.md#page-copies) follow user intent instead of every button or link click on Chrome 144+.
 - The "this session" counter now resets with the browser session.
 - The notification is isolated from page styles in a shadow root, sits in the top layer above modal dialogs, is announced to screen readers, and respects reduced motion.
 - Content scripts stop working as soon as the extension is disabled, reloaded, or removed, instead of running until the page reloads.
@@ -30,16 +30,16 @@
 
 ### Fixed
 
-- [Copy detection](README.md#page-copies) handles shadow-root text fields, stopped propagation, late page handlers, interrupted baseline reads, and oversized previous clipboard values.
-- [Clipboard formats](README.md#clipboard-formats) survive rich-copy cleaning; changed HTML is detected even with unchanged text, and plain-text Undo no longer discards formatting.
-- [Clipboard coordination](README.md#clipboard-coordination) rejects stale reads after newer copies, settings changes, Undo, and coordinator recreation without worker requests for ordinary typing. Undo suppression survives cross-frame work and worker restarts; lost acknowledgements report failure.
-- [Background watching](README.md#background-watching) skips unrelated clipboard contents and retries tracked links after unavailable readers, invalidated inspections, or custom-format removal. Page copies without rewritable links skip writer reconciliation; settings updates no longer depend on context-menu updates.
+- [Copy detection](docs/behavior.md#page-copies) handles shadow-root text fields, stopped propagation, late page handlers, interrupted baseline reads, and oversized previous clipboard values.
+- [Clipboard formats](docs/behavior.md#clipboard-formats) survive rich-copy cleaning; changed HTML is detected even with unchanged text, and plain-text Undo no longer discards formatting.
+- [Clipboard coordination](docs/behavior.md#clipboard-coordination) rejects stale reads after newer copies, settings changes, Undo, and coordinator recreation without worker requests for ordinary typing. Undo suppression survives cross-frame work and worker restarts; lost acknowledgements report failure.
+- [Background watching](docs/behavior.md#background-watching) skips unrelated clipboard contents and retries tracked links after unavailable readers, invalidated inspections, or custom-format removal. Page copies without rewritable links skip writer reconciliation; settings updates no longer depend on context-menu updates.
 - Synthetic copy, gesture, and Undo events and malformed or forged runtime messages are rejected.
-- [URL rewriting](README.md#what-gets-rewritten) preserves Bing Maps collections, TikTok player display controls, Amazon store selectors, signed links, standalone punctuation, and relative page-link forms, and handles standalone Markdown links.
-- [Replacement values](README.md#replacement-values) stay stable for encoded, mixed-case hexadecimal, non-Latin, malformed-percent, and `magic-8-ball` inputs.
+- [URL rewriting](docs/behavior.md#what-gets-rewritten) preserves Bing Maps collections, TikTok player display controls, Amazon store selectors, signed links, standalone punctuation, and relative page-link forms, and handles standalone Markdown links.
+- [Replacement values](docs/behavior.md#replacement-values) stay stable for encoded, mixed-case hexadecimal, non-Latin, malformed-percent, and `magic-8-ball` inputs.
 - Synchronous rewriting is bounded and avoids repeated full-link hashing; explicit Copy accepts unchanged or generated links beyond the automatic input bound.
-- [Notifications and statistics](README.md#usage) resume expiry after keyboard focus leaves and count rich-copy links without duplicate text/HTML counts.
-- [Browser tests](README.md#development) explicitly select and verify clipboard events and polling instead of relying on Chromium feature flags.
+- [Notifications and statistics](docs/behavior.md#usage) resume expiry after keyboard focus leaves and count rich-copy links without duplicate text/HTML counts.
+- [Browser tests](docs/development.md) explicitly select and verify clipboard events and polling instead of relying on Chromium feature flags.
 
 ## [1.2.0] - 2025-12-17
 

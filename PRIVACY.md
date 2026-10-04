@@ -4,9 +4,9 @@ UTM Randomizer processes copied text and page addresses inside your browser. It 
 
 ## What the extension reads
 
-- **Copied text and HTML on web pages**, from copy events and clipboard reads around relevant interactions. On older Chrome, a gesture can trigger a clipboard read before a copy occurs. See the [copy detection limits](README.md#page-copies).
-- **Clipboard text, HTML, and format information in the background**, while [whole-clipboard watching](README.md#background-watching) is enabled. Background reads can cause system clipboard-access prompts.
-- **The page address**, while "Clean the address bar" is on, and the current tab's address when you use an [explicit copy action](README.md#usage).
+- **Copied text and HTML on web pages**, from copy events and clipboard reads around relevant interactions. On older Chrome, a gesture can trigger a clipboard read before a copy occurs. See the [copy detection limits](docs/behavior.md#page-copies).
+- **Clipboard text, HTML, and format information in the background**, while [whole-clipboard watching](docs/behavior.md#background-watching) is enabled. Background reads can cause system clipboard-access prompts.
+- **The page address**, while "Clean the address bar" is on, and the current tab's address when you use an [explicit copy action](docs/behavior.md#usage).
 
 Clipboard contents and addresses are never written to extension storage, logged, or transmitted outside your browser.
 
@@ -16,9 +16,9 @@ Stored locally in Chrome's extension storage and never synced or transmitted:
 
 - your settings (on/off, Decoy, Silly, Hybrid, or Remove, and which cleaning layers and notifications are on);
 - a count of how many links were rewritten, in total and in the current browser session. Only the numbers are stored, not the links;
-- a random per-install key used to generate [replacement values](README.md#replacement-values).
+- a random per-install key used to generate [replacement values](docs/behavior.md#replacement-values).
 
-Notifications and clipboard watchers keep recent text, HTML, links, and format snapshots in memory for Undo, detecting changes, and preventing repeated rewrites. Later rewrites and observed changes can replace these values; closing their page or [offscreen document](README.md#clipboard-coordination) releases them. Closing a notification alone does not clear all watcher state.
+Notifications and clipboard watchers keep recent text, HTML, links, and format snapshots in memory for Undo, detecting changes, and preventing repeated rewrites. Later rewrites and observed changes can replace these values; closing their page or [offscreen document](docs/behavior.md#clipboard-coordination) releases them. Closing a notification alone does not clear all watcher state.
 
 ## Permissions
 

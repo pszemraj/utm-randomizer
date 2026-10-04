@@ -2,11 +2,11 @@
 
 ## Setup
 
-Use the [installation steps](README.md#install) to load the extension and the [development commands](README.md#development) to rebuild it.
+Use the [source build](README.md#build-from-source) to load the extension and the [development commands](docs/development.md#commands) to rebuild it.
 
 ## Checks
 
-Run focused regression tests for changed behavior and the applicable [lint, formatting, type, and build checks](README.md#development). For documentation-only changes, check formatting, relative links, and examples against the current code. `npm run format` fixes formatting.
+Run focused regression tests for changed behavior and the applicable [lint, formatting, type, and build checks](docs/development.md). For documentation-only changes, check formatting, relative links, and examples against the current code. `npm run format` fixes formatting.
 
 A simulated DOM cannot establish native clipboard permissions, event trust, format preservation, focus behavior, or worker termination behavior. Changes to those paths require a real loaded-extension browser run in both configurations. Exercise real mouse/keyboard input and clipboard data; inject delays or failures when testing races. Cover newer copies, cross-frame Undo, lost acknowledgements, unsupported formats, stopped propagation, and synthetic-event attacks where relevant.
 
@@ -36,13 +36,13 @@ In `scripts/*.mjs`, which are plain JavaScript, write types inside the tags (`@p
 
 The exact allowlist lives in `src/lib/params.ts`. Keep coverage small and deliberate: missing tracking is preferable to breaking functional links. Add a name only for explicitly requested coverage, with vendor documentation establishing its tracking purpose and a source comment beside the entry. Leave uncertain or ambiguous names untouched; do not add site rules or prefix matches.
 
-Each entry declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](README.md#replacement-values). Use `id` for click IDs; it always takes the identifier path.
+Each entry declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](docs/behavior.md#replacement-values). Use `id` for click IDs; it always takes the identifier path.
 
 Every new entry needs a regression in [`tests/unit/rewrite.test.ts`](tests/unit/rewrite.test.ts) showing the link being cleaned while unrelated query bytes stay intact. Extend the existing preservation controls for names outside the allowlist. A rewriting test establishes the chosen behavior; vendor evidence establishes whether the name belongs in the allowlist.
 
 ## Adding replacement values
 
-Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve the [stable per-link behavior](README.md#replacement-values) when editing the lists or generators.
+Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve the [stable per-link behavior](docs/behavior.md#replacement-values) when editing the lists or generators.
 
 - **Decoy lists** (`DECOY_SOURCES`, `DECOY_MEDIUMS`, and the parts used to compose campaigns, terms, and placements) should read like values real marketing tools produce (`google`, `newsletter`, `paid_social`). Every value must pass `isWordy` after percent-decoding and converting `+` to a space: start with a Unicode letter or number, contain a letter, use only letters, combining marks, numbers, spaces, `_`, `.`, and `-`, and not look like a hexadecimal ID. Otherwise the next copy would treat it as an identifier and change it again.
 - **Silly lists** (`FUNNY`, `FUNNY_TOKEN_PHRASES`) should be lowercase and hyphenated, humorous but not offensive, obviously fake, and free of real company or brand names.
