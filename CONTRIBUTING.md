@@ -18,11 +18,11 @@ Every function, class, method, interface, type alias, and exported constant need
 
 ```ts
 /**
- * Rewrites tracking parameters
- * in a single link.
+ * Rewrites tracking
+ * parameters in a link.
  *
- * @returns The rewritten link,
- *   or null when no rewrite applies.
+ * @returns A rewritten link,
+ *   or null for no change.
  */
 export function rewriteUrl(
   link: string,

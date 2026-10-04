@@ -66,12 +66,6 @@ Links inside longer plain text can be cleaned, including standalone Markdown lin
 
 ## How it works
 
-```mermaid
-flowchart TD
-  page["Page: inspect copied formats"] --> worker["Worker: route the request"]
-  worker --> writer["Offscreen: write the clipboard"]
-```
-
 ### Page copies
 
 Selected text-field copies and data supplied by page copy/cut handlers are rewritten synchronously during event dispatch. Open shadow-root text fields are supported, including on HTTP pages without the async Clipboard API. Native rich selections and native cuts are checked after copying; cuts keep their normal deletion behavior. On [Chrome 144 and later](https://developer.chrome.com/release-notes/144#the-clipboardchange-event), `clipboardchange` catches other writes within 10 seconds of interaction with the page; plain-text changes can include embedded links.
@@ -97,19 +91,19 @@ The [privacy policy](PRIVACY.md) describes data handling, clipboard-access promp
 ## Development
 
 ```bash
-# Rebuild on edits, then reload
+# Rebuild, then reload
 npm run dev
 
-# Lint, format, types, unit tests
+# Lint, format, types, tests
 npm run check
 
-# Test the loaded extension
+# Test loaded extension
 npm run test:e2e
 
-# Manual page: 127.0.0.1:5173
+# Manual: 127.0.0.1:5173
 npm run playground
 
-# Build Web Store zip in release/
+# Web Store zip in release/
 npm run package
 
 # Render icons from icon.svg
