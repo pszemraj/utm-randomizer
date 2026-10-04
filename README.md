@@ -67,20 +67,10 @@ Links inside longer plain text can be cleaned, including standalone Markdown lin
 ## How it works
 
 ```mermaid
-flowchart LR
-  subgraph page["Web page (content script in every frame)"]
-    copy["text-field copy,<br/>page-handled copy/cut"] -->|"rewrite clipboardData before it is written"| clip[("Clipboard")]
-    other["rich selection, writeText() button,<br/>native cut, Copy link address"] --> clip
-    clip -->|"clipboardchange<br/>or legacy polling"| fix["inspect all formats"]
-    load["page load,<br/>in-page navigation"] -->|"history.replaceState"| bar["Address bar"]
-  end
-  apps["Other apps,<br/>browser pages"] --> clip
-  worker["Service worker"] -->|"starts, configures"| offscreen["Offscreen document"]
-  offscreen -->|"watch clipboard"| clip
-  fix -->|"current snapshot"| worker
-  worker -->|"reconcile, Copy, Undo"| offscreen
-  offscreen -->|"preserve supported formats"| clip
-  menu["Context menu,<br/>Alt+Shift+U"] --> worker
+flowchart TD
+  page["Web page<br/>Inspect copied formats"] --> worker["Service worker<br/>Route reconciliation, Copy, Undo"]
+  worker --> writer["Offscreen document<br/>Coordinate clipboard writes"]
+  writer --> clipboard[("Clipboard")]
 ```
 
 ### Page copies
@@ -108,12 +98,23 @@ The [privacy policy](PRIVACY.md) describes data handling, clipboard-access promp
 ## Development
 
 ```bash
-npm run dev          # rebuild dist/ on every change, then reload the extension card
-npm run check        # lint (including required doc comments), format check, typecheck, unit tests
-npm run test:e2e     # build, then run Playwright against the real extension in Chromium
-npm run playground   # serve the manual test page at http://127.0.0.1:5173
-npm run package      # build and zip dist/ into release/utm-randomizer-<version>.zip
-npm run icons        # re-render assets/icons/*.png from assets/icon.svg
+# Rebuild on edits; reload the extension card
+npm run dev
+
+# Lint, format, types, and unit tests
+npm run check
+
+# Build and test the loaded extension
+npm run test:e2e
+
+# Serve the manual page at 127.0.0.1:5173
+npm run playground
+
+# Build a Web Store zip in release/
+npm run package
+
+# Render icons from assets/icon.svg
+npm run icons
 ```
 
 The end-to-end tests load `dist/` into Playwright's Chromium and exercise page copies, background watching, the address bar, format preservation, and Undo. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser. The suite runs with native `clipboardchange` events and with that capability removed from a temporary extension copy; a polling-specific case skips the event configuration. Both projects verify the capability in the content script's isolated world. This exercises the fallback in current Chromium, not an older Chrome installation. See the [validation requirements](CONTRIBUTING.md#checks) when choosing local checks.
