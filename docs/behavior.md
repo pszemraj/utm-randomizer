@@ -33,7 +33,7 @@ Unselected query segments, their order and encoding, fragments, and link forms s
 
 Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. A larger previous clipboard value does not prevent cleaning a smaller new copy. Explicit Copy still copies longer links unchanged and accepts replacements that grow beyond that input bound.
 
-Standalone URLs retain trailing punctuation as part of the URL; sentence-punctuation heuristics apply only to links extracted from prose.
+Standalone URLs retain trailing punctuation as part of the URL; sentence-punctuation heuristics apply only to links extracted from prose. Embedded candidates containing raw non-ASCII punctuation are left unchanged because their URL boundary is ambiguous. Percent-encoded punctuation remains supported.
 
 ### Clipboard formats
 

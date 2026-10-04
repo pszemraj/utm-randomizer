@@ -265,6 +265,8 @@ export function rewriteText(text: string, options: RewriteOptions & { embedded?:
   let urls = 0;
   let params = 0;
   const result = text.replace(EMBEDDED_URL, (match) => {
+    // Raw non-ASCII punctuation may join a URL to prose; leave ambiguous candidates intact.
+    if (/(?=\P{ASCII})\p{P}/u.test(match)) return match;
     const [link, trailing] = trimLinkEnd(match);
     const rewritten = rewriteUrl(link, options);
     if (!rewritten) {

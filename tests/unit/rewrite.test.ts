@@ -451,6 +451,7 @@ describe('rewriteText', () => {
       'https://example.com/?id=42&utm_source=newsletter;',
       'https://example.com/?utm_source=newsletter&keep=one;',
       'https://example.com/?id=42&utm_source=newsletter)',
+      'https://example.com/?id=42&utm_source=新聞，速報',
     ]) {
       for (const options of [strip, decoy, silly, { mode: 'hybrid', key: 'test-key' } as const]) {
         expect(rewriteText(link, options)?.text).toBe(rewriteUrl(link, options)?.url);
@@ -469,6 +470,23 @@ describe('rewriteText', () => {
       urls: 2,
       params: 2,
     });
+    for (const options of [strip, decoy, silly, { mode: 'hybrid', key: 'test-key' } as const]) {
+      for (const prose of [
+        '请访问 https://example.com/?utm_source=x，然后继续',
+        '詳しくはhttps://example.com/?utm_source=x。次に進む',
+        'Read “https://example.com/?utm_source=x”next.',
+      ]) {
+        expect(rewriteText(prose, { ...options, embedded: true }), prose).toBeNull();
+      }
+      const link = 'https://例え.テスト/記事?id=42&utm_source=新聞&keep=%EF%BC%8C';
+      const expected = rewriteUrl(link, options)?.url;
+      expect(expected).toBeDefined();
+      expect(rewriteText(`Read ${link} next`, { ...options, embedded: true })?.text).toBe(`Read ${expected} next`);
+      const ambiguous = '请访问 https://example.com/?utm_source=x，然后继续';
+      expect(rewriteText(`${ambiguous} or ${link}`, { ...options, embedded: true })?.text).toBe(
+        `${ambiguous} or ${expected}`,
+      );
+    }
   });
 
   it('rewrites a standalone Markdown link when embedded links are allowed', () => {
