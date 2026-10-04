@@ -164,7 +164,7 @@ describe('rewriteUrl (decoy)', () => {
     ]) {
       expect(rewriteUrl(link, { ...strip, baseUrl })).toBeNull();
     }
-    expect(rewriteText('read more?utm_source=email', { ...strip, baseUrl, embedded: true })).toBeNull();
+    expect(rewriteText('read more?utm_source=email', { ...strip, baseUrl })).toBeNull();
   });
 });
 
@@ -279,8 +279,8 @@ describe('signed URLs', () => {
   it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('preserves signed resources in %s mode', (mode) => {
     for (const link of SIGNED_LINKS) {
       expect(rewriteUrl(link, { mode, key: 'signed-key' }), link).toBeNull();
-      expect(rewriteText(link, { mode, key: 'signed-key', embedded: true }), link).toBeNull();
-      expect(rewriteText(`Read ${link}`, { mode, key: 'signed-key', embedded: true }), link).toBeNull();
+      expect(rewriteText(link, { mode, key: 'signed-key' }), link).toBeNull();
+      expect(rewriteText(`Read ${link}`, { mode, key: 'signed-key' }), link).toBeNull();
     }
   });
 
@@ -461,16 +461,14 @@ describe('functional links stay intact', () => {
 });
 
 describe('rewriteText', () => {
-  it('rewrites a lone link and keeps surrounding whitespace', () => {
-    const result = rewriteText('  https://example.com/?utm_source=x\n', strip);
-    expect(result).toEqual({ text: '  https://example.com/\n', urls: 1, params: 1 });
-  });
-
-  it('keeps explicit wrappers around a lone link', () => {
-    expect(rewriteText('<https://example.com/?utm_source=x>', strip)?.text).toBe('<https://example.com/>');
-    expect(rewriteText('"https://example.com/?a=1&utm_source=x"', strip)?.text).toBe('"https://example.com/?a=1"');
-    expect(rewriteText('https://example.com/?a=1&fbclid=x.', strip)?.text).toBe('https://example.com/?a=1');
-  });
+  it.each([' ', '\t', '\r\n', '\u00a0', '\ufeff', '\u200b', '\u200c', '\u200d'])(
+    'rewrites a lone link and removes surrounding whitespace (%j)',
+    (whitespace) => {
+      const result = rewriteText(whitespace + 'https://example.com/?utm_source=x' + whitespace, strip);
+      expect(result).toEqual({ text: 'https://example.com/', urls: 1, params: 1 });
+      expect(rewriteText('https://example.com/' + whitespace + '?utm_source=x', strip)).toBeNull();
+    },
+  );
 
   it('preserves standalone URL semantics and matches direct URL rewrites', () => {
     for (const link of [
@@ -478,88 +476,60 @@ describe('rewriteText', () => {
       'https://example.com/?utm_source=newsletter&keep=one;',
       'https://example.com/?id=42&utm_source=newsletter)',
       'https://example.com/?id=42&utm_source=新聞，速報',
+      'https://en.wikipedia.org/wiki/Foo_(bar)?utm_source=x',
+      'www.example.com/p?utm_source=x',
+      '//example.com/p?utm_source=x',
+      '/article?utm_source=x',
+      'article?utm_source=x',
     ]) {
-      for (const options of [strip, decoy, silly, { mode: 'hybrid', key: 'test-key' } as const]) {
+      for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+        const options = { mode, key: 'test-key', baseUrl: 'https://example.com/page' };
         expect(rewriteText(link, options)?.text).toBe(rewriteUrl(link, options)?.url);
-        expect(rewriteText(link, { ...options, embedded: true })?.text).toBe(rewriteUrl(link, options)?.url);
         const once = rewriteUrl(link, options)?.url ?? link;
-        if (options.mode === 'strip') expect(rewriteText(once, { ...options, embedded: true })).toBeNull();
-        else expect(rewriteText(once, { ...options, embedded: true })?.text).not.toBe(once);
+        if (mode === 'strip') expect(rewriteText(once, options)).toBeNull();
+        else expect(rewriteText(once, options)?.text).not.toBe(once);
       }
     }
   });
 
-  it('only rewrites links inside longer text when allowed', () => {
-    const text = 'Read this: https://example.com/a?utm_source=x (and https://example.com/b?id=1&fbclid=y), thanks.';
-    expect(rewriteText(text, strip)).toBeNull();
-    expect(rewriteText(text, { ...strip, embedded: true })).toEqual({
-      text: 'Read this: https://example.com/a (and https://example.com/b?id=1), thanks.',
-      urls: 2,
-      params: 2,
-    });
-    for (const options of [strip, decoy, silly, { mode: 'hybrid', key: 'test-key' } as const]) {
-      for (const prose of [
-        '请访问 https://example.com/?utm_source=x，然后继续',
-        '詳しくはhttps://example.com/?utm_source=x。次に進む',
-        'Read “https://example.com/?utm_source=x”next.',
-      ]) {
-        expect(rewriteText(prose, { ...options, embedded: true }), prose).toBeNull();
-      }
-      const link = 'https://例え.テスト/記事?id=42&utm_source=新聞&keep=%EF%BC%8C';
-      const expected = rewriteUrl(link, options)?.url;
-      expect(expected).toBeDefined();
-      expect(rewriteText(`Read ${link} next`, { ...options, embedded: true })?.text).toBe(`Read ${expected} next`);
-      const ambiguous = '请访问 https://example.com/?utm_source=x，然后继续';
-      expect(rewriteText(`${ambiguous} or ${link}`, { ...options, embedded: true })?.text).toBe(
-        `${ambiguous} or ${expected}`,
-      );
+  it.each([
+    '<https://example.com/?utm_source=x>',
+    '"https://example.com/?utm_source=x"',
+    "'https://example.com/?utm_source=x'",
+    '\x60https://example.com/?utm_source=x\x60',
+    '(https://example.com/?utm_source=x)',
+    '[link](https://example.com/?utm_source=x)',
+    '[docs/api](https://example.com/?utm_source=x)',
+    '![docs/api](https://example.com/?utm_source=x)',
+    'Read this: https://example.com/?utm_source=x',
+    'https://example.com/?utm_source=x thanks',
+    'https://example.com/?utm_source=x\nhttps://example.com/?utm_source=y',
+    'https://example.com/?utm_source=x https://example.com/?utm_source=y',
+    'https://example.com/?utm_source=x\tand more',
+    '请访问 https://example.com/?utm_source=x，然后继续',
+    '詳しくはhttps://example.com/?utm_source=x。次に進む',
+    'Read “https://example.com/?utm_source=x”next.',
+    '# Report\n\nRead https://example.com/?utm_source=x\n' + 'A paragraph of document text. '.repeat(100),
+  ])('leaves non-URL clipboard text untouched (%s)', (text) => {
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      const options = { mode, key: 'test-key', baseUrl: 'https://example.com/page' };
+      expect(rewriteText(text, options)).toBeNull();
+      expect(rewriteUrl(text, options)).toBeNull();
     }
-  });
-
-  it('rewrites a standalone Markdown link when embedded links are allowed', () => {
-    const text = '[link](https://example.com/?utm_source=x)';
-    expect(rewriteText(text, strip)).toBeNull();
-    expect(rewriteText(text, { ...strip, embedded: true })).toEqual({
-      text: '[link](https://example.com/)',
-      urls: 1,
-      params: 1,
-    });
-  });
-
-  it.each(['[docs/api]', '[docs?api]', '![docs/api]'])('keeps Markdown wrappers with a page base (%s)', (label) => {
-    const options = { ...strip, baseUrl: 'https://example.com/page', embedded: true };
-    expect(rewriteText(`${label}(https://example.com/?utm_source=x)`, options)?.text).toBe(
-      `${label}(https://example.com/)`,
-    );
-    expect(rewriteText(`${label}(mailto:a@example.com?utm_source=x)`, options)).toBeNull();
   });
 
   it('ignores text without tracked links, empty text, and huge text', () => {
-    expect(rewriteText('just some words', { ...strip, embedded: true })).toBeNull();
+    expect(rewriteText('just some words', strip)).toBeNull();
     expect(rewriteText('   ', strip)).toBeNull();
+    expect(rewriteText('https://example.com/?id=42', strip)).toBeNull();
     expect(rewriteText(`${' '.repeat(200_000)}https://example.com/?utm_source=x`, strip)).toBeNull();
   });
 
-  it('unwraps parentheses and trims unbalanced closers', () => {
-    expect(rewriteText('(https://example.com/?utm_source=x)', strip)?.text).toBe('(https://example.com/)');
-    expect(rewriteText('see (https://example.com/?utm_source=x).', { ...strip, embedded: true })?.text).toBe(
-      'see (https://example.com/).',
-    );
-    expect(rewriteText('https://en.wikipedia.org/wiki/Foo_(bar)?utm_source=x', strip)?.text).toBe(
-      'https://en.wikipedia.org/wiki/Foo_(bar)',
-    );
-  });
-
-  it('stays fast on pathological input', () => {
+  it('stays fast on pathological and whitespace-heavy input', () => {
     const started = performance.now();
     rewriteText(`https://example.com/?utm_source=x${')'.repeat(90_000)}`, strip);
-    rewriteText(`see https://example.com/?utm_source=x${')'.repeat(90_000)}`, { ...strip, embedded: true });
-    expect(performance.now() - started).toBeLessThan(500);
-  });
-
-  it('stays fast on whitespace-heavy input', () => {
-    const started = performance.now();
-    rewriteText(`${' '.repeat(90_000)}x`, { ...strip, embedded: true });
+    rewriteText(`see https://example.com/?utm_source=x${')'.repeat(90_000)}`, strip);
+    rewriteText(`${' '.repeat(90_000)}x`, strip);
     expect(performance.now() - started).toBeLessThan(500);
   });
 });

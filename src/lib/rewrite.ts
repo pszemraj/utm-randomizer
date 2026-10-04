@@ -30,11 +30,11 @@ export interface UrlRewrite {
 
 /** Rewritten clipboard text. */
 export interface TextRewrite {
-  /** The full text with every rewritten link substituted in place. */
+  /** The single URL without surrounding whitespace. */
   text: string;
   /** Number of links that changed. */
   urls: number;
-  /** Number of parameters replaced or removed across all links. */
+  /** Number of parameters replaced or removed. */
   params: number;
 }
 
@@ -42,16 +42,6 @@ const WHITESPACE = /[\s\u200B-\u200D\uFEFF]/;
 /** Bounds synchronous processing of both clipboard text and directly rewritten URLs. */
 const MAX_TEXT_LENGTH = 100_000;
 const BARE_HOST = /^[a-z0-9.-]+\.[a-z]{2,}(?:[/?#:]|$)/i;
-const EMBEDDED_URL = /\bhttps?:\/\/[^\s<>"'`\u200B-\u200D\uFEFF]+/gi;
-const TRAILING_PUNCTUATION = /[.,;:!?]$/;
-const CLOSERS: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
-const WRAPPERS: [open: string, close: string][] = [
-  ['<', '>'],
-  ['(', ')'],
-  ['"', '"'],
-  ["'", "'"],
-  ['`', '`'],
-];
 
 /** Decodes a form-encoded query component, returning the input unchanged when it is malformed. */
 function safeDecode(value: string): string {
@@ -64,6 +54,9 @@ function safeDecode(value: string): string {
 
 /** Parses a link the way a person would read it, to learn its host and path. */
 function parseLink(link: string, baseUrl?: string): URL | null {
+  if (!link || WHITESPACE.test(link) || /^[<("'`[{]/.test(link)) {
+    return null;
+  }
   const attempts: (() => URL)[] = [];
   if (/^https?:\/\//i.test(link)) {
     attempts.push(() => new URL(link));
@@ -72,7 +65,7 @@ function parseLink(link: string, baseUrl?: string): URL | null {
   } else if (BARE_HOST.test(link)) {
     attempts.push(() => new URL(`https://${link}`));
   } else if (baseUrl && !/^(?:[^/?#]*:|!?\[)/.test(link)) {
-    // Named relative paths have no scheme; Markdown wrappers use the embedded-link scan instead.
+    // Named relative paths have no scheme.
     attempts.push(() => new URL(link, baseUrl));
   }
 
@@ -192,36 +185,13 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
   return { url: head + link.slice(queryEnd), params: changed };
 }
 
-/** Splits trailing sentence punctuation and unbalanced closing brackets off a matched link. */
-function trimLinkEnd(link: string): [link: string, trailing: string] {
-  // Closers minus openers per bracket type; a trailing closer is only trimmed while unbalanced.
-  const excess = new Map<string, number>();
-  for (const [closer, opener] of Object.entries(CLOSERS)) {
-    excess.set(closer, link.split(closer).length - link.split(opener).length);
-  }
-  let end = link.length;
-  while (end > 0) {
-    const last = link.charAt(end - 1);
-    const unbalanced = excess.get(last) ?? 0;
-    if (TRAILING_PUNCTUATION.test(last)) {
-      end -= 1;
-    } else if (unbalanced > 0) {
-      excess.set(last, unbalanced - 1);
-      end -= 1;
-    } else {
-      break;
-    }
-  }
-  return [link.slice(0, end), link.slice(end)];
-}
-
 /**
- * Rewrites clipboard text. A lone link (optionally wrapped in <>, parentheses, or quotes) may be
- * scheme-less or relative; with `embedded`, absolute http(s) links inside longer text are rewritten too.
+ * Rewrites clipboard text only when the entire trimmed text is one URL.
+ * Surrounding whitespace is removed; prose, documents, and wrapped links are left untouched.
  *
  * @returns The rewritten text, or null when nothing changed.
  */
-export function rewriteText(text: string, options: RewriteOptions & { embedded?: boolean }): TextRewrite | null {
+export function rewriteText(text: string, options: RewriteOptions): TextRewrite | null {
   if (text.length > MAX_TEXT_LENGTH) {
     return null;
   }
@@ -233,48 +203,8 @@ export function rewriteText(text: string, options: RewriteOptions & { embedded?:
   while (end > start && WHITESPACE.test(text.charAt(end - 1))) {
     end -= 1;
   }
-  const core = text.slice(start, end);
-  if (!core) {
-    return null;
-  }
-
-  if (!WHITESPACE.test(core)) {
-    const [open, close] = WRAPPERS.find(
-      ([opener, closer]) => core.length > 2 && core.startsWith(opener) && core.endsWith(closer),
-    ) ?? ['', ''];
-    const link = core.slice(open.length, core.length - close.length);
-    const rewritten = rewriteUrl(link, options);
-    if (rewritten) {
-      return {
-        text: text.slice(0, start) + open + rewritten.url + close + text.slice(end),
-        urls: 1,
-        params: rewritten.params,
-      };
-    }
-    if (parseLink(link, options.baseUrl)) {
-      return null;
-    }
-  }
-
-  if (!options.embedded) {
-    return null;
-  }
-
-  let urls = 0;
-  let params = 0;
-  const result = text.replace(EMBEDDED_URL, (match) => {
-    // Raw non-ASCII punctuation may join a URL to prose; leave ambiguous candidates intact.
-    if (/(?=\P{ASCII})\p{P}/u.test(match)) return match;
-    const [link, trailing] = trimLinkEnd(match);
-    const rewritten = rewriteUrl(link, options);
-    if (!rewritten) {
-      return match;
-    }
-    urls += 1;
-    params += rewritten.params;
-    return rewritten.url + trailing;
-  });
-  return urls > 0 ? { text: result, urls, params } : null;
+  const rewritten = rewriteUrl(text.slice(start, end), options);
+  return rewritten ? { text: rewritten.url, urls: 1, params: rewritten.params } : null;
 }
 
 /** Whether a link carries parameters this extension would rewrite. */
