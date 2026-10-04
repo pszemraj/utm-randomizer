@@ -4,9 +4,9 @@ import { describeMode, loadSettings, requestSecret, saveSettings, watchSettings,
 
 const COMMAND_COPY_PAGE = 'copy-clean-page-url';
 const MODE_HINTS: Record<Mode, string> = {
-  decoy: 'Believable fakes that poison analytics, e.g. utm_source=bing',
+  decoy: 'Plausible tracking values, e.g. utm_source=bing',
   silly: 'Obvious nonsense, e.g. utm_source=carrier-pigeon',
-  hybrid: 'Believable fakes and obvious nonsense, mixed value by value',
+  hybrid: 'Plausible values and nonsense, mixed value by value',
   strip: 'Deletes tracking parameters from the link',
 };
 const MODES: readonly Mode[] = ['decoy', 'silly', 'hybrid', 'strip'];

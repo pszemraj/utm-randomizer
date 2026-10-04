@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "UTM Randomizer",
   "version": "0.0.0",
-  "description": "Swaps tracking parameters in links you copy for believable decoys, or removes them, so shared links poison analytics.",
+  "description": "Replaces known tracking parameters in copied links and the address bar with decoys or nonsense, or removes them.",
   "minimum_chrome_version": "123",
   "permissions": ["activeTab", "clipboardRead", "clipboardWrite", "contextMenus", "offscreen", "storage"],
   "background": {
