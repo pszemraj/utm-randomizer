@@ -72,7 +72,7 @@ afterEach(() => {
 it('applies mode changes, disables polling, and resumes without creating a second document', async () => {
   const worker = await startBackground({ enabled: true });
   await vi.waitFor(() =>
-    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'hybrid' } }),
   );
   worker.changeSettings({ mode: 'strip' });
   await vi.waitFor(() =>
@@ -100,7 +100,7 @@ it('starts suspended while Chrome is unfocused and configures polling on focus r
   worker.sendMessage.mockClear();
   worker.changeFocus(true);
   await vi.waitFor(() =>
-    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'hybrid' } }),
   );
   expect(worker.createDocument).toHaveBeenCalledOnce();
 });
@@ -114,7 +114,7 @@ it('flushes on focus loss and resumes without an artificial suspension', async (
   worker.sendMessage.mockClear();
   worker.changeFocus(true);
   await vi.waitFor(() =>
-    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'hybrid' } }),
   );
   expect(worker.sendMessage).not.toHaveBeenCalledWith({ type: 'watch-config', config: null });
   expect(worker.onFocusChanged).toHaveBeenCalledWith(expect.any(Function), {
@@ -154,7 +154,7 @@ it('starts polling from a focus-gain event despite a transiently stale unfocused
   worker.sendMessage.mockClear();
   worker.changeFocus(true, 1, false);
   await vi.waitFor(() =>
-    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'hybrid' } }),
   );
   expect(worker.sendMessage).toHaveBeenCalledOnce();
   expect(worker.getLastFocused).toHaveBeenCalledOnce();
@@ -240,7 +240,7 @@ it('discards a pending disable when cleaning resumes during offscreen lookup', a
   worker.changeSettings({ enabled: true });
   release();
   await vi.waitFor(() =>
-    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'hybrid' } }),
   );
   expect(worker.sendMessage).toHaveBeenCalledOnce();
 });

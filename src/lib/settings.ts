@@ -11,7 +11,7 @@ export interface Settings {
 /** Settings used until the user changes them, and for any stored value that is missing or invalid. */
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
-  mode: 'decoy',
+  mode: 'hybrid',
 };
 
 const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];

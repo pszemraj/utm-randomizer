@@ -55,7 +55,7 @@ test.describe('native clipboard processing', () => {
     expect(outputs.has(await expectStable(readClipboard))).toBe(true);
   });
 
-  for (const mode of ['strip', 'silly', 'hybrid'] as const) {
+  for (const mode of ['strip', 'decoy', 'silly', 'hybrid'] as const) {
     test(`applies ${mode} to an entire copied URL`, async ({
       playground,
       readClipboard,
@@ -199,7 +199,9 @@ test.describe('native clipboard processing', () => {
     writeClipboardExternally,
     readClipboard,
     waitForWatcher,
+    setSettings,
   }) => {
+    await setSettings({ mode: 'decoy' });
     await waitForWatcher(true);
     const id = '0123456789abcdef0123456789abcdef';
     const encoded = id.replace(/./g, (char) => `%${char.charCodeAt(0).toString(16)}`);
@@ -467,6 +469,7 @@ test.describe('extension options', () => {
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     await expect(options.getByRole('heading', { name: 'UTM Randomizer' })).toBeVisible();
     await expect(options.locator('#enabled')).toBeChecked();
+    await expect(options.locator('#mode')).toHaveValue('hybrid');
     await options.locator('#mode').selectOption('strip');
     await options.locator('#enabled').uncheck();
     await expect

@@ -21,7 +21,7 @@ If the release only offers **Source code** archives, use the [source build](#bui
 
 - Copy one URL while Chrome is focused: Ctrl+C / Cmd+C, a site's copy button, or **Copy link address**. Documents and other text stay unchanged.
 - To change the mode or turn cleaning off, open `chrome://extensions`, find **UTM Randomizer**, and select **Details** -> **Extension options**.
-- Cleaning and **Decoy** mode are enabled by default. Rewritten URLs are plain text; there are no notifications, toolbar controls, or keyboard shortcuts.
+- Cleaning and **Hybrid** mode are enabled by default. Rewritten URLs are plain text; there are no notifications, toolbar controls, or keyboard shortcuts.
 
 Try it: right-click [this test link](https://example.com/article?id=42&utm_source=newsletter&utm_medium=email), select **Copy link address**, and paste into a text field. The tracking values should change while `id=42` stays intact.
 
