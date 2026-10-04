@@ -1343,18 +1343,6 @@ test.describe('copying on web pages', () => {
     ).toBe(1);
   });
 
-  test('rewrites a link the browser copied after a right-click (Copy link address)', async ({
-    playground,
-    readClipboard,
-    writeClipboardExternally,
-  }) => {
-    const link = playground.getByTestId('link-utm');
-    const href = await link.getAttribute('href');
-    await link.click({ button: 'right' });
-    await writeClipboardExternally(href ?? '');
-    expectReplaced(await waitForClipboard(readClipboard, (text) => !text.includes('utm_source=facebook')), href ?? '');
-  });
-
   test('rewrites links copied inside iframes and shows the toast on the page', async ({
     playground,
     readClipboard,
@@ -1370,7 +1358,7 @@ test.describe('browser clipboard watching', () => {
   const OUTSIDE =
     'https://example.com/story?id=11&utm_source=twitter&utm_medium=social&gclid=Cj0KCQjw9-KzBhDVARIsAF_BwE';
 
-  test('leaves outside copies unchanged across Chrome focus, paste, and page load', async ({
+  test('leaves copies made while Chrome is unfocused unchanged after focus, paste, and page load', async ({
     playground,
     serviceWorker,
     readClipboard,
@@ -1531,14 +1519,14 @@ test.describe('browser clipboard watching', () => {
     expect(inspection).toEqual({ attempts: 2, firstResponse: { ok: false } });
   });
 
-  test('rewrites new entries copied outside a page while Chrome is focused', async ({
+  test('rewrites fresh clipboard entries without webpage copy events while Chrome is focused', async ({
     playground,
     readClipboard,
     writeClipboardExternally,
     waitForWatcher,
   }) => {
     await waitForWatcher(true);
-    // No interaction with the page: only the background watcher can catch this.
+    // An extension tab writes the clipboard without a webpage copy event; only the background watcher can catch it.
     await writeClipboardExternally(OUTSIDE);
     const copied = await waitForClipboard(readClipboard, (text) => text !== OUTSIDE);
     expectReplaced(copied, OUTSIDE);
@@ -1601,35 +1589,7 @@ test.describe('browser clipboard watching', () => {
   });
 });
 
-test.describe('address bar', () => {
-  test('keeps the page address unchanged and rewrites it only when copied', async ({
-    playground,
-    server,
-    readClipboard,
-  }) => {
-    const original = `${server.origin}/?id=5&utm_source=linkedin&utm_medium=email&utm_campaign=spring&fbclid=IwAR3xYz123AbC456dEf789`;
-    await playground.goto(original);
-    await playground.waitForTimeout(1000);
-    expect(playground.url()).toBe(original);
-    await playground.evaluate(() => {
-      const field = document.createElement('textarea');
-      field.id = 'copy-address';
-      field.value = location.href;
-      document.body.append(field);
-    });
-    await playground.locator('#copy-address').selectText();
-    await playground.keyboard.press('Control+c');
-    const copied = await waitForClipboard(
-      readClipboard,
-      (text) =>
-        text.startsWith(server.origin) &&
-        new URL(text).searchParams.get('id') === '5' &&
-        new URL(text).searchParams.get('utm_source') !== 'linkedin',
-    );
-    expect(await expectStable(readClipboard, 1500)).toBe(copied);
-    expect(playground.url()).toBe(original);
-  });
-
+test.describe('page address preservation', () => {
   test('keeps page addresses unchanged after navigation and settings changes', async ({
     playground,
     setSettings,

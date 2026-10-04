@@ -30,9 +30,17 @@ The end-to-end tests load `dist/` into Playwright's Chromium and exercise page c
 
 The suite runs with native `clipboardchange` events and with that capability removed from a temporary extension copy; a polling-specific case skips the event configuration. Both projects verify the capability in the content script's isolated world. This exercises the fallback in current Chromium, not an older Chrome installation. See the [validation requirements](../CONTRIBUTING.md#checks) when choosing local checks.
 
+Popup controls run in extension tabs; Copy button tests supply the tab URL. Background-watcher tests write through an extension tab, and focus tests minimize and restore the browser window. These tests do not exercise native address-bar copying, browser menu selection, shortcut invocation, toolbar popup opening, or copying from another application.
+
 ## Manual testing
 
 The playground has one control for each copy path, a tracked address-bar link, a link for testing focus boundaries, right-click test links, functional links that must paste unchanged, an iframe, and a box to inspect pasted text. Open it in the browser where `dist/` is loaded.
+
+Use Chrome's actual controls for the workflows outside the automated suite:
+
+- Copy the tracked address with Ctrl+L / Cmd+L followed by Ctrl+C / Cmd+C. Check the clipboard both while the address bar remains focused and after returning to the page; separately try switching directly to another app. The page address must stay unchanged. See the [current focus limits](behavior.md#background-watching).
+- Select **Copy link address** and the extension's copy actions from real context menus. Invoke **Alt+Shift+U**, and open the toolbar popup to test its Copy button and settings.
+- Copy a tracked link in another app, then focus Chrome and paste. The link must remain unchanged.
 
 ## Packaging and CI
 
