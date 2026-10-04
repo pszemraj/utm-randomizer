@@ -8,15 +8,6 @@
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
-      "run_at": "document_start",
-      "all_frames": true,
-      "match_origin_as_fallback": true
-    }
-  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "UTM Randomizer",

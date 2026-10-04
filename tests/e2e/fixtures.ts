@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import {
   chromium,
@@ -39,12 +39,6 @@ export interface ExtensionFixtures {
   setSettings: (settings: Record<string, unknown>) => Promise<void>;
 }
 
-/** Per-project options set in playwright.config.ts. */
-export interface ExtensionOptions {
-  /** Whether the content script sees native clipboard events or uses its polling fallback. */
-  clipboardChange: boolean;
-}
-
 const EXTENSION_PATH = path.resolve('dist');
 
 /** Opens an extension page with a textarea for reading and writing the clipboard in tests. */
@@ -60,9 +54,7 @@ async function extensionPage(context: BrowserContext, extensionId: string): Prom
 }
 
 /** Playwright `test` with the extension fixtures. */
-export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: Playground }>({
-  clipboardChange: [true, { option: true }],
-
+export const test = base.extend<ExtensionFixtures, { server: Playground }>({
   server: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires a destructuring pattern here
     async ({}, use) => {
@@ -73,18 +65,10 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
     { scope: 'worker' },
   ],
 
-  context: async ({ clipboardChange }, use) => {
+  // eslint-disable-next-line no-empty-pattern -- Playwright requires fixture destructuring
+  context: async ({}, use) => {
     const extensionPath = await mkdtemp(path.join(tmpdir(), 'utm-e2e-extension-'));
     await cp(EXTENSION_PATH, extensionPath, { recursive: true });
-    if (!clipboardChange) {
-      // Chromium can remove shipped feature flags. Hide the capability in the isolated world
-      // before the real content script selects its path, without changing production bundles.
-      const contentPath = path.join(extensionPath, 'content.js');
-      await writeFile(
-        contentPath,
-        `if (typeof Clipboard !== 'undefined') delete Clipboard.prototype.onclipboardchange;\n${await readFile(contentPath, 'utf8')}`,
-      );
-    }
     const context = await chromium.launchPersistentContext('', {
       // Set CHROMIUM_PATH to reuse an installed Chromium instead of Playwright's download.
       executablePath: process.env.CHROMIUM_PATH || undefined,
@@ -109,27 +93,10 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
     await use(new URL(serviceWorker.url()).host);
   },
 
-  playground: async ({ context, server, extensionId, clipboardChange }, use) => {
-    // No clipboard permission is granted to the page: the content script must get by with the
-    // extension's own clipboardRead/clipboardWrite permissions, as in a normal browser profile.
+  playground: async ({ context, server }, use) => {
     const page = await context.newPage();
-    await page.goto(`${server.origin}/`);
-    const session = await context.newCDPSession(page);
-    const contentContexts: number[] = [];
-    session.on('Runtime.executionContextCreated', ({ context: world }: { context: { id: number; origin: string } }) => {
-      if (world.origin === `chrome-extension://${extensionId}`) contentContexts.push(world.id);
-    });
-    await session.send('Runtime.enable');
-    expect(contentContexts.length).toBeGreaterThan(0);
-    for (const contextId of contentContexts) {
-      const { result } = await session.send('Runtime.evaluate', {
-        contextId,
-        expression: "'onclipboardchange' in navigator.clipboard",
-        returnByValue: true,
-      });
-      expect(result.value).toBe(clipboardChange);
-    }
-    await session.detach();
+    await page.goto(server.origin);
+    await page.bringToFront();
     await use(page);
   },
 
@@ -182,19 +149,18 @@ export const test = base.extend<ExtensionFixtures & ExtensionOptions, { server: 
                 const contexts = await chrome.runtime.getContexts({
                   contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
                 });
-                const settings = await chrome.storage.local.get(['enabled', 'watchClipboard']);
+                const settings = await chrome.storage.local.get('enabled');
                 return {
                   document: contexts.length > 0,
-                  watching: settings.enabled !== false && settings.watchClipboard !== false,
-                  enabled: settings.enabled !== false,
+                  watching: settings.enabled !== false,
                 };
               })
-              .then((state) => state.watching === running && state.document === state.enabled),
+              .then((state) => state.watching === running && state.document),
           { timeout: 10_000 },
         )
         .toBe(true);
       // Let a freshly started watcher take its baseline reading of the clipboard.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 400));
     });
   },
 

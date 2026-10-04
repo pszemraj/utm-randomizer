@@ -1,6 +1,6 @@
 # UTM Randomizer
 
-A Chrome extension that replaces tracking parameters in copied links with believable decoys, nonsense, or nothing. Page addresses stay unchanged. [Everything stays in your browser](PRIVACY.md).
+A Chrome extension that replaces tracking parameters in copied URLs with believable decoys, nonsense, or nothing. Page addresses stay unchanged. [Everything stays in your browser](PRIVACY.md).
 
 ![A copied link keeps its destination and id=42: Decoy uses plausible tracking values, Silly uses nonsense, Hybrid mixes both, and Remove deletes tracking.](assets/modes.svg)
 
@@ -19,9 +19,9 @@ If the release only offers **Source code** archives, use the [source build](#bui
 
 ## Usage
 
-- Copy links while Chrome is focused: Ctrl+C / Cmd+C, a site's copy button, or **Copy link address**.
-- Open the toolbar popup to choose **Decoy**, **Silly**, **Hybrid**, or **Remove**, pause cleaning, or change browser-copy watching and notifications.
-- Decoy, browser-copy watching, and notifications are enabled by default. Each clipboard entry is processed once; automatic plain-text rewrites offer **Undo**.
+- Copy one URL while Chrome is focused: Ctrl+C / Cmd+C, a site's copy button, or **Copy link address**. Documents and other text stay unchanged.
+- Open the toolbar popup to choose **Decoy**, **Silly**, **Hybrid**, or **Remove**, pause cleaning, or change toolbar feedback.
+- Cleaning, Decoy mode, and toolbar feedback are enabled by default. Rewritten URLs are plain text; use **Undo last rewrite** in the popup to restore the current entry.
 - To copy the current page explicitly, use **Alt+Shift+U** or **Copy this page's link** in the popup.
 
 Try it: right-click [this test link](https://example.com/article?id=42&utm_source=newsletter&utm_medium=email), select **Copy link address**, and paste into a text field. The tracking values should change while `id=42` stays intact.
@@ -37,7 +37,7 @@ npm ci
 npm run build
 ```
 
-Follow the Chrome steps above, selecting `dist/` instead of an extracted release folder. Verify it with the test link under [Usage](#usage). After rebuilding, reload the extension in `chrome://extensions` and refresh open web pages.
+Follow the Chrome steps above, selecting `dist/` instead of an extracted release folder. Verify it with the test link under [Usage](#usage). After rebuilding, reload the extension in `chrome://extensions`.
 
 ## Development
 

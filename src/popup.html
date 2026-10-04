@@ -39,18 +39,10 @@
         <p class="row-hint" id="modeHint"></p>
       </div>
 
-      <label class="row automatic">
-        <span class="row-text">
-          <span class="row-title">Watch browser copies</span>
-          <span class="row-hint">Checks new clipboard entries while Chrome is focused</span>
-        </span>
-        <input type="checkbox" role="switch" class="switch" id="watchClipboard" />
-      </label>
-
       <label class="row">
         <span class="row-text">
-          <span class="row-title">Show notifications</span>
-          <span class="row-hint">A short on-page note with an Undo button</span>
+          <span class="row-title">Show toolbar indicator</span>
+          <span class="row-hint">A brief checkmark in Chrome; no system notifications</span>
         </span>
         <input type="checkbox" role="switch" class="switch" id="notify" />
       </label>
@@ -58,6 +50,7 @@
 
     <section class="card card-action">
       <button type="button" class="primary" id="copyPage" disabled>Copy this page's link</button>
+      <button type="button" id="undoClipboard">Undo last rewrite</button>
       <p class="status" id="copyStatus" role="status" aria-live="polite"></p>
     </section>
 

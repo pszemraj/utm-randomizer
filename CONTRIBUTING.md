@@ -8,7 +8,7 @@ Use the [source build](README.md#build-from-source) to load the extension and th
 
 Run focused regression tests for changed behavior and the applicable [lint, formatting, type, and build checks](docs/development.md). For documentation-only changes, check formatting, relative links, and examples against the current code. `npm run format` fixes formatting.
 
-A simulated DOM cannot establish native clipboard permissions, event trust, format preservation, focus behavior, or worker termination behavior. Changes to those paths require a real loaded-extension browser run in both configurations. Exercise real mouse/keyboard input and clipboard data; inject delays or failures when testing races. Cover newer copies, cross-frame Undo, lost acknowledgements, unsupported formats, stopped propagation, and synthetic-event attacks where relevant.
+Unit mocks cannot establish native clipboard access, format handling, browser focus, or worker termination behavior. Changes to those paths require a real loaded-extension browser run. Exercise real clipboard data and browser focus; inject delays or failures when testing races. Cover newer copies, Undo, unsupported formats, and stale writes where relevant. Keep native browser-control workflows that automation cannot reach in the [manual checks](docs/development.md#manual-testing).
 
 ## Code style
 

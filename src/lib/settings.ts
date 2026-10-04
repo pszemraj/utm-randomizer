@@ -6,9 +6,7 @@ export interface Settings {
   enabled: boolean;
   /** Believable decoys, obvious nonsense, or removal. */
   mode: Mode;
-  /** Watch new clipboard entries only while a Chrome window is focused. */
-  watchClipboard: boolean;
-  /** Show an on-page notification after a rewrite. */
+  /** Show a browser-toolbar indication after a rewrite. */
   notify: boolean;
 }
 
@@ -16,7 +14,6 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   mode: 'decoy',
-  watchClipboard: true,
   notify: true,
 };
 
@@ -25,14 +22,13 @@ const MODES: readonly Mode[] = ['decoy', 'silly', 'hybrid', 'strip'];
 
 /** Fills in defaults for missing or malformed stored values. */
 function normalize(stored: Record<string, unknown>): Settings {
-  const flag = (key: 'enabled' | 'watchClipboard' | 'notify') => {
+  const flag = (key: 'enabled' | 'notify') => {
     const value = stored[key];
     return typeof value === 'boolean' ? value : DEFAULT_SETTINGS[key];
   };
   return {
     enabled: flag('enabled'),
     mode: MODES.find((mode) => mode === stored.mode) ?? DEFAULT_SETTINGS.mode,
-    watchClipboard: flag('watchClipboard'),
     notify: flag('notify'),
   };
 }
@@ -67,7 +63,7 @@ export function watchSettings(listener: (settings: Settings) => void): () => voi
   });
 }
 
-/** Wording for notifications and menus in the given mode. */
+/** Wording for popup status and menus in the given mode. */
 export function describeMode(mode: Mode): { emoji: string; done: string; copyLink: string; copyPage: string } {
   switch (mode) {
     case 'decoy':

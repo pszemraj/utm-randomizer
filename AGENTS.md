@@ -1,22 +1,22 @@
 # AGENTS.md - UTM Randomizer
 
 UTM Randomizer is a Chrome extension that changes or removes known tracking
-parameters from copied links. Preserve functional URL bytes and clipboard formats.
+parameters from copied links. Preserve functional URL bytes and leave non-URL clipboard contents untouched.
 Decoy, Silly, Hybrid, and Remove are the four modes.
 
 ## Extension-wide behavior
 
-1. **Copy only while Chrome is open and focused.** Only a fresh copy made with
-   Chrome focused authorizes rewriting. Check browser-window focus before every
-   clipboard write, including page handlers, background watching, popup, menu,
-   shortcut, and Undo actions. Starting or regaining focus establishes an untouched
-   baseline; paste, navigation, and unrelated gestures do not authorize processing
-   existing clipboard contents.
+1. **Process new clipboard entries only while Chrome is focused.** Origin is
+   irrelevant: any new entry observed during a focused interval is eligible.
+   Poll every 200 ms; on blur, take one final tick before stopping. Every focus
+   regain establishes an untouched baseline, with no short-gap exception.
+   Explicit Copy and Undo require Chrome focus. Never rewrite existing contents
+   merely because Chrome starts, regains focus, navigates, or pastes.
 2. **Change only the clipboard payload.** URL processing must never change page
    links, the page URL, browser history, or the address bar, or trigger navigation.
 3. **Replacements are stochastic; removal is deterministic.** Decoy, Silly, and
-   Hybrid draw fresh randomness per accepted copy, shared by matching links in its
-   text and HTML. Replace the current value with a different value where its format
+   Hybrid draw fresh randomness per accepted URL entry. Replace the current value
+   with a different value where its format
    permits. Remove deletes the supported tracking parameters. Never use a fixed
    mapping across copies or infer completed processing from replacement vocabulary.
 
@@ -49,8 +49,9 @@ including extension reloads and browser-test setup. See the [source map](docs/de
 for file responsibilities.
 
 Keep the manifest, build target, and [minimum Chrome version](README.md#install)
-consistent. Do not add older-browser support unless requested. Both browser-test
-configurations must pass when browser checks apply.
+consistent. Do not add older-browser support unless requested. Run applicable
+browser tests and verify native Chrome controls in the user's actual profile;
+page fields and synthetic events cannot stand in for those controls.
 
 ## Architecture and behavior invariants
 
@@ -68,32 +69,26 @@ configurations must pass when browser checks apply.
    The current successful before-and-after write record suppresses repeated
    processing. Release it after observing different text, HTML, or formats; do not
    accumulate clipboard history or use expiry to rewrite unchanged contents.
-4. **DOM events are a trust boundary.** Content scripts run in the isolated
-   world, but page code shares the DOM and can dispatch synthetic events.
-   Copy/cut authorization, gesture intent, clipboard-change handling, and Undo
-   must reject untrusted events. A rejected synthetic Undo click must not
-   consume the listener for a later real click.
-5. **Coordinate clipboard writes.** Preserve the [shared writer and cancellation
-   guarantees](docs/behavior.md#clipboard-coordination). Use a shared epoch to reject
-   older reads from other frames and cancel pending reads and candidates on
-   browser-window focus loss. Completed processing state is separate from read
-   cancellation.
-6. **Preserve complete clipboard formats.** Follow the [format limits](docs/behavior.md#clipboard-formats)
-   and [background inspection requirements](docs/behavior.md#background-watching).
-   Preserve [Undo eligibility](docs/behavior.md#usage); do not restore rich copies as plain text.
-7. **Preserve native copy/cut behavior.** Follow the [page-copy contract](docs/behavior.md#page-copies).
-   Stopped event propagation still needs deferred reconciliation from capture.
-   Let native copy/cut finish before coordinated rewriting; preserve native cut
-   deletion. Leave a copy untouched if its path cannot verify browser-window focus
-   and preserve the complete clipboard formats.
+4. **Use one clipboard pipeline.** The offscreen document owns all clipboard
+   reads and writes. Do not restore content scripts, webpage clipboard readers,
+   host permissions, or page event authorization.
+5. **Track observed contents, not provenance.** Skip only the read-back of our own
+   output. Never suppress the original URL, add a revert guard, retain history,
+   or re-randomize unchanged contents. Different observed contents discard the
+   current before-and-after record.
+6. **Rewrite only one whole URL.** Normalize surrounding whitespace; leave prose,
+   documents, multiple URLs, and HTML-only link destinations untouched. Write
+   accepted replacements as plain text. Skip detectable images, files, and custom
+   non-text formats. Undo restores only the original URL text.
+7. **Keep feedback inside Chrome.** Use browser feedback only while Chrome is
+   focused. Never add system notifications or the notifications permission.
 8. **Messages need payload and sender checks.** Keep message contracts in
-   `src/lib/messages.ts`. Validate known payloads at runtime and enforce
-   content/popup/worker/offscreen direction before changing settings,
-   counters, or clipboard contents. Register worker listeners synchronously;
-   worker globals are temporary, not durable state.
-9. **Bound synchronous copy work.** Compact the stable link seed once before
-   deriving per-parameter seeds. Keep URL and HTML entry points bounded;
-   many tracking parameters must not cause repeated full-link hashing.
+   `src/lib/messages.ts`. Validate known payloads and enforce popup/worker/offscreen
+   direction before changing settings, counters, or clipboard contents. Register
+   worker listeners synchronously; worker globals are temporary, not durable state.
+9. **Bound synchronous URL work.** Compact the per-copy seed once before deriving
+   per-parameter seeds. Preserve the URL input bound; many tracking parameters
+   must not cause repeated full-link hashing.
 10. **Respect cleaning controls.** Preserve the [automatic and explicit action
     behavior](docs/behavior.md#usage) and [browser-copy focus limits](docs/behavior.md#background-watching).
 
@@ -101,4 +96,4 @@ configurations must pass when browser checks apply.
 
 Follow the [validation requirements](CONTRIBUTING.md#checks) and
 [code style](CONTRIBUTING.md#code-style), including doc comments and real browser
-coverage for native clipboard, trust, focus, and worker-lifecycle changes.
+coverage for native clipboard, focus, and worker-lifecycle changes.

@@ -1,27 +1,22 @@
-import {
-  isClipboardEpoch,
-  isExtensionMessage,
-  isWorkerSender,
-  type ExtensionMessage,
-  type ToastPayload,
-  type WatchConfig,
-} from './lib/messages';
+import { isExtensionMessage, isWorkerSender, type ExtensionMessage, type WatchConfig } from './lib/messages';
 import { createSeed } from './lib/prng';
-import { getRewriteSkipReason, hasTrackingParams, rewriteUrl } from './lib/rewrite';
+import { rewriteUrl } from './lib/rewrite';
 import { DEFAULT_SETTINGS, describeMode, loadSettings, watchSettings, type Settings } from './lib/settings';
 
 const MENU_COPY_LINK = 'copy-clean-link';
 const MENU_COPY_PAGE = 'copy-clean-page';
 const COMMAND_COPY_PAGE = 'copy-clean-page-url';
 const WEB_PAGES = ['http://*/*', 'https://*/*'];
+const WINDOW_TYPES: `${chrome.windows.WindowType}`[] = ['normal', 'popup', 'devtools'];
+let badgeTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Context menu labels, worded for the current mode. */
+/** Context menu labels for the selected mode. */
 function menuTitles(mode: Settings['mode']): Record<typeof MENU_COPY_LINK | typeof MENU_COPY_PAGE, string> {
   const { copyLink, copyPage } = describeMode(mode);
   return { [MENU_COPY_LINK]: copyLink, [MENU_COPY_PAGE]: copyPage };
 }
 
-/** (Re)creates the context menu entries; safe to call repeatedly. */
+/** Recreates the explicit copy actions. */
 async function createMenus(): Promise<void> {
   const titles = menuTitles((await loadSettings()).mode);
   await chrome.contextMenus.removeAll();
@@ -41,10 +36,7 @@ async function createMenus(): Promise<void> {
 
 let statsQueue: Promise<void> = Promise.resolve();
 
-/**
- * Adds `urls` to the lifetime total (local storage) and the browser-session count (session
- * storage). Increments are serialized so concurrent tabs cannot lose counts.
- */
+/** Serializes increments of lifetime and browser-session rewrite counters. */
 function countRewrites(urls: number): Promise<void> {
   statsQueue = statsQueue
     .then(async () => {
@@ -57,46 +49,41 @@ function countRewrites(urls: number): Promise<void> {
         chrome.storage.session.set({ sessionCount: (Number(sessionCount) || 0) + urls }),
       ]);
     })
-    .catch((error: unknown) => {
-      console.debug('UTM Randomizer: could not update stats', error);
-    });
+    .catch((error: unknown) => console.debug('UTM Randomizer: could not update stats', error));
   return statsQueue;
 }
 
-// The offscreen document is the service worker's clipboard (it has no DOM of its own). It stays
-// open while automatic cleaning is on and is created on demand otherwise. Every
-// operation on it is serialized, because only one offscreen document may exist at a time.
 let offscreenQueue: Promise<unknown> = Promise.resolve();
-/** Cancels automatic work waiting in the worker when settings or Chrome-window focus change. */
+/** Invalidates queued automatic work on settings or window-focus changes. */
 let automaticRevision = 0;
-/** Cancels queued explicit actions when Chrome-window focus changes. */
+/** Invalidates queued explicit actions on window-focus changes. */
 let focusRevision = 0;
 
-/** Runs `task` after every earlier offscreen operation has finished. */
+/** Runs an operation after previous offscreen operations finish. */
 function withOffscreen<T>(task: () => Promise<T>): Promise<T> {
   const result = offscreenQueue.then(task);
   offscreenQueue = result.catch(() => undefined);
   return result;
 }
 
-/** Whether the offscreen document currently exists. */
+/** Whether the clipboard document exists. */
 async function hasOffscreen(): Promise<boolean> {
   const contexts = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
   return contexts.length > 0;
 }
 
-/** Creates the offscreen document unless it already exists. */
+/** Creates the sole extension-owned clipboard reader and writer. */
 async function ensureOffscreen(): Promise<void> {
   if (!(await hasOffscreen())) {
     await chrome.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: [chrome.offscreen.Reason.CLIPBOARD],
-      justification: 'Write cleaned links to the clipboard and watch it for links with tracking parameters',
+      justification: 'Read and rewrite copied URLs while Chrome is focused',
     });
   }
 }
 
-/** Sends a message to the offscreen document and checks that it succeeded. */
+/** Requires an acknowledgement from the clipboard coordinator. */
 async function tellOffscreen(message: ExtensionMessage): Promise<void> {
   const response: unknown = await chrome.runtime.sendMessage(message);
   if (!(typeof response === 'object' && response !== null && 'ok' in response && response.ok === true)) {
@@ -104,36 +91,28 @@ async function tellOffscreen(message: ExtensionMessage): Promise<void> {
   }
 }
 
-/** The background watcher's configuration for the given settings, or null when it should be off. */
-function watchConfigFor(settings: Settings, focused: boolean): WatchConfig | null {
-  return settings.enabled && settings.watchClipboard && focused ? { mode: settings.mode } : null;
-}
-
-/** Starts, reconfigures, or stops the background clipboard watcher to match the current settings. */
+/** Starts, reconfigures, or suspends polling; focus regain always takes a baseline. */
 function syncWatcher(suspend = false): Promise<void> {
   const revision = automaticRevision;
   return withOffscreen(async () => {
     const settings = await loadSettings();
-    const focused = !suspend && (await chrome.windows.getLastFocused()).focused;
-    // A focus-loss boundary must reach the coordinator even if Chrome regained focus while queued.
+    const focused = !suspend && (await chrome.windows.getLastFocused({ windowTypes: WINDOW_TYPES })).focused;
     if (!suspend && revision !== automaticRevision) return;
-    const config = watchConfigFor(settings, focused);
+    const config: WatchConfig | null = settings.enabled && focused ? { mode: settings.mode } : null;
     if (settings.enabled) {
       await ensureOffscreen();
       if (!suspend && revision !== automaticRevision) return;
       await tellOffscreen({ type: 'watch-config', config });
     } else if (await hasOffscreen()) {
-      await chrome.offscreen.closeDocument();
+      await tellOffscreen({ type: 'watch-config', config: null });
     }
-  }).catch((error: unknown) => {
-    console.debug('UTM Randomizer: could not update the clipboard watcher', error);
-  });
+  }).catch((error: unknown) => console.debug('UTM Randomizer: could not update the clipboard watcher', error));
 }
 
-/** Reads actual browser focus and publishes a missed loss before any later automatic operation. */
+/** Detects an unreported focus loss before authorizing clipboard access. */
 async function focusedWindow(): Promise<chrome.windows.Window> {
   const revision = automaticRevision;
-  const window = await chrome.windows.getLastFocused();
+  const window = await chrome.windows.getLastFocused({ windowTypes: WINDOW_TYPES });
   if (!window.focused && revision === automaticRevision) {
     automaticRevision += 1;
     focusRevision += 1;
@@ -142,178 +121,54 @@ async function focusedWindow(): Promise<chrome.windows.Window> {
   return window;
 }
 
-/** Sends an explicit clipboard operation through the offscreen coordinator. */
+/** Focus-gates explicit Copy and Undo operations through the sole writer. */
 function performClipboardOperation(message: ExtensionMessage, revision = focusRevision): Promise<void> {
   return withOffscreen(async () => {
     await ensureOffscreen();
-    try {
-      const focused = await focusedWindow();
-      if (!focused.focused || revision !== focusRevision) throw new Error('Chrome clipboard focus changed');
-      await tellOffscreen(message);
-    } finally {
-      // Keep Undo suppression while automatic cleaning is enabled, even without global polling.
-      if (!(await loadSettings()).enabled) {
-        await chrome.offscreen.closeDocument();
-      }
-    }
+    const focused = await focusedWindow();
+    if (!focused.focused || revision !== focusRevision) throw new Error('Chrome clipboard focus changed');
+    await tellOffscreen(message);
   });
 }
 
-/** Puts `text` on the clipboard through the offscreen document. */
+/** Puts an explicit URL copy on the clipboard. */
 function writeClipboard(text: string, revision = focusRevision): Promise<void> {
   return performClipboardOperation({ type: 'offscreen-copy', text }, revision);
 }
 
-/** Reconciles a page's observation against the current clipboard and settings. */
-function reconcileClipboard(
-  text: string,
-  embedded: boolean,
-  types: string[],
-  epoch: string,
-  tabId: number | undefined,
-  windowId: number | undefined,
-  pageCopy: boolean,
-  baseline?: string,
-  baseUrl?: string,
-  observeOnly?: boolean,
-): Promise<void> {
-  const revision = automaticRevision;
-  return withOffscreen(async () => {
-    const settings = await loadSettings();
-    if (!settings.enabled || (!pageCopy && !settings.watchClipboard)) {
-      return;
-    }
-    await ensureOffscreen();
-    const focused = await focusedWindow();
-    if (!focused.focused || focused.id !== windowId || revision !== automaticRevision) return;
-    await tellOffscreen({
-      type: 'offscreen-reconcile',
-      text,
-      embedded,
-      types,
-      epoch,
-      pageCopy,
-      baseline,
-      baseUrl,
-      observeOnly,
-      config: { mode: settings.mode },
-      tabId,
-    });
-  });
-}
-
-/** Captures the coordinator generation, advancing it for newer automatic page intent. */
-function clipboardEpoch(intent: boolean, windowId: number | undefined): Promise<string> {
-  const revision = automaticRevision;
-  return withOffscreen(async () => {
-    if (intent && !(await loadSettings()).enabled) throw new Error('Automatic cleaning is paused');
-    await ensureOffscreen();
-    const focused = await focusedWindow();
-    if (!focused.focused || focused.id !== windowId || revision !== automaticRevision)
-      throw new Error('Chrome clipboard focus changed');
-    const message: ExtensionMessage = { type: intent ? 'offscreen-intent' : 'offscreen-epoch' };
-    const response: unknown = await chrome.runtime.sendMessage(message);
-    if (
-      typeof response !== 'object' ||
-      response === null ||
-      !('ok' in response) ||
-      response.ok !== true ||
-      !('epoch' in response) ||
-      !isClipboardEpoch(response.epoch)
-    ) {
-      throw new Error('Clipboard generation was not acknowledged');
-    }
-    return response.epoch;
-  });
-}
-
-/** Asks the active page to inspect formats before the offscreen watcher may reconcile them. */
-async function inspectClipboard(): Promise<void> {
-  const revision = automaticRevision;
-  const settings = await loadSettings();
-  if (!settings.enabled || !settings.watchClipboard) {
-    throw new Error('Whole-clipboard watching is disabled');
-  }
-  const focused = await focusedWindow();
-  if (!focused.focused || focused.id === undefined || revision !== automaticRevision)
-    throw new Error('Chrome is not focused');
-  const [tab] = await chrome.tabs.query({ active: true, windowId: focused.id });
-  if (revision !== automaticRevision) throw new Error('Chrome clipboard focus changed');
-  if (tab?.id === undefined) {
-    throw new Error('No active clipboard reader');
-  }
-  const message: ExtensionMessage = { type: 'inspect-clipboard' };
-  const response: unknown = await chrome.tabs.sendMessage(tab.id, message, { frameId: 0 });
-  if (!(typeof response === 'object' && response !== null && 'ok' in response && response.ok === true)) {
-    throw new Error('Clipboard inspection was not acknowledged');
-  }
-}
-
-/** Shows `text` on the toolbar icon for two seconds in the given tab. */
-async function flashBadge(tabId: number, text: string, color: string): Promise<void> {
-  await chrome.action.setBadgeBackgroundColor({ tabId, color });
-  await chrome.action.setBadgeText({ tabId, text });
-  setTimeout(() => {
-    chrome.action.setBadgeText({ tabId, text: '' }).catch(() => undefined);
+/** Shows a brief toolbar indication only while Chrome is focused, never a system notification. */
+async function notify(ok = true): Promise<void> {
+  const revision = focusRevision;
+  if (
+    !(await loadSettings()).notify ||
+    !(await chrome.windows.getLastFocused({ windowTypes: WINDOW_TYPES })).focused ||
+    revision !== focusRevision
+  )
+    return;
+  clearTimeout(badgeTimer);
+  await chrome.action.setBadgeBackgroundColor({ color: ok ? '#2e7d32' : '#c62828' });
+  await chrome.action.setBadgeText({ text: ok ? '✓' : '!' });
+  badgeTimer = setTimeout(() => {
+    void chrome.action.setBadgeText({ text: '' }).catch(() => undefined);
   }, 2000);
 }
 
-/** Shows a toast in the tab's top frame; falls back to the toolbar badge where no content script runs. */
-async function notifyTab(tabId: number | undefined, toast: ToastPayload, ok: boolean): Promise<void> {
-  if (tabId === undefined || tabId < 0) {
-    return;
-  }
-  const message: ExtensionMessage = { type: 'toast', toast };
-  try {
-    await chrome.tabs.sendMessage(tabId, message, { frameId: 0 });
-  } catch {
-    await flashBadge(tabId, ok ? '✓' : '!', ok ? '#2e7d32' : '#c62828').catch(() => undefined);
-  }
-}
-
-/** Copies `url` with its tracking parameters rewritten (explicit user action: menu or shortcut). */
-async function copyCleanLink(url: string, tabId: number | undefined): Promise<void> {
+/** Copies a menu or shortcut URL using fresh randomness even while automatic cleaning is paused. */
+async function copyCleanLink(url: string): Promise<void> {
   const revision = focusRevision;
   const settings = await loadSettings();
   const result = rewriteUrl(url, { mode: settings.mode, key: createSeed() });
   try {
     await writeClipboard(result?.url ?? url, revision);
-  } catch (error) {
-    console.debug('UTM Randomizer: copy failed', error);
-    await notifyTab(tabId, { message: 'Could not copy the link' }, false);
+  } catch {
+    await notify(false);
     return;
   }
-  if (result) {
-    await countRewrites(1);
-  }
-  if (settings.notify) {
-    const { emoji, done } = describeMode(settings.mode);
-    const skipReason = getRewriteSkipReason(url);
-    const message = result
-      ? `${emoji} Link copied, tracking ${done}`
-      : skipReason === 'signed'
-        ? '📋 Signed link copied unchanged'
-        : hasTrackingParams(url)
-          ? `${emoji} Link copied, tracking already ${done}`
-          : '📋 Link copied unchanged';
-    await notifyTab(tabId, { message }, true);
-  }
+  if (result) await countRewrites(1);
+  await notify();
 }
 
-/** Shows a background watcher rewrite in the tab the user is looking at. */
-async function notifyActiveTab(toast: ToastPayload): Promise<void> {
-  if (!(await loadSettings()).notify) {
-    return;
-  }
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  if (tab?.id !== undefined) {
-    const message: ExtensionMessage = { type: 'toast', toast };
-    // Pages without a content script (browser pages, the Web Store) simply get no toast.
-    await chrome.tabs.sendMessage(tab.id, message, { frameId: 0 }).catch(() => undefined);
-  }
-}
-
-/** Whether a message came from this extension's offscreen coordinator. */
+/** Identifies the extension's clipboard coordinator. */
 function isOffscreenSender(sender: chrome.runtime.MessageSender): boolean {
   return (
     sender.id === chrome.runtime.id &&
@@ -322,206 +177,103 @@ function isOffscreenSender(sender: chrome.runtime.MessageSender): boolean {
   );
 }
 
-/** Whether a message came from this extension's popup. */
+/** Identifies this extension's popup. */
 function isPopupSender(sender: chrome.runtime.MessageSender): boolean {
   return sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL('popup.html');
 }
 
-/** Whether a message came from an injected script in a tab. */
-function isContentSender(sender: chrome.runtime.MessageSender): boolean {
-  return sender.id === chrome.runtime.id && sender.tab?.id !== undefined && !isPopupSender(sender);
-}
-
-/** Acknowledges a coordinator operation, including failed or missing offscreen acknowledgements. */
+/** Acknowledges queued operations without reporting success after a rejected write. */
 function acknowledge(operation: Promise<void>, sendResponse: (response: { ok: boolean }) => void): void {
   operation.then(
-    () => {
-      sendResponse({ ok: true });
-    },
-    () => {
-      sendResponse({ ok: false });
-    },
+    () => sendResponse({ ok: true }),
+    () => sendResponse({ ok: false }),
   );
 }
 
 chrome.runtime.onInstalled.addListener(() => {
   void createMenus();
-  // Remove obsolete lifetime seed and the version 1 never-reset "session" counter.
   void chrome.storage.local.remove(['sessionCount', 'secret']);
 });
-
-// Menus normally persist, but recreating them on startup is cheap insurance (createMenus is idempotent).
 chrome.runtime.onStartup.addListener(() => {
   void createMenus();
 });
-
-// Invalidate before the asynchronous settings reload or queued watcher update can finish.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) automaticRevision += 1;
 });
-
-chrome.windows.onFocusChanged.addListener((windowId) => {
-  automaticRevision += 1;
-  focusRevision += 1;
-  // Chrome can omit the loss notification, so every gain also starts a fresh baseline.
-  void syncWatcher(true);
-  if (windowId !== chrome.windows.WINDOW_ID_NONE) void syncWatcher();
-});
-
+chrome.windows.onFocusChanged.addListener(
+  (windowId) => {
+    automaticRevision += 1;
+    focusRevision += 1;
+    if (windowId === chrome.windows.WINDOW_ID_NONE) {
+      // Deliver the final tick directly, without waiting behind settings or explicit-copy work.
+      void tellOffscreen({ type: 'offscreen-blur' }).catch(() => undefined);
+    } else {
+      void syncWatcher();
+    }
+  },
+  { windowTypes: WINDOW_TYPES },
+);
 watchSettings((settings) => {
   void syncWatcher();
-  const titles = menuTitles(settings.mode);
-  for (const [id, title] of Object.entries(titles)) {
+  for (const [id, title] of Object.entries(menuTitles(settings.mode))) {
     chrome.contextMenus.update(id, { title }).catch(() => undefined);
   }
 });
-
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+chrome.contextMenus.onClicked.addListener((info) => {
   const url =
     info.menuItemId === MENU_COPY_LINK ? info.linkUrl : info.menuItemId === MENU_COPY_PAGE ? info.pageUrl : undefined;
-  if (url) {
-    void copyCleanLink(url, tab?.id);
-  }
+  if (url) void copyCleanLink(url);
 });
-
 chrome.commands.onCommand.addListener((command, tab) => {
-  if (command === COMMAND_COPY_PAGE && tab?.url && /^https?:/i.test(tab.url)) {
-    void copyCleanLink(tab.url, tab.id);
+  if (command === COMMAND_COPY_PAGE && tab?.url && /^https?:/i.test(tab.url)) void copyCleanLink(tab.url);
+});
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (response: { ok: boolean }) => void) => {
+  if (!isExtensionMessage(message)) {
+    if (
+      typeof message === 'object' &&
+      message !== null &&
+      'type' in message &&
+      ['rewritten', 'count', 'copy-clipboard', 'undo-clipboard'].includes(String(message.type))
+    )
+      sendResponse({ ok: false });
+    return false;
+  }
+  switch (message.type) {
+    case 'rewritten':
+      if (!isOffscreenSender(sender)) {
+        sendResponse({ ok: false });
+        return false;
+      }
+      void countRewrites(message.urls);
+      void notify();
+      return false;
+    case 'count':
+      if (!isPopupSender(sender)) {
+        sendResponse({ ok: false });
+        return false;
+      }
+      void countRewrites(message.urls);
+      return false;
+    case 'copy-clipboard':
+      if (!isPopupSender(sender)) {
+        sendResponse({ ok: false });
+        return false;
+      }
+      acknowledge(writeClipboard(message.text), sendResponse);
+      return true;
+    case 'undo-clipboard':
+      if (!isPopupSender(sender)) {
+        sendResponse({ ok: false });
+        return false;
+      }
+      acknowledge(performClipboardOperation({ type: 'offscreen-restore' }), sendResponse);
+      return true;
+    case 'offscreen-copy':
+    case 'offscreen-restore':
+    case 'offscreen-blur':
+    case 'watch-config':
+      if (!isWorkerSender(sender)) sendResponse({ ok: false });
+      return false;
   }
 });
-
-chrome.runtime.onMessage.addListener(
-  (message: unknown, sender, sendResponse: (response: { ok: boolean; epoch?: string }) => void) => {
-    if (!isExtensionMessage(message)) {
-      // Offscreen controls have their own receiver; do not race its acknowledgement.
-      if (
-        typeof message === 'object' &&
-        message !== null &&
-        'type' in message &&
-        typeof message.type === 'string' &&
-        [
-          'rewritten',
-          'count',
-          'reconcile-clipboard',
-          'restore-clipboard',
-          'copy-clipboard',
-          'inspect-clipboard',
-          'clipboard-epoch',
-          'clipboard-intent',
-        ].includes(message.type)
-      ) {
-        sendResponse({ ok: false });
-      }
-      return false;
-    }
-    const content = isContentSender(sender);
-    const popup = isPopupSender(sender);
-    const offscreen = isOffscreenSender(sender);
-    switch (message.type) {
-      case 'rewritten': {
-        if (!offscreen) {
-          sendResponse({ ok: false });
-          return false;
-        }
-        void countRewrites(message.urls);
-        const tabId = message.tabId;
-        if (message.relayToast) {
-          const toast = message.relayToast;
-          void loadSettings().then((settings) => {
-            if (!settings.notify) {
-              return;
-            }
-            if (tabId !== undefined) {
-              const notification: ExtensionMessage = { type: 'toast', toast };
-              void chrome.tabs.sendMessage(tabId, notification, { frameId: 0 }).catch(() => undefined);
-            } else {
-              void notifyActiveTab(toast);
-            }
-          });
-        }
-        return false;
-      }
-      case 'count':
-        if (!popup) {
-          sendResponse({ ok: false });
-          return false;
-        }
-        void countRewrites(message.urls);
-        return false;
-      case 'reconcile-clipboard':
-        if (!content) {
-          sendResponse({ ok: false });
-          return false;
-        }
-        acknowledge(
-          reconcileClipboard(
-            message.text,
-            message.embedded,
-            message.types,
-            message.epoch,
-            sender.tab?.id,
-            sender.tab?.windowId,
-            message.pageCopy,
-            message.baseline,
-            message.pageCopy ? sender.url : undefined,
-            message.observeOnly,
-          ),
-          sendResponse,
-        );
-        return true;
-      case 'clipboard-intent':
-      case 'clipboard-epoch':
-        if (!content) {
-          sendResponse({ ok: false });
-          return false;
-        }
-        clipboardEpoch(message.type === 'clipboard-intent', sender.tab?.windowId).then(
-          (epoch) => {
-            sendResponse({ ok: true, epoch });
-          },
-          () => {
-            sendResponse({ ok: false });
-          },
-        );
-        return true;
-      case 'inspect-clipboard':
-        if (!offscreen) {
-          sendResponse({ ok: false });
-          return false;
-        }
-        // Do not join the offscreen queue: the reader can send a nested reconciliation request.
-        acknowledge(inspectClipboard(), sendResponse);
-        return true;
-      case 'restore-clipboard':
-        if (!content) {
-          sendResponse({ ok: false });
-          return false;
-        }
-        acknowledge(performClipboardOperation({ type: 'offscreen-restore', text: message.text }), sendResponse);
-        return true;
-      case 'copy-clipboard':
-        if (!popup) {
-          sendResponse({ ok: false });
-          return false;
-        }
-        acknowledge(writeClipboard(message.text), sendResponse);
-        return true;
-      case 'offscreen-copy':
-      case 'offscreen-restore':
-      case 'offscreen-reconcile':
-      case 'offscreen-epoch':
-      case 'offscreen-intent':
-      case 'watch-config':
-        if (!isWorkerSender(sender)) {
-          sendResponse({ ok: false });
-        }
-        return false;
-      default:
-        return false;
-    }
-  },
-);
-
-// The worker restarts often; each start makes sure the watcher matches the settings (for example
-// after the browser discarded the offscreen document).
 void syncWatcher();

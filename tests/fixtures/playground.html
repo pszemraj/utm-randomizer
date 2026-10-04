@@ -154,8 +154,8 @@
     <main>
       <h1>UTM Randomizer playground</h1>
       <p class="muted">
-        Every control copies a link the way real sites do. Paste into the box at the bottom (or anywhere) to see what
-        reached your clipboard. In <strong>Decoy</strong> mode tracking values turn into believable fakes, in
+        Copy a single URL, then paste into the box at the bottom (or anywhere) to see what reached your clipboard. Prose
+        and multiple links stay untouched. In <strong>Decoy</strong> mode tracking values turn into believable fakes, in
         <strong>Silly</strong> mode into nonsense, in <strong>Hybrid</strong> mode into a mix of both, and in
         <strong>Remove</strong> mode they disappear. Links under “Should not change” must paste exactly as shown.
       </p>
@@ -189,7 +189,7 @@
           class="row"
           data-text="Check this out: https://example.com/a?utm_source=twitter&amp;x=1 and https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c3d&amp;utm_source=share"
         >
-          <button data-copy="writeText" data-testid="copy-sharetext">Share text with 2 links</button>
+          <button data-copy="writeText" data-testid="copy-sharetext">Prose with 2 links (unchanged)</button>
           <span class="url"></span>
         </div>
       </section>
@@ -218,9 +218,9 @@
       <section>
         <h2>Outside the page</h2>
         <p class="muted">
-          With “Watch browser copies” on, new clipboard entries are checked only while Chrome is focused. Copy this link
-          in another app, return to Chrome, and paste it below: it should stay unchanged. A new copy made while Chrome
-          is focused should be cleaned.
+          While automatic cleaning is enabled, new clipboard entries are checked only while Chrome is focused. Copy this
+          link while Chrome is unfocused, return to Chrome, and paste it below: it should stay unchanged. A new entry
+          appearing while Chrome is focused should be cleaned, whatever wrote it.
         </p>
         <p>
           <code
@@ -280,7 +280,7 @@
           />
         </div>
         <div class="row">
-          <span>Text area (links inside text)</span>
+          <span>Prose with links (unchanged)</span>
           <textarea data-testid="select-textarea" rows="3">
 Notes: https://example.com/a?utm_campaign=x&id=1 and https://example.com/b?fbclid=y&id=2.</textarea>
         </div>

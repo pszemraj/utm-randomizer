@@ -3,204 +3,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { ExtensionMessage } from '../../src/lib/messages';
 import { rewriteUrl } from '../../src/lib/rewrite';
 
-const EPOCH = '00000000-0000-4000-8000-000000000001';
-const TRACKED = 'https://example.com/page?utm_source=newsletter';
+const TRACKED = 'https://example.com/page?utm_source=linkedin';
 const CLEAN = 'https://example.com/page';
 const CONFIG = { mode: 'strip' as const };
 const WORKER = { id: 'extension-id' };
-
-it('leaves the focus-gain baseline untouched when an observer reports it', async () => {
-  const { clipboard, message, readEpoch, writes } = await start();
-  message({ type: 'watch-config', config: null });
-  clipboard.text = TRACKED;
-  message({ type: 'watch-config', config: CONFIG });
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: false,
-    text: TRACKED,
-    embedded: true,
-    types: clipboard.types,
-    epoch: readEpoch(),
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(TRACKED);
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it('baselines an outside copy when focus gain resets an already active watcher', async () => {
-  const { clipboard, message, writes } = await start();
-  clipboard.text = TRACKED;
-  // Chrome may report only the gain; the worker still sends a suspend/resume pair.
-  message({ type: 'watch-config', config: null });
-  message({ type: 'watch-config', config: CONFIG });
-  await vi.advanceTimersByTimeAsync(1500);
-  expect(clipboard.text).toBe(TRACKED);
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it('retains a staged candidate across a same-focus worker refresh', async () => {
-  const { clipboard, message, writes } = await start();
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(750);
-  message({ type: 'watch-config', config: CONFIG });
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(clipboard.text).toBe(CLEAN);
-  expect(writes).toHaveBeenCalledOnce();
-});
-
-it('discards a staged candidate on focus loss and baselines the next focused interval', async () => {
-  const { clipboard, message, readEpoch, writes } = await start();
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(750);
-  message({ type: 'watch-config', config: null });
-  clipboard.html = `<a href="${TRACKED}">External rich copy</a>`;
-  clipboard.types = ['text/plain', 'text/html'];
-  const reconcile = () =>
-    message({
-      type: 'offscreen-reconcile',
-      pageCopy: false,
-      text: clipboard.text,
-      embedded: true,
-      types: clipboard.types,
-      epoch: readEpoch(),
-      config: CONFIG,
-    });
-  reconcile();
-  message({ type: 'watch-config', config: CONFIG });
-  reconcile();
-  await vi.advanceTimersByTimeAsync(1500);
-  expect(writes).not.toHaveBeenCalled();
-  // An HTML-only change after the baseline is still a fresh clipboard entry.
-  clipboard.html = `<a href="${TRACKED}">Fresh rich copy</a>`;
-  reconcile();
-  expect(writes).toHaveBeenCalledOnce();
-  expect(clipboard.text).toBe(CLEAN);
-  expect(clipboard.html).toBe(`<a href="${CLEAN}">Fresh rich copy</a>`);
-});
-
-it.each([false, true])(
-  'does not let a raced page baseline consume a fresh background entry (staged %s)',
-  async (staged) => {
-    const { clipboard, message, readEpoch, writes } = await start();
-    clipboard.text = 'ordinary previous contents';
-    await vi.advanceTimersByTimeAsync(750);
-    clipboard.text = TRACKED;
-    if (staged) await vi.advanceTimersByTimeAsync(750);
-    message({
-      type: 'offscreen-reconcile',
-      pageCopy: true,
-      text: TRACKED,
-      baseline: TRACKED,
-      embedded: false,
-      types: clipboard.types,
-      epoch: readEpoch(),
-      config: CONFIG,
-      observeOnly: true,
-    });
-    await vi.advanceTimersByTimeAsync(1500);
-    expect(clipboard.text).toBe(CLEAN);
-    expect(writes).toHaveBeenCalledOnce();
-  },
-);
-
-it('advances observation after unrelated text so a repeated output can become a fresh entry', async () => {
-  const { clipboard, message, readEpoch, writes } = await start();
-  message({ type: 'offscreen-copy', text: TRACKED });
-  clipboard.text = 'unrelated contents';
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: false,
-    text: clipboard.text,
-    embedded: true,
-    types: clipboard.types,
-    epoch: readEpoch(),
-    config: CONFIG,
-    observeOnly: true,
-  });
-  clipboard.text = TRACKED;
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: false,
-    text: TRACKED,
-    embedded: true,
-    types: clipboard.types,
-    epoch: readEpoch(),
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(CLEAN);
-  expect(writes).toHaveBeenCalledTimes(2);
-});
-
-it.each([false, true])(
-  'retains its exact successful output across intent and configuration (HTML %s)',
-  async (rich) => {
-    const { clipboard, writes, message, readEpoch } = await start();
-    const config = { mode: 'decoy' as const };
-    clipboard.text = TRACKED;
-    if (rich) {
-      clipboard.html = `<a href="${TRACKED}">${TRACKED}</a>`;
-      clipboard.types = ['text/plain', 'text/html'];
-    }
-    const reconcile = () =>
-      message({
-        type: 'offscreen-reconcile',
-        pageCopy: true,
-        text: clipboard.text,
-        embedded: true,
-        types: clipboard.types,
-        epoch: readEpoch(),
-        config,
-      });
-    reconcile();
-    const output = { ...clipboard };
-    message({ type: 'offscreen-intent' });
-    reconcile();
-    message({ type: 'watch-config', config });
-    reconcile();
-    expect(clipboard).toEqual(output);
-    expect(writes).toHaveBeenCalledOnce();
-    // An observed different payload expires the single retained output.
-    clipboard.text = 'another copy';
-    clipboard.html = null;
-    clipboard.types = ['text/plain'];
-    reconcile();
-    Object.assign(clipboard, output);
-    reconcile();
-    expect(clipboard.text).not.toBe(output.text);
-    expect(writes).toHaveBeenCalledTimes(2);
-  },
-);
-
-it('expires completed output after a nonrewritable observation with polling disabled', async () => {
-  const { clipboard, message, readEpoch, writes } = await start();
-  message({ type: 'watch-config', config: null });
-  const output = 'https://example.com/page?utm_source=email';
-  message({ type: 'offscreen-copy', text: output });
-  clipboard.text = 'ordinary prose';
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text: clipboard.text,
-    embedded: true,
-    types: clipboard.types,
-    epoch: readEpoch(),
-    config: CONFIG,
-    observeOnly: true,
-  });
-  expect(writes).toHaveBeenCalledOnce();
-  clipboard.text = output;
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text: output,
-    embedded: true,
-    types: clipboard.types,
-    epoch: readEpoch(),
-    config: { mode: 'decoy' },
-  });
-  expect(writes).toHaveBeenCalledTimes(2);
-  expect(clipboard.text).not.toBe(output);
-});
 
 /** Clipboard flavors presented by one fake synchronous paste. */
 interface FakeClipboard {
@@ -228,40 +34,9 @@ async function start() {
   if (!textarea) throw new Error('Missing clipboard field');
   const clipboard: FakeClipboard = { text: 'baseline', html: null, types: ['text/plain'] };
   let onMessage:
-    | ((
-        message: unknown,
-        sender: chrome.runtime.MessageSender,
-        respond: (response: { ok: boolean; epoch?: string }) => void,
-      ) => void)
+    | ((message: unknown, sender: chrome.runtime.MessageSender, respond: (response: { ok: boolean }) => void) => void)
     | undefined;
-  const inspector = { enabled: true };
-  const sendMessage = vi.fn<(message: ExtensionMessage) => Promise<unknown>>((payload) => {
-    if (payload.type !== 'inspect-clipboard') return Promise.resolve(undefined);
-    if (!inspector.enabled) return Promise.resolve({ ok: false });
-    const types = clipboard.nativeTypes ?? clipboard.types;
-    if (types.some((type) => type !== 'text/plain' && type !== 'text/html')) return Promise.resolve({ ok: false });
-    let epoch = '';
-    onMessage?.({ type: 'offscreen-epoch' }, WORKER, (value) => {
-      epoch = value.epoch ?? '';
-    });
-    let response = { ok: false };
-    onMessage?.(
-      {
-        type: 'offscreen-reconcile',
-        pageCopy: false,
-        text: clipboard.text,
-        embedded: true,
-        config: CONFIG,
-        types,
-        epoch,
-      },
-      WORKER,
-      (value) => {
-        response = value;
-      },
-    );
-    return Promise.resolve(response);
-  });
+  const sendMessage = vi.fn<(message: ExtensionMessage) => Promise<unknown>>(() => Promise.resolve(undefined));
   vi.stubGlobal('chrome', {
     runtime: {
       id: WORKER.id,
@@ -306,15 +81,287 @@ async function start() {
     return response;
   };
   message({ type: 'watch-config', config: CONFIG });
-  const readEpoch = () => {
-    let epoch = '';
-    listener({ type: 'offscreen-epoch' }, WORKER, (response) => {
-      epoch = response.epoch ?? '';
-    });
-    return epoch;
-  };
-  return { clipboard, sendMessage, message, writes, inspector, readEpoch };
+  return { clipboard, sendMessage, message, writes };
 }
+
+it('leaves startup and focus-gain baselines untouched', async () => {
+  const { clipboard, message, writes } = await start();
+  message({ type: 'watch-config', config: null });
+  clipboard.text = TRACKED;
+  message({ type: 'watch-config', config: CONFIG });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it('observes a fresh entry across a same-focus worker refresh', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  message({ type: 'watch-config', config: CONFIG });
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
+it('does not rewrite entries while stopped and baselines the next focused interval', async () => {
+  const { clipboard, message, writes } = await start();
+  message({ type: 'watch-config', config: null });
+  clipboard.text = TRACKED;
+  clipboard.html = `<a href="${TRACKED}">External copy</a>`;
+  clipboard.types = ['text/plain', 'text/html'];
+  await vi.advanceTimersByTimeAsync(1000);
+  message({ type: 'watch-config', config: CONFIG });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(writes).not.toHaveBeenCalled();
+  clipboard.html = `<a href="${TRACKED}">Fresh copy</a>`;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(clipboard.html).toBeNull();
+  expect(writes).toHaveBeenCalledOnce();
+});
+
+it('processes an entry copied after the last poll on blur and stops afterward', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  expect(message({ type: 'offscreen-blur' })).toHaveBeenCalledWith({ ok: true });
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
+it('pauses without flushing an entry copied since the last poll', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  message({ type: 'watch-config', config: null });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it('rewrites a fresh URL without a website reader and leaves its output stable', async () => {
+  const { clipboard, sendMessage, writes } = await start();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+  expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rewritten', urls: 1 }));
+  await vi.advanceTimersByTimeAsync(50 * 200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
+it.each(['decoy', 'silly', 'hybrid'] as const)(
+  'replaces plausible input on each fresh copy without an output loop (%s)',
+  async (mode) => {
+    const { clipboard, message, writes } = await start();
+    message({ type: 'watch-config', config: { mode } });
+    const results = new Set<string>();
+    for (let copy = 0; copy < 8; copy += 1) {
+      clipboard.text = TRACKED;
+      await vi.advanceTimersByTimeAsync(200);
+      expect(clipboard.text).not.toBe(TRACKED);
+      results.add(clipboard.text);
+      const output = clipboard.text;
+      await vi.advanceTimersByTimeAsync(50 * 200);
+      expect(clipboard.text).toBe(output);
+      expect(writes).toHaveBeenCalledTimes(copy + 1);
+    }
+    expect(results.size).toBeGreaterThan(1);
+  },
+);
+
+it('removes tracking deterministically on repeated fresh copies', async () => {
+  const { clipboard, writes } = await start();
+  for (let copy = 0; copy < 4; copy += 1) {
+    clipboard.text = TRACKED;
+    await vi.advanceTimersByTimeAsync(200);
+    expect(clipboard.text).toBe(CLEAN);
+    expect(writes).toHaveBeenCalledTimes(copy + 1);
+  }
+});
+
+it.each([false, true])('retains completed output across configuration (HTML %s)', async (rich) => {
+  const { clipboard, writes, message } = await start();
+  message({ type: 'watch-config', config: { mode: 'decoy' } });
+  clipboard.text = TRACKED;
+  if (rich) {
+    clipboard.html = `<a href="${TRACKED}">${TRACKED}</a>`;
+    clipboard.types = ['text/plain', 'text/html'];
+  }
+  await vi.advanceTimersByTimeAsync(200);
+  const output = { ...clipboard };
+  message({ type: 'watch-config', config: { mode: 'decoy' } });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard).toEqual(output);
+  expect(writes).toHaveBeenCalledOnce();
+  clipboard.text = 'another copy';
+  await vi.advanceTimersByTimeAsync(200);
+  Object.assign(clipboard, output);
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).not.toBe(output.text);
+  expect(writes).toHaveBeenCalledTimes(2);
+});
+
+it('expires completed output after observing unrelated text', async () => {
+  const { clipboard, message, writes } = await start();
+  message({ type: 'offscreen-copy', text: TRACKED });
+  clipboard.text = 'unrelated contents';
+  await vi.advanceTimersByTimeAsync(200);
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledTimes(2);
+});
+
+it('normalizes a rewritten single URL to plain text and restores its original text on Undo', async () => {
+  const { clipboard, message } = await start();
+  const original = ` \t${TRACKED}\r\n`;
+  clipboard.text = original;
+  clipboard.html = `<a href="${TRACKED}">A link</a>`;
+  clipboard.types = ['text/plain', 'text/html'];
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(clipboard.html).toBeNull();
+  expect(clipboard.types).toEqual(['text/plain']);
+  expect(message({ type: 'offscreen-restore' })).toHaveBeenCalledWith({ ok: true });
+  expect(clipboard.text).toBe(original);
+  expect(clipboard.html).toBeNull();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(original);
+});
+
+it('retries an unchanged fresh URL after an automatic write fails', async () => {
+  const { clipboard, writes } = await start();
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises synchronous copy failure
+  const command = document.execCommand.bind(document);
+  let fail = true;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'copy' && fail) {
+      fail = false;
+      return false;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserve normal reads and subsequent writes
+    return command(name);
+  });
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
+it('retains the completed record when an Undo write fails', async () => {
+  const { clipboard, message } = await start();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises synchronous copy failure
+  const command = document.execCommand.bind(document);
+  const failedWrite = vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- let reads continue while only the write fails
+    return name === 'copy' ? false : command(name);
+  });
+  expect(message({ type: 'offscreen-restore' })).toHaveBeenCalledWith({ ok: false });
+  expect(clipboard.text).toBe(CLEAN);
+  failedWrite.mockRestore();
+  expect(message({ type: 'offscreen-restore' })).toHaveBeenCalledWith({ ok: true });
+  expect(clipboard.text).toBe(TRACKED);
+});
+
+it('cannot Undo when a different clipboard entry replaced its output', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  clipboard.text = 'another copy';
+  writes.mockClear();
+  expect(message({ type: 'offscreen-restore' })).toHaveBeenCalledWith({ ok: false });
+  expect(clipboard.text).toBe('another copy');
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it('retains Undo suppression across focus changes and expires it after another observed copy', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  message({ type: 'offscreen-restore' });
+  message({ type: 'watch-config', config: null });
+  message({ type: 'watch-config', config: CONFIG });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).toHaveBeenCalledTimes(2);
+  clipboard.text = 'another copy';
+  await vi.advanceTimersByTimeAsync(200);
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+});
+
+it.each(['image/png', 'Files', 'application/custom'])('preserves detectable non-text format %s', async (type) => {
+  const { clipboard, writes, sendMessage } = await start();
+  clipboard.text = TRACKED;
+  clipboard.types.push(type);
+  const original = { ...clipboard, types: [...clipboard.types] };
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard).toEqual(original);
+  expect(writes).not.toHaveBeenCalled();
+  expect(sendMessage).not.toHaveBeenCalled();
+});
+
+it('writes an eligible URL as plain text even when the legacy reader hides web-added data', async () => {
+  const { clipboard, writes } = await start();
+  clipboard.text = TRACKED;
+  clipboard.nativeTypes = ['text/plain', 'web application/custom'];
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(clipboard.types).toEqual(['text/plain']);
+  expect(clipboard.nativeTypes).toBeUndefined();
+  expect(writes).toHaveBeenCalledOnce();
+});
+
+it.each([
+  'A document with no links',
+  'https://example.com/item?id=42',
+  'https://cdn.example/report?utm_source=email&Expires=1&Signature=abc&Key-Pair-Id=K',
+  `Read ${TRACKED} today`,
+  `${TRACKED} ${TRACKED}`,
+  `# Report\n\n${TRACKED}\n${'A paragraph. '.repeat(100)}`,
+  `[article](${TRACKED})`,
+  '',
+  '/relative?utm_source=email',
+])('leaves non-URL document copies untouched: %s', async (text) => {
+  const { clipboard, writes, sendMessage } = await start();
+  clipboard.text = text;
+  clipboard.html = `<a href="${TRACKED}">${text}</a>`;
+  clipboard.types = ['text/plain', 'text/html'];
+  clipboard.nativeTypes = ['text/plain', 'text/html', 'web application/custom'];
+  const original = { ...clipboard };
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard).toEqual(original);
+  expect(writes).not.toHaveBeenCalled();
+  expect(sendMessage).not.toHaveBeenCalled();
+});
+
+it('checks formats again immediately before committing an automatic write', async () => {
+  const { clipboard, writes } = await start();
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- tests the synchronous offscreen reader
+  const command = document.execCommand.bind(document);
+  let reads = 0;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserve the mock before racing its formats
+    const result = command(name);
+    if (name === 'paste' && ++reads === 1) clipboard.types.push('image/png');
+    return result;
+  });
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(clipboard.types).toContain('image/png');
+  expect(writes).not.toHaveBeenCalled();
+});
 
 it('writes explicit generated and unchanged links beyond the rewrite input limit', async () => {
   const { clipboard, message } = await start();
@@ -323,639 +370,27 @@ it('writes explicit generated and unchanged links beyond the rewrite input limit
   expect(input.length).toBeLessThan(100_000);
   expect(rewritten?.length).toBeGreaterThan(100_000);
   if (!rewritten) throw new Error('Missing rewritten link');
-  const unchanged = `https://example.com/?data=${'x'.repeat(100_001)}`;
-  for (const text of [rewritten, unchanged]) {
+  for (const text of [rewritten, `https://example.com/?data=${'x'.repeat(100_001)}`]) {
     expect(message({ type: 'offscreen-copy', text })).toHaveBeenCalledWith({ ok: true });
     expect(clipboard.text).toBe(text);
   }
 });
 
-it.each([undefined, 'https://example.com/page', 'https://www.youtube.com/feed'])(
-  'uses the originating page context for relative text and HTML (%s)',
-  async (baseUrl) => {
-    const { clipboard, message, readEpoch } = await start();
-    const original = '/watch?v=1&si=abcdefgh&utm_source=email';
-    clipboard.text = original;
-    clipboard.html = `<a href="${original}">A video</a>`;
-    clipboard.types = ['text/plain', 'text/html'];
-    message({
-      type: 'offscreen-reconcile',
-      pageCopy: true,
-      epoch: readEpoch(),
-      types: clipboard.types,
-      text: original,
-      embedded: false,
-      config: CONFIG,
-      baseUrl,
-    });
-    const expected = baseUrl === undefined ? original : '/watch?v=1&si=abcdefgh';
-    expect(clipboard.text).toBe(expected);
-    const html = new DOMParser().parseFromString(clipboard.html, 'text/html');
-    expect(html.querySelector('a')?.getAttribute('href')).toBe(expected);
-    expect(html.querySelector('a')?.textContent).toBe('A video');
-    expect(clipboard.types).toEqual(['text/plain', 'text/html']);
-  },
-);
-
-it('atomically restores and suppresses Undo across reconfiguration, then expires after another copy', async () => {
-  const { clipboard, sendMessage, message, readEpoch } = await start();
-  clipboard.text = TRACKED;
-  const failedCopy = vi.spyOn(document, 'execCommand').mockReturnValueOnce(false);
-  expect(message({ type: 'offscreen-restore', text: TRACKED })).toHaveBeenCalledWith({ ok: false });
-  failedCopy.mockRestore();
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(CLEAN);
-  sendMessage.mockClear();
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(750);
-  clipboard.text = CLEAN;
-  message({ type: 'offscreen-restore', text: TRACKED });
-  const failedReplacement = vi.spyOn(document, 'execCommand').mockReturnValueOnce(false);
-  expect(message({ type: 'offscreen-restore', text: 'another tracked link' })).toHaveBeenCalledWith({ ok: false });
-  failedReplacement.mockRestore();
-  message({ type: 'watch-config', config: null });
-  message({ type: 'watch-config', config: CONFIG });
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-  });
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(clipboard.text).toBe(TRACKED);
-  expect(sendMessage).not.toHaveBeenCalled();
-
-  clipboard.text = 'another copy';
-  await vi.advanceTimersByTimeAsync(750);
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(clipboard.text).toBe(CLEAN);
-});
-
-it.each([
-  { text: 'private message without links', html: null },
-  { text: 'https://example.com/item?id=42', html: null },
-  { text: 'A product', html: '<a href="https://example.com/item?id=42">A product</a>' },
-])('does not inspect unrelated clipboard payloads: $text', async ({ text, html }) => {
-  const { clipboard, sendMessage, writes, inspector } = await start();
-  inspector.enabled = false;
-  clipboard.text = text;
-  clipboard.html = html;
-  clipboard.types = html === null ? ['text/plain'] : ['text/plain', 'text/html'];
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(sendMessage).not.toHaveBeenCalled();
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it('rewrites a pending candidate normally', async () => {
-  const { clipboard, sendMessage } = await start();
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(750);
-  expect(clipboard.text).toBe(TRACKED);
-  await vi.advanceTimersByTimeAsync(250);
-  expect(clipboard.text).toBe(CLEAN);
-  expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rewritten', urls: 1 }));
-});
-
-it('retries an invalidated background inspection without waiting for the clipboard to change', async () => {
-  const { clipboard, writes, sendMessage, message, readEpoch } = await start();
-  sendMessage.mockImplementationOnce(() => {
-    const staleEpoch = readEpoch();
-    // Another frame advances intent after this inspection captured its generation.
-    message({ type: 'offscreen-intent' });
-    const response: unknown = message({
-      type: 'offscreen-reconcile',
-      pageCopy: true,
-      epoch: staleEpoch,
-      types: clipboard.types,
-      text: clipboard.text,
-      embedded: true,
-      config: CONFIG,
-    }).mock.calls[0]?.[0];
-    return Promise.resolve(response);
-  });
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(clipboard.text).toBe(TRACKED);
-  expect(writes).not.toHaveBeenCalled();
-  expect(sendMessage.mock.calls.filter(([payload]) => payload.type === 'inspect-clipboard')).toHaveLength(1);
-
-  await vi.advanceTimersByTimeAsync(500);
-  expect(clipboard.text).toBe(CLEAN);
-  expect(writes).toHaveBeenCalledOnce();
-  expect(sendMessage.mock.calls.filter(([payload]) => payload.type === 'inspect-clipboard')).toHaveLength(2);
-});
-
-it('leaves the clipboard untouched without a focused native reader, then retries when one is available', async () => {
-  const { clipboard, writes, sendMessage, inspector } = await start();
-  inspector.enabled = false;
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(1750);
-  expect(clipboard.text).toBe(TRACKED);
-  expect(writes).not.toHaveBeenCalled();
-  expect(sendMessage.mock.calls.filter(([payload]) => payload.type === 'inspect-clipboard')).toHaveLength(2);
-  inspector.enabled = true;
-  await vi.advanceTimersByTimeAsync(750);
-  expect(clipboard.text).toBe(CLEAN);
-  expect(writes).toHaveBeenCalledOnce();
-});
-
-it('preserves native web-custom formats and retries after only the custom flavor is removed', async () => {
-  const { clipboard, writes, message, readEpoch } = await start();
-  clipboard.text = TRACKED;
-  clipboard.nativeTypes = ['text/plain', 'web application/custom'];
-  await vi.advanceTimersByTimeAsync(1750);
-  expect(clipboard.text).toBe(TRACKED);
-  expect(clipboard.nativeTypes).toContain('web application/custom');
-  expect(writes).not.toHaveBeenCalled();
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-    types: clipboard.nativeTypes,
-  });
-  expect(writes).not.toHaveBeenCalled();
-  clipboard.nativeTypes = ['text/plain'];
-  await vi.advanceTimersByTimeAsync(750);
-  expect(clipboard.text).toBe(CLEAN);
-  expect(writes).toHaveBeenCalledOnce();
-});
-
-it('expires Undo suppression after observing a formats-only clipboard change', async () => {
-  const { clipboard, writes, message } = await start();
-  message({ type: 'offscreen-restore', text: TRACKED });
-  writes.mockClear();
-  clipboard.types = ['text/plain', 'image/png'];
-  await vi.advanceTimersByTimeAsync(750);
-  expect(clipboard.text).toBe(TRACKED);
-  expect(writes).not.toHaveBeenCalled();
-  clipboard.types = ['text/plain'];
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(clipboard.text).toBe(CLEAN);
-  expect(writes).toHaveBeenCalledOnce();
-});
-
-it.each(['image/png', 'Files', 'application/custom'])(
-  'preserves a format-only %s change during the grace period',
-  async (type) => {
-    const { clipboard, writes, message, readEpoch } = await start();
-    clipboard.text = TRACKED;
-    await vi.advanceTimersByTimeAsync(750);
-    clipboard.types.push(type);
-    await vi.advanceTimersByTimeAsync(250);
-    message({
-      type: 'offscreen-reconcile',
-      pageCopy: true,
-      epoch: readEpoch(),
-      types: clipboard.types,
-      text: TRACKED,
-      embedded: true,
-      config: CONFIG,
-    });
-    expect(clipboard.text).toBe(TRACKED);
-    expect(clipboard.types).toContain(type);
+it.each([{ type: 'offscreen-copy' }, { type: 'watch-config', config: { mode: 'invalid' } }])(
+  'rejects malformed control messages without touching the clipboard ($type)',
+  async (payload) => {
+    const { clipboard, writes, message } = await start();
+    expect(message(payload)).toHaveBeenCalledWith({ ok: false });
+    expect(clipboard.text).toBe('baseline');
     expect(writes).not.toHaveBeenCalled();
   },
 );
 
-it('rejects stale reconciliation without overwriting the newer clipboard contents', async () => {
-  const { clipboard, writes, message, readEpoch } = await start();
-  clipboard.text = 'a newer copy';
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe('a newer copy');
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it('rejects an older page read and accepts a fresh read of identical tracked text', async () => {
-  const { clipboard, writes, message, readEpoch } = await start();
-  const text = '/watch?v=1&si=abcdefgh&utm_source=email';
-  clipboard.text = text;
-  const oldEpoch = readEpoch();
-  expect(message({ type: 'offscreen-intent' })).toHaveBeenCalledWith({ ok: true, epoch: readEpoch() });
-  expect(readEpoch()).not.toBe(oldEpoch);
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text,
-    embedded: false,
-    types: clipboard.types,
-    epoch: oldEpoch,
-    config: CONFIG,
-    baseUrl: 'https://www.youtube.com/feed',
-  });
-  expect(clipboard.text).toBe(text);
-  expect(writes).not.toHaveBeenCalled();
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text,
-    embedded: false,
-    types: clipboard.types,
-    epoch: readEpoch(),
-    config: CONFIG,
-    baseUrl: 'https://example.com/control',
-  });
-  expect(clipboard.text).toBe('/watch?v=1&si=abcdefgh');
-  expect(writes).toHaveBeenCalledOnce();
-});
-
-it('expires Undo suppression only when a fresh copy has a different observed baseline', async () => {
-  const { clipboard, message, readEpoch } = await start();
-  message({ type: 'offscreen-restore', text: TRACKED });
-  message({ type: 'watch-config', config: null });
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(TRACKED);
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: CLEAN,
-    embedded: true,
-    config: CONFIG,
-    baseline: 'another copy',
-  });
-  expect(clipboard.text).toBe(TRACKED);
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(TRACKED);
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-    baseline: 'another copy',
-  });
-  expect(clipboard.text).toBe(CLEAN);
-});
-
-it('rejects another frame’s pre-Undo read before its baseline can clear suppression', async () => {
-  const { clipboard, message, readEpoch, writes } = await start();
-  const staleEpoch = readEpoch();
-  message({ type: 'offscreen-restore', text: TRACKED });
-  writes.mockClear();
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-    types: clipboard.types,
-    epoch: staleEpoch,
-    baseline: 'another copy',
-  });
-  expect(clipboard.text).toBe(TRACKED);
-  expect(writes).not.toHaveBeenCalled();
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-    types: clipboard.types,
-    epoch: readEpoch(),
-    baseline: 'another copy',
-  });
-  expect(clipboard.text).toBe(CLEAN);
-});
-
-it('invalidates pending reads on worker reconfiguration while retaining Undo suppression', async () => {
-  const { clipboard, message, readEpoch, writes } = await start();
-  message({ type: 'offscreen-restore', text: TRACKED });
-  const staleEpoch = readEpoch();
-  message({ type: 'watch-config', config: null });
-  message({ type: 'watch-config', config: CONFIG });
-  expect(readEpoch()).not.toBe(staleEpoch);
-  writes.mockClear();
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-    types: clipboard.types,
-    epoch: staleEpoch,
-    baseline: 'another copy',
-  });
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-    types: clipboard.types,
-    epoch: readEpoch(),
-  });
-  expect(clipboard.text).toBe(TRACKED);
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it('invalidates pending automatic reads when an explicit copy is committed', async () => {
-  const { clipboard, message, readEpoch, writes } = await start();
-  const staleEpoch = readEpoch();
-  message({ type: 'offscreen-copy', text: TRACKED });
-  writes.mockClear();
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-    types: clipboard.types,
-    epoch: staleEpoch,
-  });
-  expect(clipboard.text).toBe(TRACKED);
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it.each([
-  ['A product', ['text/plain', 'text/html']],
-  ['', ['text/html']],
-])('reconciles HTML-only hrefs while preserving the existing flavors (%s)', async (text, types) => {
-  const { clipboard, sendMessage, message, readEpoch } = await start();
-  clipboard.text = text;
-  clipboard.html = `<a href="${TRACKED}"><b>A product</b></a>`;
-  clipboard.types = types;
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text,
-    embedded: false,
-    config: CONFIG,
-    tabId: 7,
-  });
-  expect(clipboard.text).toBe(text);
-  expect(clipboard.html).toBe(`<a href="${CLEAN}"><b>A product</b></a>`);
-  expect(clipboard.types).toEqual(types);
-  const notification = sendMessage.mock.calls[0]?.[0];
-  expect(notification?.type).toBe('rewritten');
-  if (notification?.type !== 'rewritten') throw new Error('Missing rewrite notification');
-  expect(notification.tabId).toBe(7);
-  expect(notification.relayToast?.undoText).toBeUndefined();
-});
-
-it.each([false, true])('counts rewritten HTML anchors once with visible URLs %s', async (visibleUrls) => {
-  const { clipboard, sendMessage, message, readEpoch } = await start();
-  const labels = visibleUrls ? [TRACKED, TRACKED, TRACKED] : ['Alpha', 'Beta', 'Gamma'];
-  clipboard.text = labels.join(' ');
-  clipboard.html = labels.map((label) => `<a href="${TRACKED}"><b>${label}</b></a>`).join(' ');
-  clipboard.types = ['text/plain', 'text/html'];
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: clipboard.text,
-    embedded: true,
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(visibleUrls ? [CLEAN, CLEAN, CLEAN].join(' ') : labels.join(' '));
-  expect(clipboard.html).not.toContain('utm_source');
-  expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rewritten', urls: 3 }));
-});
-
-it('counts rewritten HTML prose and URL labels with unchanged destinations', async () => {
-  const { clipboard, sendMessage, message, readEpoch } = await start();
-  clipboard.text = '';
-  clipboard.html = `<a href="${TRACKED}"><b>${TRACKED}</b></a> Read ${TRACKED} <a href="https://example.com/other">${TRACKED}</a>`;
-  clipboard.types = ['text/html'];
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: '',
-    embedded: true,
-    config: CONFIG,
-  });
-  expect(clipboard.html).toBe(
-    `<a href="${CLEAN}"><b>${CLEAN}</b></a> Read ${CLEAN} <a href="https://example.com/other">${CLEAN}</a>`,
-  );
-  expect(clipboard.types).toEqual(['text/html']);
-  expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rewritten', urls: 3 }));
-});
-
-it('detects an HTML-only payload change during polling', async () => {
-  const { clipboard } = await start();
-  clipboard.text = 'baseline';
-  clipboard.html = `<a href="${TRACKED}">Product</a>`;
-  clipboard.types = ['text/plain', 'text/html'];
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(clipboard.html).toBe(`<a href="${CLEAN}">Product</a>`);
-});
-
-it('preserves HTML and plain text when both representations need rewriting', async () => {
-  const { clipboard, message, readEpoch } = await start();
-  clipboard.text = TRACKED;
-  clipboard.html = `<style>p { color: red; }</style><p><a href="${TRACKED}">${TRACKED}</a></p>`;
-  clipboard.types = ['text/plain', 'text/html'];
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: TRACKED,
-    embedded: false,
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(CLEAN);
-  expect(clipboard.html).toBe(`<style>p { color: red; }</style><p><a href="${CLEAN}">${CLEAN}</a></p>`);
-  expect(clipboard.types).toEqual(['text/plain', 'text/html']);
-});
-
-it.each([true, false])('cleans both representations of rich prose with embedded %s', async (embedded) => {
-  const { clipboard, message, readEpoch } = await start();
-  const original = `Read ${TRACKED} today`;
-  const cleaned = `Read ${CLEAN} today`;
-  clipboard.text = original;
-  clipboard.html = `<p><b>${original}</b></p>`;
-  clipboard.types = ['text/plain', 'text/html'];
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: original,
-    embedded,
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(cleaned);
-  expect(clipboard.html).toBe(`<p><b>${cleaned}</b></p>`);
-  expect(clipboard.types).toEqual(['text/plain', 'text/html']);
-});
-
-it('leaves plain-only prose unchanged when embedded rewriting is disabled', async () => {
-  const { clipboard, message, writes, readEpoch } = await start();
-  const original = `Read ${TRACKED} today`;
-  clipboard.text = original;
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: original,
-    embedded: false,
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(original);
-  expect(clipboard.html).toBeNull();
-  expect(clipboard.types).toEqual(['text/plain']);
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it('checks formats again immediately before committing an automatic write', async () => {
-  const { clipboard, message, writes, readEpoch } = await start();
-  clipboard.text = TRACKED;
-  clipboard.html = `<a href="${TRACKED}">Product</a>`;
-  clipboard.types = ['text/plain', 'text/html'];
-  const parser = new DOMParser();
-  const parse = parser.parseFromString.bind(parser);
-  vi.spyOn(DOMParser.prototype, 'parseFromString').mockImplementation((text, type) => {
-    clipboard.types.push('image/png');
-    return parse(text, type);
-  });
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-  });
-  expect(clipboard.text).toBe(TRACKED);
-  expect(clipboard.types).toContain('image/png');
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it('leaves oversized HTML alone before parsing it', async () => {
-  const { clipboard, message, writes, readEpoch } = await start();
-  const parse = vi.spyOn(DOMParser.prototype, 'parseFromString');
-  clipboard.html = `<a href="${TRACKED}">${'x'.repeat(100_000)}</a>`;
-  clipboard.types = ['text/plain', 'text/html'];
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: readEpoch(),
-    types: clipboard.types,
-    text: 'baseline',
-    embedded: false,
-    config: CONFIG,
-  });
-  expect(parse).not.toHaveBeenCalled();
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it.each([
-  { type: 'offscreen-copy' },
-  { type: 'offscreen-restore', text: 1 },
-  { type: 'watch-config', config: { mode: 'invalid' } },
-  {
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: EPOCH,
-    types: ['text/plain'],
-    text: TRACKED,
-    embedded: 'true',
-    config: CONFIG,
-  },
-  {
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    epoch: EPOCH,
-    text: TRACKED,
-    embedded: true,
-    config: CONFIG,
-  },
-  { type: 'offscreen-reconcile', pageCopy: true, types: ['text/plain'], text: TRACKED, embedded: true, config: CONFIG },
-])('rejects malformed control messages without touching the clipboard ($type)', async (payload) => {
-  const { clipboard, writes, message } = await start();
-  expect(message(payload)).toHaveBeenCalledWith({ ok: false });
-  expect(clipboard.text).toBe('baseline');
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it('rejects tab-origin control messages and leaves unrelated requests unanswered', async () => {
+it('rejects tab-origin control messages', async () => {
   const { clipboard, writes, message } = await start();
   expect(
     message({ type: 'offscreen-copy', text: TRACKED }, { ...WORKER, tab: { id: 1 } as chrome.tabs.Tab }),
   ).toHaveBeenCalledWith({ ok: false });
-  expect(
-    message({ type: 'clipboard-epoch' } satisfies ExtensionMessage, { ...WORKER, tab: { id: 1 } as chrome.tabs.Tab }),
-  ).not.toHaveBeenCalled();
   expect(clipboard.text).toBe('baseline');
   expect(writes).not.toHaveBeenCalled();
-});
-
-it('rejects a delayed page reconciliation after the coordinator is recreated', async () => {
-  const text = '/watch?v=1&si=abcdefgh&utm_source=email';
-  const older = await start();
-  older.message({ type: 'offscreen-intent' });
-  older.message({ type: 'offscreen-intent' });
-  const delayed = {
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text,
-    embedded: false,
-    types: ['text/plain'],
-    epoch: older.readEpoch(),
-    config: CONFIG,
-    baseUrl: 'https://www.youtube.com/feed',
-  };
-  // Closing the offscreen document discards its globals; the new one repeats the same actions.
-  vi.clearAllTimers();
-  vi.resetModules();
-  const newer = await start();
-  newer.message({ type: 'offscreen-intent' });
-  newer.message({ type: 'offscreen-intent' });
-  newer.clipboard.text = text;
-  expect(newer.readEpoch()).not.toBe(delayed.epoch);
-  expect(newer.message(delayed)).toHaveBeenCalledWith({ ok: false });
-  expect(newer.clipboard.text).toBe(text);
-  expect(newer.writes).not.toHaveBeenCalled();
-  newer.message({ ...delayed, epoch: newer.readEpoch() });
-  expect(newer.clipboard.text).toBe('/watch?v=1&si=abcdefgh');
-  expect(newer.writes).toHaveBeenCalledOnce();
 });

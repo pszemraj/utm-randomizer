@@ -23,11 +23,11 @@ function element<T extends HTMLElement>(id: string, type: new () => T): T {
 
 const enabledToggle = element('enabled', HTMLInputElement);
 const notifyToggle = element('notify', HTMLInputElement);
-const clipboardToggle = element('watchClipboard', HTMLInputElement);
 const modeInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="mode"]'));
 const modeHint = element('modeHint', HTMLParagraphElement);
 const enabledHint = element('enabledHint', HTMLSpanElement);
 const copyButton = element('copyPage', HTMLButtonElement);
+const undoButton = element('undoClipboard', HTMLButtonElement);
 const copyStatus = element('copyStatus', HTMLParagraphElement);
 const totalCount = element('totalCount', HTMLElement);
 const sessionCount = element('sessionCount', HTMLElement);
@@ -42,7 +42,6 @@ function render(current: Settings): void {
   settings = current;
   enabledToggle.checked = current.enabled;
   notifyToggle.checked = current.notify;
-  clipboardToggle.checked = current.watchClipboard;
   for (const input of modeInputs) {
     input.checked = input.value === current.mode;
   }
@@ -131,7 +130,6 @@ async function init(): Promise<void> {
 
 enabledToggle.addEventListener('change', () => void saveSettings({ enabled: enabledToggle.checked }));
 notifyToggle.addEventListener('change', () => void saveSettings({ notify: notifyToggle.checked }));
-clipboardToggle.addEventListener('change', () => void saveSettings({ watchClipboard: clipboardToggle.checked }));
 for (const input of modeInputs) {
   input.addEventListener('change', () => {
     const mode = MODES.find((candidate) => candidate === input.value);
@@ -141,6 +139,15 @@ for (const input of modeInputs) {
   });
 }
 copyButton.addEventListener('click', () => void copyPageLink());
+undoButton.addEventListener('click', () => {
+  void chrome.runtime
+    .sendMessage({ type: 'undo-clipboard' } satisfies ExtensionMessage)
+    .then((response: unknown) => {
+      const ok = typeof response === 'object' && response !== null && 'ok' in response && response.ok === true;
+      setStatus(ok ? 'Original link restored' : 'Nothing to undo: clipboard or Chrome focus changed', !ok);
+    })
+    .catch(() => setStatus('Could not undo the rewrite', true));
+});
 changeShortcut.addEventListener('click', (event) => {
   event.preventDefault();
   void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
