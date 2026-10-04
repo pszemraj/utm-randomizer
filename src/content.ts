@@ -86,9 +86,18 @@ const watcher = startCopyWatcher({
   restore: (text) => coordinate({ type: 'restore-clipboard', text }),
   invalidateReads: () => clipboardEpoch('clipboard-intent'),
   beginRead: () => clipboardEpoch('clipboard-epoch'),
-  reconcile: (text, embedded, baseline, types, epoch, pageCopy) =>
-    coordinate({ type: 'reconcile-clipboard', text, embedded, baseline, types: [...types], epoch, pageCopy }),
-  onRewrite: ({ original, urls, undoable }) => {
+  reconcile: (text, embedded, baseline, types, epoch, pageCopy, observeOnly) =>
+    coordinate({
+      type: 'reconcile-clipboard',
+      text,
+      embedded,
+      baseline,
+      types: [...types],
+      epoch,
+      pageCopy,
+      observeOnly,
+    }),
+  onRewrite: async ({ original, urls, undoable }, write) => {
     const { emoji, done } = describeMode(settings.mode);
     const payload: ToastPayload | undefined = settings.notify
       ? {
@@ -99,7 +108,18 @@ const watcher = startCopyWatcher({
     if (payload && isTopFrame) {
       toast(payload);
     }
-    sendNotification({ type: 'rewritten', urls, relayToast: isTopFrame ? undefined : payload });
+    if (write) {
+      // The browser commits clipboardData after event dispatch and the native default action.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await coordinate({
+        type: 'rewritten',
+        urls,
+        relayToast: isTopFrame ? undefined : payload,
+        clipboard: write,
+      });
+    } else {
+      sendNotification({ type: 'rewritten', urls, relayToast: isTopFrame ? undefined : payload });
+    }
   },
 });
 

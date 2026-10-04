@@ -18,7 +18,7 @@ Stored locally in Chrome's extension storage and never synced or transmitted:
 - a count of how many links were rewritten, in total and in the current browser session. Only the numbers are stored, not the links;
 - a random per-install key used to generate [replacement values](docs/behavior.md#replacement-values).
 
-Notifications and clipboard watchers keep recent text, HTML, links, and format snapshots in memory for Undo, detecting changes, and preventing repeated rewrites. Later rewrites and observed changes can replace these values; closing their page or [offscreen document](docs/behavior.md#clipboard-coordination) releases them. Closing a notification alone does not clear all watcher state.
+The [clipboard coordinator](docs/behavior.md#clipboard-coordination) keeps one current before-and-after record in memory for detecting replacement and preventing repeated rewrites. Notifications retain text for Undo, and page copies use temporary format snapshots. These records are replaced by observed clipboard changes or released when their page or offscreen document closes. No clipboard history is accumulated. Closing a notification alone does not clear the coordinator's current record.
 
 ## Permissions
 
@@ -40,4 +40,4 @@ The [source code](src/) is public and available for inspection.
 
 For privacy questions or concerns, [open an issue](https://github.com/pszemraj/utm-randomizer/issues).
 
-_Last updated: October 2, 2026_
+_Last updated: October 4, 2026_

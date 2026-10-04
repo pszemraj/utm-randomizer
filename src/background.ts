@@ -169,6 +169,7 @@ function reconcileClipboard(
   tabId: number | undefined,
   baseline?: string,
   baseUrl?: string,
+  observeOnly?: boolean,
 ): Promise<void> {
   const revision = settingsRevision;
   return withOffscreen(async () => {
@@ -187,6 +188,7 @@ function reconcileClipboard(
       epoch,
       baseline,
       baseUrl,
+      observeOnly,
       config: { mode: settings.mode, key },
       tabId,
     });
@@ -394,7 +396,11 @@ chrome.runtime.onMessage.addListener(
     const offscreen = isOffscreenSender(sender);
     switch (message.type) {
       case 'rewritten': {
-        if ((!content && !offscreen) || (message.tabId !== undefined && !offscreen)) {
+        if (
+          (!content && !offscreen) ||
+          (message.tabId !== undefined && !offscreen) ||
+          (message.clipboard !== undefined && !content)
+        ) {
           sendResponse({ ok: false });
           return false;
         }
@@ -413,6 +419,10 @@ chrome.runtime.onMessage.addListener(
               void notifyActiveTab(toast);
             }
           });
+        }
+        if (message.clipboard) {
+          acknowledge(performClipboardOperation(message), sendResponse);
+          return true;
         }
         return false;
       }
@@ -451,6 +461,7 @@ chrome.runtime.onMessage.addListener(
             sender.tab?.id,
             message.baseline,
             message.pageCopy ? sender.url : undefined,
+            message.observeOnly,
           ),
           sendResponse,
         );

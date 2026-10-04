@@ -26,7 +26,7 @@ describe('rewriteUrl (decoy)', () => {
     const original =
       'https://example.com/?utm_source=newsletter&utm_medium=email&utm_campaign=spring&utm_term=shoes&utm_content=hero&utm_id=launch2025&utm_source_platform=network&utm_creative_format=video&utm_marketing_tactic=prospecting';
     const result = rewriteUrl(original, decoy);
-    expect(result?.params).toBeGreaterThanOrEqual(4);
+    expect(result?.params).toBe(9);
     const query = params(result?.url ?? '');
     expect([...query.keys()]).toEqual([
       'utm_source',
@@ -41,6 +41,9 @@ describe('rewriteUrl (decoy)', () => {
     ]);
     for (const value of query.values()) {
       expect(value).toMatch(/^[A-Za-z0-9][A-Za-z0-9_. -]*$/);
+    }
+    for (const [name, value] of params(original)) {
+      expect(query.get(name), name).not.toBe(value);
     }
   });
 
@@ -69,7 +72,7 @@ describe('rewriteUrl (decoy)', () => {
     expect(result?.params).toBe(1);
     expect(result?.url).toMatch(/^https:\/\/example\.com\/\?utm_source=[^&]+&keep=%2F$/);
     expect(result?.url).not.toContain('%E6%96%B0%E9%97%BB');
-    expect(rewriteUrl(result?.url ?? '', decoy)).toBeNull();
+    expect(rewriteUrl(result?.url ?? '', decoy)?.url).not.toBe(result?.url);
   });
 
   it('only touches tracking values and keeps every other byte', () => {
@@ -98,6 +101,19 @@ describe('rewriteUrl (decoy)', () => {
     expect(rewriteUrl(link, decoy)).toEqual(rewriteUrl(link, decoy));
     const others = new Set(['a', 'b', 'c', 'd', 'e'].map((key) => rewriteUrl(link, { mode: 'decoy', key })?.url));
     expect(others.size).toBeGreaterThan(1);
+  });
+
+  it('replaces an existing plausible source on the reported address-bar link', () => {
+    const link =
+      'https://www.reuters.com/legal/litigation/openai-safety-employee-quits-says-time-trial-error-is-over-2026-10-03/?utm_source=linkedin';
+    for (let key = 0; key < 300; key += 1) {
+      const result = rewriteUrl(link, { mode: 'decoy', key: String(key) });
+      expect(result?.params).toBe(1);
+      expect(params(result?.url ?? '').get('utm_source')).not.toBe('linkedin');
+      const again = rewriteUrl(result?.url ?? '', { mode: 'decoy', key: String(key) });
+      expect(again?.params).toBe(1);
+      expect(again?.url).not.toBe(result?.url);
+    }
   });
 
   it('matches encoded keys but keeps their original spelling', () => {
@@ -186,22 +202,24 @@ describe('rewriteUrl (hybrid)', () => {
   });
 });
 
-describe('idempotency', () => {
-  it('keeps a campaign with an unescaped percent sign stable', () => {
+describe('replacing current values', () => {
+  it('preserves an unescaped percent sign across replacements', () => {
     const options = { mode: 'decoy', key: '2' } as const;
     const once = rewriteUrl('https://example.com/?utm_campaign=50%off', options);
     expect(once).not.toBeNull();
     expect(once?.url).toMatch(/^https:\/\/example\.com\/\?utm_campaign=[0-9]{2}%of[a-z]$/);
-    expect(rewriteUrl(once?.url ?? '', options)).toBeNull();
+    expect(rewriteUrl(once?.url ?? '', options)?.url).toMatch(
+      /^https:\/\/example\.com\/\?utm_campaign=[0-9]{2}%of[a-z]$/,
+    );
     expect(rewriteUrl('https://example.com/?coupon=50%off', options)).toBeNull();
   });
 
-  it.each(['decoy', 'hybrid'] as const)('keeps a mixed-case hexadecimal campaign stable (%s)', (mode) => {
+  it.each(['decoy', 'hybrid'] as const)('replaces a mixed-case hexadecimal campaign again (%s)', (mode) => {
     for (const raw of ['aB1c1F1b', '%61%42%31%63%31%46%31%62']) {
       const options = { mode, key: 'review0' };
       const once = rewriteUrl(`https://example.com/?utm_campaign=${raw}`, options);
       expect(once).not.toBeNull();
-      expect(rewriteUrl(once?.url ?? '', options)).toBeNull();
+      expect(rewriteUrl(once?.url ?? '', options)?.url).not.toBe(once?.url);
     }
   });
 
@@ -214,15 +232,23 @@ describe('idempotency', () => {
     'https://example.com/?_ga=2.123456789.1234567890-1234567890.1700000000&_gl=1*abc12*_ga*MTIzNA..&mc_eid=a1b2c3d4e5&li_fat_id=a1b2c3d4e5',
   ];
 
-  it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)('rewriting a rewritten link changes nothing (%s)', (mode) => {
-    for (const link of links) {
-      for (let key = 0; key < 300; key += 1) {
-        const once = rewriteUrl(link, { mode, key: String(key) });
-        expect(once, link).not.toBeNull();
-        expect(rewriteUrl(once?.url ?? '', { mode, key: String(key) }), once?.url).toBeNull();
+  it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)(
+    'treats generated tracking values as ordinary input (%s)',
+    (mode) => {
+      for (const link of links) {
+        for (let key = 0; key < 300; key += 1) {
+          const once = rewriteUrl(link, { mode, key: String(key) });
+          expect(once, link).not.toBeNull();
+          const twice = rewriteUrl(once?.url ?? '', { mode, key: String(key) });
+          if (mode === 'strip') expect(twice).toBeNull();
+          else {
+            expect(twice).not.toBeNull();
+            expect(twice?.url).not.toBe(once?.url);
+          }
+        }
       }
-    }
-  });
+    },
+  );
 });
 
 describe('rewriteUrl (strip)', () => {
@@ -457,7 +483,8 @@ describe('rewriteText', () => {
         expect(rewriteText(link, options)?.text).toBe(rewriteUrl(link, options)?.url);
         expect(rewriteText(link, { ...options, embedded: true })?.text).toBe(rewriteUrl(link, options)?.url);
         const once = rewriteUrl(link, options)?.url ?? link;
-        expect(rewriteText(once, { ...options, embedded: true })).toBeNull();
+        if (options.mode === 'strip') expect(rewriteText(once, { ...options, embedded: true })).toBeNull();
+        else expect(rewriteText(once, { ...options, embedded: true })?.text).not.toBe(once);
       }
     }
   });

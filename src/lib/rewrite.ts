@@ -13,8 +13,8 @@ export interface RewriteOptions {
   mode: Mode;
   /**
    * Secret per-install key that seeds replacement values. Replacements are a function of the key and
-   * the link, so rewriting a rewritten link returns it unchanged, and nobody without the key can
-   * tell replacements from real values.
+   * the current link values, so identical inputs get identical replacements. Writers track their
+   * completed output separately; plausible tracking values are always eligible inputs.
    */
   key?: string;
   /** Resolves relative links (`/path?utm_source=x`) for parsing and stable replacement seeds. */
@@ -154,8 +154,7 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
       };
     });
 
-  // Replacements are seeded by everything the rewrite leaves alone, so they come out the same
-  // when a rewritten link is rewritten again.
+  // Compact the link context once; each value then seeds its own draw without hashing the full link again.
   const untouched = segments.filter(({ category }) => !category).map(({ segment }) => segment);
   const trackingKeys = segments.filter(({ category }) => category).map(({ rawKey }) => rawKey);
   const seedBase = [options.key ?? '', url.host, url.pathname, untouched.join('&'), trackingKeys.join('&')].join('|');
@@ -277,14 +276,6 @@ export function rewriteText(text: string, options: RewriteOptions & { embedded?:
     return rewritten.url + trailing;
   });
   return urls > 0 ? { text: result, urls, params } : null;
-}
-
-/**
- * `text` with supported tracking parameters removed. The watchers use this to recognize links
- * they just handled, regardless of their supported tracking values.
- */
-export function withoutTracking(text: string, baseUrl?: string): string {
-  return rewriteText(text, { mode: 'strip', embedded: true, baseUrl })?.text ?? text;
 }
 
 /** Whether a link carries parameters this extension would rewrite. */

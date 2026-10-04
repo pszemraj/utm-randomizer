@@ -1,5 +1,6 @@
 import { hasRewritableClipboard, rewriteHtml } from './clipboard-html';
 import { rewriteText, type RewriteOptions } from './rewrite';
+import type { ClipboardWrite } from './messages';
 import type { Settings } from './settings';
 
 /** The subset of `navigator.clipboard` the watcher uses. */
@@ -44,9 +45,10 @@ export interface WatcherDeps {
     types: readonly string[],
     epoch: string,
     pageCopy: boolean,
+    observeOnly?: boolean,
   ) => Promise<void>;
   /** Called after each rewrite, to show a notification and count it. */
-  onRewrite: (event: RewriteEvent) => void;
+  onRewrite: (event: RewriteEvent, write?: ClipboardWrite) => void | Promise<void>;
   /** False once the extension was reloaded or removed; the watcher then shuts itself down. */
   isContextValid?: () => boolean;
   /** Monotonic clock in milliseconds; defaults to `performance.now()`. */
@@ -158,8 +160,8 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   const supportsChangeEvent = clipboard !== null && 'onclipboardchange' in clipboard;
 
   let lastIntent = Number.NEGATIVE_INFINITY;
-  /** The last text this watcher wrote; left alone until different clipboard contents are observed. */
-  let lastWritten: string | null = null;
+  /** A synchronous output awaiting registration with the shared coordinator. */
+  let lastWritten: ClipboardSnapshot | null = null;
   let generation = 0;
   let restoring = false;
   let sweep: AbortController | null = null;
@@ -246,24 +248,48 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       return false;
     }
 
+    const before = { text: original, html, types: Array.from(data.types) };
     event.preventDefault();
     if (result) {
       data.setData('text/plain', result.text);
-      lastWritten = result.text;
     }
     if (rewrittenHtml) {
       data.setData('text/html', rewrittenHtml.html);
     }
-    onRewrite({
-      original,
-      rewritten: result?.text ?? original,
-      urls: Math.max(result?.urls ?? 0, rewrittenHtml?.urls ?? 0),
-      ...(data.types.some((type) => type !== 'text/plain') ? { undoable: false } : {}),
-    });
+    lastWritten = {
+      text: data.getData('text/plain'),
+      html: data.types.includes('text/html') ? data.getData('text/html') : null,
+      types: Array.from(data.types),
+    };
+    const written = lastWritten;
+    const acknowledgement = onRewrite(
+      {
+        original,
+        rewritten: result?.text ?? original,
+        urls: Math.max(result?.urls ?? 0, rewrittenHtml?.urls ?? 0),
+        ...(data.types.some((type) => type !== 'text/plain') ? { undoable: false } : {}),
+      },
+      { before, after: { ...written, types: [...written.types] } },
+    );
+    void Promise.resolve(acknowledgement)
+      .catch(() => undefined)
+      .finally(() => {
+        if (lastWritten === written) lastWritten = null;
+      });
     return true;
   }
 
-  /** Reads supported flavors and expires text suppression without clearing a newer write. */
+  /** Whether two clipboard payloads contain the same text, HTML, and flavors. */
+  function sameSnapshot(left: ClipboardSnapshot, right: ClipboardSnapshot): boolean {
+    return (
+      left.text === right.text &&
+      left.html === right.html &&
+      left.types.length === right.types.length &&
+      left.types.every((type) => right.types.includes(type))
+    );
+  }
+
+  /** Reads supported flavors and expires suppression without clearing a newer write. */
   async function readClipboard(source: WatchedClipboard, job = generation): Promise<ClipboardSnapshot | null> {
     const written = lastWritten;
     const items = await source.read();
@@ -279,10 +305,11 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     const types = item.types;
     const text = types.includes('text/plain') ? await (await item.getType('text/plain')).text() : '';
     const html = types.includes('text/html') ? await (await item.getType('text/html')).text() : null;
-    if (generation === job && lastWritten === written && text !== written) {
+    const snapshot = { text, html, types };
+    if (generation === job && lastWritten === written && written && !sameSnapshot(snapshot, written)) {
       lastWritten = null;
     }
-    return { text, html, types };
+    return snapshot;
   }
 
   /**
@@ -318,18 +345,13 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     // Keep the background candidate: removing a web-custom flavor is invisible to synthetic paste.
     if (!snapshot) return false;
     const { text, html, types } = snapshot;
-    if (
-      text === baseline?.text &&
-      html === baseline.html &&
-      types.length === baseline.types.length &&
-      types.every((type) => baseline.types.includes(type))
-    )
-      return true;
-    // A synchronous text rewrite says nothing about a later HTML target with the same label.
-    if (html === null && text === lastWritten) return true;
-    if (!hasRewritableClipboard(text, html, embedded, pageCopy ? location.href : undefined)) return true;
+    if (lastWritten && sameSnapshot(snapshot, lastWritten)) return true;
+    const observeOnly =
+      Boolean(baseline && sameSnapshot(snapshot, baseline)) ||
+      !hasRewritableClipboard(text, html, embedded, pageCopy ? location.href : undefined);
     try {
-      await deps.reconcile(text, embedded, baseline?.text, types, epoch, pageCopy);
+      if (observeOnly) await deps.reconcile(text, embedded, baseline?.text, types, epoch, pageCopy, true);
+      else await deps.reconcile(text, embedded, baseline?.text, types, epoch, pageCopy);
     } catch {
       return false;
     }
@@ -449,6 +471,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   function stop(): void {
     listeners.abort();
     invalidate();
+    lastWritten = null;
   }
 
   /** Cancels pending reconciliation when newer intent, Undo, or configuration supersedes it. */
@@ -463,7 +486,6 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     restoring = true;
     try {
       await deps.restore(text);
-      lastWritten = text;
     } finally {
       restoring = false;
     }

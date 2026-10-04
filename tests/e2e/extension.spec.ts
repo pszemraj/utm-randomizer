@@ -774,10 +774,45 @@ test.describe('copying on web pages', () => {
     await expect(playground.locator('utm-randomizer-toast')).toHaveCount(0);
   });
 
-  test('keeps the rewritten link stable: watchers never fight over it', async ({ playground, readClipboard }) => {
+  test('keeps the rewritten entry stable until different clipboard contents replace it', async ({
+    playground,
+    readClipboard,
+    serviceWorker,
+    setSettings,
+    waitForWatcher,
+  }) => {
     await playground.getByTestId('copy-writetext').click();
     await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
-    expect(await expectStable(readClipboard, 3000)).not.toBe(ARTICLE);
+    const first = await expectStable(readClipboard, 3000);
+    expect(first).not.toBe(ARTICLE);
+    await playground.locator('h1').click();
+    await playground.keyboard.press('a');
+    expect(await expectStable(readClipboard, 1500)).toBe(first);
+    await serviceWorker.evaluate(() => chrome.storage.local.set({ notify: false }));
+    expect(await expectStable(readClipboard, 1500)).toBe(first);
+    await setSettings({ watchClipboard: false });
+    await waitForWatcher(false);
+    await playground.getByTestId('copy-writetext').evaluate((button) => {
+      const row = button.closest<HTMLElement>('[data-url]');
+      if (!row) throw new Error('copy row missing');
+      row.dataset.url = 'unrelated clipboard entry';
+    });
+    await playground.getByTestId('copy-writetext').click();
+    await waitForClipboard(readClipboard, (text) => text === 'unrelated clipboard entry');
+    expect(await expectStable(readClipboard, 1000)).toBe('unrelated clipboard entry');
+    // This is a new entry after the old one was replaced, despite containing previously generated values.
+    await playground.getByTestId('copy-writetext').evaluate((button, value) => {
+      const row = button.closest<HTMLElement>('[data-url]');
+      if (!row) throw new Error('copy row missing');
+      row.dataset.url = value;
+    }, first);
+    await playground.getByTestId('copy-writetext').click();
+    const next = await waitForClipboard(
+      readClipboard,
+      (text) => text.startsWith('https://example.com/article?') && text !== first,
+    );
+    expectReplaced(next, first);
+    expect(await expectStable(readClipboard, 1500)).toBe(next);
   });
 
   test('rewrites links copied with execCommand', async ({ playground, readClipboard }) => {
@@ -959,95 +994,106 @@ test.describe('copying on web pages', () => {
   }
 
   for (const method of ['native selection', 'page handler'] as const) {
-    test(`counts each rich copied link once through ${method}`, async ({
-      playground,
-      context,
-      serviceWorker,
-      setSettings,
-      waitForWatcher,
-      readClipboard,
-    }) => {
-      await setSettings({ mode: 'strip', watchClipboard: false });
-      await waitForWatcher(false);
-      await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
-        origin: new URL(playground.url()).origin,
-      });
-      const before = await serviceWorker.evaluate(async () => ({
-        total: Number((await chrome.storage.local.get('totalCount')).totalCount ?? 0),
-        session: Number((await chrome.storage.session.get('sessionCount')).sessionCount ?? 0),
-      }));
-      await playground.evaluate((copyMethod) => {
-        const paragraph = document.createElement('p');
-        for (const [index, label] of ['https://example.com/first?utm_source=email', 'Alpha', 'Beta'].entries()) {
-          const anchor = document.createElement('a');
-          anchor.href = `https://example.com/${['first', 'second', 'third'][index]}?utm_source=email`;
-          const bold = document.createElement('b');
-          bold.textContent = label;
-          anchor.append(bold);
-          if (index > 0) paragraph.append(' ');
-          paragraph.append(anchor);
-        }
-        document.body.append(paragraph);
-        if (copyMethod === 'native selection') {
-          const range = document.createRange();
-          range.selectNodeContents(paragraph);
-          const selection = getSelection();
-          selection?.removeAllRanges();
-          selection?.addRange(range);
+    for (const mode of ['strip', 'decoy'] as const) {
+      test(`counts each rich copied link once through ${method} (${mode})`, async ({
+        playground,
+        context,
+        serviceWorker,
+        setSettings,
+        waitForWatcher,
+        readClipboard,
+      }) => {
+        await setSettings({ mode, watchClipboard: false });
+        await waitForWatcher(false);
+        await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+          origin: new URL(playground.url()).origin,
+        });
+        const before = await serviceWorker.evaluate(async () => ({
+          total: Number((await chrome.storage.local.get('totalCount')).totalCount ?? 0),
+          session: Number((await chrome.storage.session.get('sessionCount')).sessionCount ?? 0),
+        }));
+        await playground.evaluate((copyMethod) => {
+          const paragraph = document.createElement('p');
+          for (const [index, label] of ['https://example.com/first?utm_source=email', 'Alpha', 'Beta'].entries()) {
+            const anchor = document.createElement('a');
+            anchor.href = `https://example.com/${['first', 'second', 'third'][index]}?utm_source=email`;
+            const bold = document.createElement('b');
+            bold.textContent = label;
+            anchor.append(bold);
+            if (index > 0) paragraph.append(' ');
+            paragraph.append(anchor);
+          }
+          document.body.append(paragraph);
+          if (copyMethod === 'native selection') {
+            const range = document.createRange();
+            range.selectNodeContents(paragraph);
+            const selection = getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+          } else {
+            document.addEventListener(
+              'copy',
+              (event) => {
+                event.preventDefault();
+                event.clipboardData?.setData('text/plain', paragraph.textContent);
+                event.clipboardData?.setData('text/html', paragraph.innerHTML);
+              },
+              { once: true },
+            );
+            const button = document.createElement('button');
+            button.id = 'copy-counted-rich-links';
+            button.textContent = 'Copy rich links';
+            button.onclick = () => {
+              // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises a native ClipboardEvent
+              document.execCommand('copy');
+            };
+            document.body.append(button);
+          }
+        }, method);
+        if (method === 'native selection') {
+          await playground.keyboard.press('ControlOrMeta+C');
         } else {
-          document.addEventListener(
-            'copy',
-            (event) => {
-              event.preventDefault();
-              event.clipboardData?.setData('text/plain', paragraph.textContent);
-              event.clipboardData?.setData('text/html', paragraph.innerHTML);
-            },
-            { once: true },
-          );
-          const button = document.createElement('button');
-          button.id = 'copy-counted-rich-links';
-          button.textContent = 'Copy rich links';
-          button.onclick = () => {
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises a native ClipboardEvent
-            document.execCommand('copy');
-          };
-          document.body.append(button);
+          await playground.locator('#copy-counted-rich-links').click();
         }
-      }, method);
-      if (method === 'native selection') {
-        await playground.keyboard.press('ControlOrMeta+C');
-      } else {
-        await playground.locator('#copy-counted-rich-links').click();
-      }
 
-      await expect.poll(readClipboard).toBe('https://example.com/first Alpha Beta');
-      const copied = await playground.evaluate(async () => {
-        const [item] = await navigator.clipboard.read();
-        const html = item?.types.includes('text/html') ? await (await item.getType('text/html')).text() : '';
-        const document = new DOMParser().parseFromString(html, 'text/html');
-        return {
-          types: item?.types,
-          targets: [...document.querySelectorAll('a')].map((anchor) => anchor.getAttribute('href')),
-          labels: [...document.querySelectorAll('b')].map((bold) => bold.textContent),
-        };
+        const text = await waitForClipboard(
+          readClipboard,
+          (value) => value.startsWith('https://example.com/first') && !value.includes('utm_source=email'),
+        );
+        const copied = await playground.evaluate(async () => {
+          const [item] = await navigator.clipboard.read();
+          const html = item?.types.includes('text/html') ? await (await item.getType('text/html')).text() : '';
+          const document = new DOMParser().parseFromString(html, 'text/html');
+          return {
+            types: item?.types,
+            targets: [...document.querySelectorAll('a')].map((anchor) => anchor.getAttribute('href')),
+            labels: [...document.querySelectorAll('b')].map((bold) => bold.textContent),
+          };
+        });
+        expect(copied.types).toEqual(['text/plain', 'text/html']);
+        expect(copied.targets.map((target) => new URL(target ?? '').pathname)).toEqual(['/first', '/second', '/third']);
+        for (const target of copied.targets) {
+          const source = new URL(target ?? '').searchParams.get('utm_source');
+          if (mode === 'strip') expect(source).toBeNull();
+          else {
+            expect(source).not.toBeNull();
+            expect(source).not.toBe('email');
+          }
+        }
+        expect(copied.labels).toEqual([copied.targets[0], 'Alpha', 'Beta']);
+        expect(text).toBe(`${copied.targets[0]} Alpha Beta`);
+        await expect(playground.locator('utm-randomizer-toast')).toContainText('in 3 links');
+        await expect
+          .poll(() =>
+            serviceWorker.evaluate(async () => ({
+              total: (await chrome.storage.local.get('totalCount')).totalCount,
+              session: (await chrome.storage.session.get('sessionCount')).sessionCount,
+            })),
+          )
+          .toEqual({ total: before.total + 3, session: before.session + 3 });
+        expect(await expectStable(readClipboard, 1500)).toBe(text);
       });
-      expect(copied.types).toEqual(['text/plain', 'text/html']);
-      expect(copied.targets).toEqual([
-        'https://example.com/first',
-        'https://example.com/second',
-        'https://example.com/third',
-      ]);
-      expect(copied.labels).toEqual(['https://example.com/first', 'Alpha', 'Beta']);
-      await expect(playground.locator('utm-randomizer-toast')).toContainText('in 3 links');
-      await expect
-        .poll(() =>
-          serviceWorker.evaluate(async () => ({
-            total: (await chrome.storage.local.get('totalCount')).totalCount,
-            session: (await chrome.storage.session.get('sessionCount')).sessionCount,
-          })),
-        )
-        .toEqual({ total: before.total + 3, session: before.session + 3 });
-    });
+    }
   }
 
   for (const tag of ['textarea', 'input'] as const) {
@@ -1433,14 +1479,37 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
 });
 
 test.describe('address bar', () => {
-  test('swaps tracking in the address bar for decoys once the page has loaded', async ({ playground }) => {
-    await playground.getByTestId('open-tracked').click();
-    await expect.poll(() => playground.url()).not.toContain('fbclid=IwAR3xYz123AbC456dEf789');
+  test('swaps tracking in the address bar for decoys once the page has loaded', async ({
+    playground,
+    server,
+    readClipboard,
+  }) => {
+    await playground.goto(
+      `${server.origin}/?id=5&utm_source=linkedin&utm_medium=email&utm_campaign=spring&fbclid=IwAR3xYz123AbC456dEf789`,
+    );
+    await expect.poll(() => new URL(playground.url()).searchParams.get('utm_source')).not.toBe('linkedin');
     const url = new URL(playground.url());
     expect(url.searchParams.get('id')).toBe('5');
     expect([...url.searchParams.keys()]).toEqual(['id', 'utm_source', 'utm_medium', 'utm_campaign', 'fbclid']);
-    // Cleaning again (for example after settings change) leaves the decoys in place.
+    // Own replaceState navigation events leave the successful output in place.
     await playground.waitForTimeout(1000);
+    expect(playground.url()).toBe(url.href);
+    await playground.evaluate(() => {
+      const field = document.createElement('textarea');
+      field.id = 'copy-address';
+      field.value = location.href;
+      document.body.append(field);
+    });
+    await playground.locator('#copy-address').selectText();
+    await playground.keyboard.press('Control+c');
+    const copied = await waitForClipboard(
+      readClipboard,
+      (text) =>
+        text.startsWith(server.origin) &&
+        new URL(text).searchParams.get('id') === '5' &&
+        new URL(text).searchParams.get('utm_source') !== 'linkedin',
+    );
+    expect(await expectStable(readClipboard, 1500)).toBe(copied);
     expect(playground.url()).toBe(url.href);
   });
 
@@ -1524,6 +1593,7 @@ test.describe('extension pages', () => {
     readClipboard,
     setSettings,
     waitForWatcher,
+    writeClipboardExternally,
   }) => {
     await setSettings({ enabled: true, mode: 'strip', watchClipboard: false });
     await waitForWatcher(false);
@@ -1535,7 +1605,8 @@ test.describe('extension pages', () => {
     expect(response).toEqual({ ok: true });
     expect(await readClipboard()).toBe('https://example.com/clean');
 
-    await serviceWorker.evaluate((text) => chrome.runtime.sendMessage({ type: 'offscreen-copy', text }), ARTICLE);
+    // A new external entry remains eligible after a failed Undo; an explicit writer's own output does not.
+    await writeClipboardExternally(ARTICLE);
     expect(await readClipboard()).toBe(ARTICLE);
     const session = await context.newCDPSession(playground);
     const { targetInfos } = await session.send('Target.getTargets');

@@ -354,6 +354,39 @@ it('accepts the popup count and rejects a foreign extension sender', async () =>
   expect(worker.sessionSet).toHaveBeenCalledWith({ sessionCount: 2 });
 });
 
+it('acknowledges synchronous write registration only from a content sender', async () => {
+  const worker = await startBackground({ enabled: true });
+  const snapshot = { text: 'https://example.com/?utm_source=email', html: null, types: ['text/plain'] };
+  const payload = { type: 'rewritten', urls: 1, clipboard: { before: snapshot, after: snapshot } };
+  const response = vi.fn();
+  expect(worker.listener(payload, contentSender, response)).toBe(true);
+  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
+  expect(worker.sendMessage).toHaveBeenCalledWith(payload);
+  const rejected = vi.fn();
+  expect(worker.listener(payload, offscreenSender, rejected)).toBe(false);
+  expect(rejected).toHaveBeenCalledWith({ ok: false });
+});
+
+it('forwards observation-only snapshots without creating a copy action', async () => {
+  const worker = await startBackground({ enabled: true, watchClipboard: false });
+  const response = vi.fn();
+  const payload = {
+    type: 'reconcile-clipboard',
+    text: 'ordinary prose',
+    embedded: true,
+    pageCopy: true,
+    types: ['text/plain'],
+    epoch: EPOCH,
+    observeOnly: true,
+  };
+  worker.listener(payload, contentSender, response);
+  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
+  expect(worker.sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'offscreen-reconcile', text: payload.text, epoch: EPOCH, observeOnly: true }),
+  );
+  expect(worker.localSet).not.toHaveBeenCalled();
+});
+
 it('copies signed links unchanged through the menu and explains the skip', async () => {
   const worker = await startBackground();
   const url = 'https://cdn.example/report.pdf?utm_source=email&Signature=signature&Key-Pair-Id=key&Expires=99';

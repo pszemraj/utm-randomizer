@@ -1,5 +1,5 @@
 import type { ExtensionMessage } from './lib/messages';
-import { getRewriteSkipReason, hasTrackingParams, rewriteUrl, type Mode } from './lib/rewrite';
+import { getRewriteSkipReason, rewriteUrl, type Mode } from './lib/rewrite';
 import { describeMode, loadSettings, requestSecret, saveSettings, watchSettings, type Settings } from './lib/settings';
 
 const COMMAND_COPY_PAGE = 'copy-clean-page-url';
@@ -91,9 +91,6 @@ async function copyPageLink(): Promise<void> {
     setStatus('Copied (signed link left unchanged)');
   } else if (getRewriteSkipReason(pageUrl) === 'too-long') {
     setStatus('Copied (link too long to rewrite)');
-  } else if (hasTrackingParams(pageUrl)) {
-    // The address bar was already cleaned, so the link carries replacements already.
-    setStatus(`${emoji} Copied, tracking already ${done}`);
   } else {
     setStatus('Copied unchanged');
   }

@@ -21,7 +21,7 @@ If the release only offers **Source code** archives, use the [source build](#bui
 
 - Copy links as usual: Ctrl+C / Cmd+C, a site's copy button, or **Copy link address**.
 - Open the toolbar popup to choose **Decoy**, **Silly**, **Hybrid**, or **Remove**, pause cleaning, or change the cleaning layers and notifications.
-- Decoy, all automatic cleaning layers, and notifications are enabled by default. Automatic plain-text rewrites offer **Undo**.
+- Decoy, all automatic cleaning layers, and notifications are enabled by default. Each clipboard entry is processed once; automatic plain-text rewrites offer **Undo**.
 - To copy the current page explicitly, use **Alt+Shift+U** or **Copy this page's link** in the popup.
 
 Try it: right-click [this test link](https://example.com/article?id=42&utm_source=newsletter&utm_medium=email), select **Copy link address**, and paste into a text field. The tracking values should change while `id=42` stays intact.

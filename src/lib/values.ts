@@ -8,8 +8,8 @@
  * - Silly style produces obvious nonsense (`utm_source=carrier-pigeon`).
  * - Hybrid style picks decoy or silly independently for each value, so one link mixes both.
  *
- * Values are drawn from a seeded generator (see prng.ts), so a link always gets the same
- * replacements and rewriting is idempotent.
+ * Values are drawn from a seeded generator (see prng.ts). The same input gets the same
+ * replacement, but existing decoys remain ordinary inputs. Writers track their own output.
  */
 import type { Category } from './params';
 import { pick, randomInt, seededRandom, type Random } from './prng';
@@ -484,7 +484,7 @@ type ShapeToken = { literal: string } | { alphabet: readonly string[]; code: str
 /**
  * Whether a raw value reads like words (`spring_sale`, `newsletter`, `x`) rather than an encoded
  * identifier (`1`, `a3f9c0b1d2e4`, `IwAR3%3D`). Every decoy word value is wordy, and scrambling never
- * turns an identifier into a wordy value, so rewriting stays idempotent.
+ * turns an identifier into a wordy value, so its format remains consistent.
  */
 export function isWordy(raw: string): boolean {
   let decoded: string;
@@ -565,11 +565,6 @@ function shapeOf(raw: string): ShapeToken[] {
   return tokens;
 }
 
-/** A compact description of a value's shape; equal for a value and its scrambled version. */
-function shapeSignature(tokens: ShapeToken[]): string {
-  return tokens.map((token) => ('literal' in token ? `=${token.literal}` : token.code)).join('');
-}
-
 /**
  * Redraws every letter and digit of `raw` from the same class, keeping the prefix, separators,
  * percent-encoding, and length, so the result has exactly the original's format. A value that was
@@ -590,6 +585,19 @@ export function scrambleLike(raw: string, random: Random): string {
         random,
         token.alphabet.filter((candidate) => /[g-z]/i.test(decodeURIComponent(candidate))),
       );
+    }
+  }
+  if (chars.join('') === raw) {
+    // Even a one-character identifier must change when its random draw matches the input.
+    const index = tokens.findIndex((token) => 'alphabet' in token && token.alphabet.length > 1);
+    const token = tokens[index];
+    if (token && 'alphabet' in token) {
+      const alternatives = token.alphabet.filter((char) => {
+        const candidate = [...chars];
+        candidate[index] = char;
+        return char !== chars[index] && (isHex(raw) || !isHex(candidate.join('')));
+      });
+      chars[index] = pick(random, alternatives);
     }
   }
   return chars.join('');
@@ -660,6 +668,24 @@ function decoyWord(category: Exclude<Category, 'id'>, random: Random): string {
   }
 }
 
+/** Existing vocabulary used when a composed decoy happens to match the original word. */
+const WORD_ALTERNATIVES: Record<Exclude<Category, 'id'>, readonly string[]> = {
+  source: DECOY_SOURCES,
+  medium: DECOY_MEDIUMS,
+  campaign: CAMPAIGN_THEMES,
+  term: TERM_NOUNS,
+  content: CONTENT_WORDS,
+  generic: DECOY_GENERIC,
+};
+
+/** Picks another value from a vocabulary with at least two distinct entries. */
+function pickDifferent(random: Random, words: readonly string[], original: string): string {
+  return pick(
+    random,
+    words.filter((word) => word !== original),
+  );
+}
+
 /** Word-salad nonsense for an identifier: two or three phrases and a short alphanumeric suffix. */
 function sillyToken(random: Random): string {
   const words: string[] = [];
@@ -678,17 +704,10 @@ function sillyToken(random: Random): string {
 }
 
 /**
- * The replacement for one tracking value. `seed` must be stable for this parameter of this link
- * (see rewrite.ts); the value itself only contributes its shape, so feeding a replacement back in
- * returns the same replacement.
- *
- * Because the value is ignored beyond its shape, the replacement sometimes equals it: 1 in 10 for a
- * one-digit value such as `gclid=1`, about 1 in the vocabulary size for a word. The link is
- * then already in its decoy form and `rewriteUrl` reports nothing to rewrite. This is deliberate.
- * Every replacement is a fixed point (that is what makes rewriting idempotent), so an original that
- * happens to equal it is one too; and picking another value whenever they match would make the
- * decoy depend on the real value, which for small ranges gives it away. A "must differ" rule fails
- * the idempotency tests in rewrite.test.ts and values.test.ts.
+ * The replacement for one tracking value. `seed` identifies this parameter of this link
+ * (see rewrite.ts), and the current value seeds the draw. Word values and identifiers with
+ * mutable characters always change. Literal-only identifiers retain their format.
+ * Writers recognize their recorded output; vocabulary membership never means "already cleaned".
  *
  * @param style Believable decoys, obvious nonsense, or a per-value mix of both.
  * @param category What the parameter carries; picks the vocabulary for word values.
@@ -703,13 +722,25 @@ export function replacementValue(style: Style, category: Category, raw: string, 
     return replacementValue(pickSilly ? 'silly' : 'decoy', category, raw, seed);
   }
   if (style === 'silly') {
-    const random = seededRandom(`${seed}|silly`);
-    return category === 'id' ? sillyToken(random) : pick(random, FUNNY[category]);
+    const random = seededRandom(`${seed}|${raw}|silly`);
+    if (category !== 'id') {
+      const original = isWordy(raw) ? decodeURIComponent(raw.replace(/\+/g, ' ')) : raw;
+      return pickDifferent(random, FUNNY[category], original);
+    }
+    const value = sillyToken(random);
+    return value === raw
+      ? value.slice(0, -1) + pickDifferent(random, (LOWER + DIGITS).split(''), value.slice(-1))
+      : value;
   }
   if (category !== 'id' && isWordy(raw)) {
-    const word = decoyWord(category, seededRandom(`${seed}|word`));
+    const random = seededRandom(`${seed}|${raw}|word`);
+    const original = decodeURIComponent(raw.replace(/\+/g, ' '));
+    const candidate = decoyWord(category, random);
+    const word =
+      candidate.replace(/\+/g, ' ') === original
+        ? pickDifferent(random, WORD_ALTERNATIVES[category], original)
+        : candidate;
     return raw.includes('%') ? encodeURIComponent(word.replace(/\+/g, ' ')) : word;
   }
-  const shape = shapeOf(raw);
-  return scrambleLike(raw, seededRandom(`${seed}|${shapeSignature(shape)}`));
+  return scrambleLike(raw, seededRandom(`${seed}|${raw}|identifier`));
 }

@@ -2,6 +2,19 @@
 
 import type { Mode } from './rewrite';
 
+/** Clipboard flavors observed together for one completed copy. */
+export interface ClipboardSnapshot {
+  text: string;
+  html: string | null;
+  types: string[];
+}
+
+/** A synchronous page rewrite reported after the browser commits its payload. */
+export interface ClipboardWrite {
+  before: ClipboardSnapshot;
+  after: ClipboardSnapshot;
+}
+
 /**
  * Content script or offscreen document → service worker: a copied link was rewritten. From a
  * subframe, the toast is shown in the tab's top frame; from the background clipboard watcher, in the
@@ -15,6 +28,8 @@ export interface RewrittenMessage {
   relayToast?: ToastPayload;
   /** Originating tab for a reconciliation performed by the offscreen document. */
   tabId?: number;
+  /** Present only when a content script registers its synchronous clipboard write. */
+  clipboard?: ClipboardWrite;
 }
 
 /** Content script or popup → service worker: create (if needed) and return the per-install key. */
@@ -61,6 +76,8 @@ export interface ReconcileClipboardMessage {
   epoch: string;
   /** Previous clipboard text used only for comparison, not as rewrite input. */
   baseline?: string;
+  /** Report observed formats without treating the payload as a new copy. */
+  observeOnly?: boolean;
 }
 
 /** Content script → service worker: restore text and suppress automatic rewriting. */
@@ -84,6 +101,8 @@ export interface OffscreenReconcileMessage {
   epoch: string;
   /** Previous clipboard text used only for comparison, not as rewrite input. */
   baseline?: string;
+  /** Update completed-write lifetime without rewriting the current payload. */
+  observeOnly?: boolean;
   /** Originating frame URL for relative page copies; absent for whole-clipboard inspection. */
   baseUrl?: string;
   config: WatchConfig;
@@ -214,6 +233,16 @@ export function isClipboardEpoch(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
+/** Validates the complete before/after payload of a synchronous rewrite. */
+function isClipboardWrite(value: unknown): value is ClipboardWrite {
+  const snapshot = (item: unknown): boolean =>
+    isRecord(item) &&
+    typeof item.text === 'string' &&
+    (item.html === null || typeof item.html === 'string') &&
+    isTypes(item.types);
+  return isRecord(value) && snapshot(value.before) && snapshot(value.after);
+}
+
 /** Validates every known runtime message payload before a listener acts on it. */
 export function isExtensionMessage(value: unknown): value is ExtensionMessage {
   if (!isRecord(value)) {
@@ -233,7 +262,8 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
       return (
         isCount(value.urls) &&
         (value.relayToast === undefined || isToast(value.relayToast)) &&
-        (value.tabId === undefined || isNonnegativeInteger(value.tabId))
+        (value.tabId === undefined || isNonnegativeInteger(value.tabId)) &&
+        (value.clipboard === undefined || isClipboardWrite(value.clipboard))
       );
     case 'toast':
       return isToast(value.toast);
@@ -241,6 +271,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
       return value.config === null || isWatchConfig(value.config);
     case 'offscreen-reconcile':
       return (
+        (value.observeOnly === undefined || typeof value.observeOnly === 'boolean') &&
         isText(value.text) &&
         typeof value.embedded === 'boolean' &&
         isTypes(value.types) &&
@@ -252,6 +283,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
       );
     case 'reconcile-clipboard':
       return (
+        (value.observeOnly === undefined || typeof value.observeOnly === 'boolean') &&
         isText(value.text) &&
         typeof value.embedded === 'boolean' &&
         typeof value.pageCopy === 'boolean' &&

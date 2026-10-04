@@ -61,6 +61,11 @@ describe('seededRandom', () => {
 describe('scrambleLike', () => {
   const random = seededRandom('scramble');
 
+  it('changes a one-character identifier even when the draw matches it', () => {
+    expect(scrambleLike('1', () => 0.1)).not.toBe('1');
+    expect(scrambleLike('%31', () => 0.1)).not.toBe('%31');
+  });
+
   it('keeps length, prefix, separators, and percent-escapes', () => {
     const raw = 'IwAR3xYz_123-AbC%3D%3D';
     const scrambled = scrambleLike(raw, random);
@@ -97,14 +102,25 @@ describe('scrambleLike', () => {
       const once = replacementValue('decoy', 'id', raw, seed);
       expect(once).not.toBe(raw);
       expect(spelling(once)).toBe(spelling(raw));
-      expect(replacementValue('decoy', 'id', once, seed)).toBe(once);
+      expect(replacementValue('decoy', 'id', once, seed)).not.toBe(once);
     }
   });
 });
 
 describe('replacementValue', () => {
+  it.each(['decoy', 'silly', 'hybrid'] as const)(
+    'replaces existing %s values instead of treating them as final',
+    (style) => {
+      for (const category of CATEGORIES) {
+        const raw = category === 'id' ? '1' : 'newsletter';
+        const once = replacementValue(style, category, raw, 'collision');
+        expect(once).not.toBe(raw);
+        expect(replacementValue(style, category, once, 'collision'), `${style} ${category} ${once}`).not.toBe(once);
+      }
+    },
+  );
   it.each(['50%off', '%foo', '%q1', '%1q', '%', '%a', '%%61%qz', '%a%32%qz', '%qz%3D%61'])(
-    'preserves malformed percent tokens and fixed points (%s)',
+    'preserves malformed percent tokens across replacements (%s)',
     (raw) => {
       const malformed = raw.match(/%(?![0-9a-f]{2})[^%]{0,2}/gi) ?? [];
       for (const category of ['campaign', 'id'] as const) {
@@ -115,7 +131,8 @@ describe('replacementValue', () => {
           expect(decoy).toHaveLength(raw.length);
           for (const style of ['decoy', 'hybrid'] as const) {
             const once = replacementValue(style, category, raw, seed);
-            expect(replacementValue(style, category, once, seed)).toBe(once);
+            const twice = replacementValue(style, category, once, seed);
+            if (once !== raw) expect(twice).not.toBe(once);
           }
         }
       }
@@ -123,7 +140,7 @@ describe('replacementValue', () => {
   );
 
   it.each(['aB1c1F1b', '%61%42%31%63%31%46%31%62'])(
-    'keeps mixed-case hexadecimal identifier shape and fixed points (%s)',
+    'keeps mixed-case hexadecimal identifier shape across replacements (%s)',
     (raw) => {
       for (const category of ['campaign', 'id'] as const) {
         for (let i = 0; i < 200; i += 1) {
@@ -134,7 +151,7 @@ describe('replacementValue', () => {
           expect(decoy).toHaveLength(raw.length);
           for (const style of ['decoy', 'hybrid'] as const) {
             const once = replacementValue(style, category, raw, seed);
-            expect(replacementValue(style, category, once, seed)).toBe(once);
+            expect(replacementValue(style, category, once, seed)).not.toBe(once);
           }
         }
       }
@@ -152,8 +169,8 @@ describe('replacementValue', () => {
           hybridDecoys += 1;
         }
         expect(decodeURIComponent(decoy)).not.toMatch(/^[0-9a-f]+$/i);
-        expect(replacementValue('decoy', 'id', decoy, seed)).toBe(decoy);
-        expect(replacementValue('hybrid', 'id', hybrid, seed)).toBe(hybrid);
+        expect(replacementValue('decoy', 'id', decoy, seed)).not.toBe(decoy);
+        expect(replacementValue('hybrid', 'id', hybrid, seed)).not.toBe(hybrid);
       }
       expect(hybridDecoys).toBeGreaterThan(0);
     }
@@ -167,7 +184,7 @@ describe('replacementValue', () => {
   });
 
   it.each(['%E6%96%B0%E9%97%BB', 'новости', '%6E%65%77%73', 'spring%20sale', 'cafe%CC%81'])(
-    'replaces encoded and non-Latin word values and keeps fixed points (%s)',
+    'replaces encoded and non-Latin word values, including generated values (%s)',
     (raw) => {
       expect(isWordy(raw)).toBe(true);
       for (const category of ['source', 'campaign', 'term'] as const) {
@@ -177,7 +194,7 @@ describe('replacementValue', () => {
             const once = replacementValue(style, category, raw, seed);
             expect(once).not.toBe(raw);
             expect(isWordy(once)).toBe(true);
-            expect(replacementValue(style, category, once, seed)).toBe(once);
+            expect(replacementValue(style, category, once, seed)).not.toBe(once);
           }
         }
       }
@@ -188,14 +205,14 @@ describe('replacementValue', () => {
     const term = replacementValue('decoy', 'term', 'running%20shoes', 'seed');
     expect(term).toContain('%20');
     expect(term).not.toContain('+');
-    expect(replacementValue('decoy', 'term', term, 'seed')).toBe(term);
+    expect(replacementValue('decoy', 'term', term, 'seed')).not.toBe(term);
     const token = replacementValue('decoy', 'id', 'IwAR3xYz_123-AbC%3D%3D', 'seed');
     expect(token).toMatch(/^IwAR[0-9][a-z][A-Z][a-z]_[0-9]{3}-[A-Z][a-z][A-Z]%3D%3D$/);
-    expect(replacementValue('decoy', 'id', token, 'seed')).toBe(token);
+    expect(replacementValue('decoy', 'id', token, 'seed')).not.toBe(token);
     expect(isWordy('IwAR3%3D')).toBe(false);
     const hex = replacementValue('decoy', 'campaign', '%31%32%33%34abce', 'seed-0');
     expect(hex).toMatch(/^%31%32%3[0-9]%3[0-9][a-f]{4}$/);
-    expect(replacementValue('decoy', 'campaign', hex, 'seed-0')).toBe(hex);
+    expect(replacementValue('decoy', 'campaign', hex, 'seed-0')).not.toBe(hex);
   });
 
   it('only produces URL-safe values', () => {
@@ -208,7 +225,7 @@ describe('replacementValue', () => {
     }
   });
 
-  it('returns the same value when fed its own output (fuzzed)', () => {
+  it('keeps identical input deterministic without exempting its output (fuzzed)', () => {
     const random = seededRandom('fuzz');
     for (let i = 0; i < 20_000; i += 1) {
       const raw = randomRaw(random);
@@ -216,7 +233,10 @@ describe('replacementValue', () => {
       const style = pick(random, ['decoy', 'silly', 'hybrid'] as const);
       const seed = `seed-${String(i % 97)}`;
       const once = replacementValue(style, category, raw, seed);
-      expect(replacementValue(style, category, once, seed), `${style} ${category} ${raw} -> ${once}`).toBe(once);
+      expect(replacementValue(style, category, raw, seed)).toBe(once);
+      if (once !== raw) {
+        expect(replacementValue(style, category, once, seed), `${style} ${category} ${raw} -> ${once}`).not.toBe(once);
+      }
     }
   });
 });

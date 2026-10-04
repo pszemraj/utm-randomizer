@@ -3,6 +3,7 @@ import { isExtensionMessage, isWorkerSender } from '../../src/lib/messages';
 
 const EPOCH = '00000000-0000-4000-8000-000000000001';
 const config = { mode: 'strip', key: 'test-key' };
+const snapshot = { text: 'https://example.com/?utm_source=email', html: null, types: ['text/plain'] };
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -16,6 +17,16 @@ describe('runtime message payloads', () => {
     { type: 'offscreen-epoch' },
     { type: 'count', urls: 1 },
     { type: 'rewritten', urls: 2, relayToast: { message: 'Cleaned', undoText: '' }, tabId: 7 },
+    { type: 'rewritten', urls: 1, clipboard: { before: snapshot, after: snapshot } },
+    {
+      type: 'reconcile-clipboard',
+      text: 'ordinary prose',
+      embedded: true,
+      pageCopy: true,
+      types: ['text/plain'],
+      epoch: EPOCH,
+      observeOnly: true,
+    },
     { type: 'toast', toast: { message: 'Cleaned' } },
     { type: 'watch-config', config },
     { type: 'watch-config', config: null },
@@ -100,6 +111,17 @@ describe('runtime message payloads', () => {
     { type: 'count', urls: Number.MAX_SAFE_INTEGER + 1 },
     { type: 'rewritten', urls: 1, relayToast: { message: 42 } },
     { type: 'rewritten', urls: 1, tabId: -1 },
+    {
+      type: 'reconcile-clipboard',
+      text: 'ordinary prose',
+      embedded: true,
+      pageCopy: true,
+      types: ['text/plain'],
+      epoch: EPOCH,
+      observeOnly: 'yes',
+    },
+    { type: 'rewritten', urls: 1, clipboard: { before: null, after: snapshot } },
+    { type: 'rewritten', urls: 1, clipboard: { before: snapshot, after: { ...snapshot, html: 7 } } },
     { type: 'offscreen-copy' },
     { type: 'offscreen-copy', text: 5 },
     { type: 'copy-clipboard', text: 5 },

@@ -1,10 +1,9 @@
 /**
  * Deterministic pseudo-random numbers seeded from a string.
  *
- * Replacement values are derived from a secret per-install key plus the link itself, so the same
- * link always gets the same replacements. That makes every rewrite idempotent (rewriting an
- * already-rewritten link changes nothing) without any marker an analyst could filter on. This is
- * not cryptography: it only has to be unpredictable to someone who does not know the key.
+ * Replacement values are derived from a secret per-install key and the current link values, so
+ * identical inputs get identical replacements across clipboard formats and extension contexts.
+ * Writers record completed changes to avoid processing their own output. This is not cryptography.
  */
 
 /** A source of floats in [0, 1). */

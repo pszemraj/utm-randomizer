@@ -70,6 +70,7 @@ let reconcile: ReturnType<typeof vi.fn<WatcherDeps['reconcile']>>;
 let restore: ReturnType<typeof vi.fn<WatcherDeps['restore']>>;
 let invalidateReads: ReturnType<typeof vi.fn<WatcherDeps['invalidateReads']>>;
 let beginRead: ReturnType<typeof vi.fn<WatcherDeps['beginRead']>>;
+let acknowledgeWrite: Promise<void> | undefined;
 
 /** Starts a watcher in Remove mode (simple expected output) with a controllable clock; records rewrites. */
 function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {}, isContextValid = () => true) {
@@ -77,6 +78,7 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
   rewrites = [];
   now = 100_000;
   key = 'test-key';
+  acknowledgeWrite = undefined;
   reconcile = vi.fn<WatcherDeps['reconcile']>().mockResolvedValue(undefined);
   restore = vi.fn<WatcherDeps['restore']>().mockResolvedValue(undefined);
   invalidateReads = vi.fn<WatcherDeps['invalidateReads']>().mockResolvedValue(EPOCH);
@@ -89,7 +91,10 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
     invalidateReads,
     getSettings: () => settings,
     getKey: () => key,
-    onRewrite: (event) => rewrites.push(event),
+    onRewrite: (event) => {
+      rewrites.push(event);
+      return acknowledgeWrite;
+    },
     isContextValid,
     now: () => now,
   });
@@ -486,16 +491,17 @@ describe('clipboard reconciliation', () => {
     { text: 'private message without links', html: '' },
     { text: 'https://example.com/item?id=42', html: '' },
     { text: 'A product', html: '<a href="https://example.com/item?id=42">A product</a>' },
-  ])('does not send unrelated page clipboard payloads: $text', async ({ text, html }) => {
+  ])('reports unrelated page clipboard observations without rewriting: $text', async ({ text, html }) => {
     const clipboard = new FakeClipboard(true);
     const current = start(clipboard);
     interact();
     clipboard.html = html;
     clipboard.change(text, html ? ['text/plain', 'text/html'] : ['text/plain']);
     await flush();
-    expect(reconcile).not.toHaveBeenCalled();
+    const types = html ? ['text/plain', 'text/html'] : ['text/plain'];
+    expect(reconcile).toHaveBeenCalledWith(text, !html, undefined, types, EPOCH, true, true);
     expect(await current.inspect()).toBe(true);
-    expect(reconcile).not.toHaveBeenCalled();
+    expect(reconcile).toHaveBeenLastCalledWith(text, true, undefined, types, EPOCH, false, true);
   });
 
   it('delegates current clipboard text without writing from the page', async () => {
@@ -535,7 +541,15 @@ describe('clipboard reconciliation', () => {
       expect(reconcile).toHaveBeenCalledWith('/item?utm_source=email', true, undefined, ['text/plain'], EPOCH, true);
       reconcile.mockClear();
       expect(await current.inspect()).toBe(true);
-      expect(reconcile).not.toHaveBeenCalled();
+      expect(reconcile).toHaveBeenCalledWith(
+        '/item?utm_source=email',
+        true,
+        undefined,
+        ['text/plain'],
+        EPOCH,
+        false,
+        true,
+      );
     } finally {
       vi.unstubAllGlobals();
     }
@@ -580,6 +594,37 @@ describe('clipboard reconciliation', () => {
     reconcile.mockClear();
     await current.inspect();
     expect(reconcile).toHaveBeenCalledWith(CLEAN, true, undefined, ['text/plain', 'text/html'], EPOCH, false);
+  });
+
+  it('holds synchronous rich output only until the coordinator acknowledges it', async () => {
+    const clipboard = new FakeClipboard(true);
+    start(clipboard, { mode: 'decoy' });
+    let acknowledge: (() => void) | undefined;
+    acknowledgeWrite = new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    });
+    const event = copyEvent();
+    event.preventDefault();
+    event.clipboardData?.setData('text/plain', TRACKED);
+    event.clipboardData?.setData('text/html', `<a href="${TRACKED}">A product</a>`);
+    document.body.dispatchEvent(event);
+    const text = event.clipboardData?.getData('text/plain') ?? '';
+    clipboard.html = event.clipboardData?.getData('text/html') ?? '';
+    clipboard.change(text, ['text/plain', 'text/html']);
+    await flush();
+    expect(reconcile).not.toHaveBeenCalled();
+    // New intent cancels older reads, but cannot forget a write still awaiting registration.
+    interact();
+    document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { key: 'a', bubbles: true })));
+    clipboard.change(text, ['text/plain', 'text/html']);
+    await flush();
+    expect(reconcile).not.toHaveBeenCalled();
+    acknowledge?.();
+    await flush();
+    // Completed state belongs to the coordinator; the frame releases its local payload.
+    clipboard.change(text, ['text/plain', 'text/html']);
+    await flush();
+    expect(reconcile).toHaveBeenCalledOnce();
   });
 
   it('rejects synthetic copy, gesture and clipboard-change events', async () => {
@@ -719,7 +764,8 @@ describe('gesture reconciliation', () => {
     const button = document.getElementById('copy');
     button?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
     await vi.advanceTimersByTimeAsync(3000);
-    expect(reconcile).not.toHaveBeenCalled();
+    expect(reconcile.mock.calls.every((call) => call[6] === true)).toBe(true);
+    reconcile.mockClear();
 
     button?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
     await flush();
@@ -814,7 +860,8 @@ describe('gesture reconciliation', () => {
     const button = document.getElementById('copy');
     button?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
     await vi.advanceTimersByTimeAsync(3000);
-    expect(reconcile).not.toHaveBeenCalled();
+    expect(reconcile.mock.calls.every((call) => call[6] === true)).toBe(true);
+    reconcile.mockClear();
     button?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
     current.stop();
     clipboard.text = 'later contents';

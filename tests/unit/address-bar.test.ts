@@ -54,6 +54,35 @@ describe('address bar cleaning', () => {
     expect(`${location.pathname}${location.search}`).toBe('/next?page=2');
   });
 
+  it('does not follow its own Navigation API replacement with another rewrite', () => {
+    vi.useFakeTimers();
+    const navigation = new EventTarget();
+    vi.stubGlobal('navigation', navigation);
+    history.replaceState(null, '', '/article?utm_source=newsletter');
+    const replace = history.replaceState.bind(history);
+    const writes = vi.spyOn(history, 'replaceState').mockImplementation((...args) => {
+      replace(...args);
+      navigation.dispatchEvent(new Event('currententrychange'));
+    });
+    start({ mode: 'decoy', key: 'k' });
+    const once = location.href;
+    vi.advanceTimersByTime(2_000);
+    expect(location.href).toBe(once);
+    expect(writes).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('cleans its own output after a mode change', () => {
+    history.replaceState(null, '', '/article?utm_source=newsletter');
+    let options: RewriteOptions = { mode: 'decoy', key: 'k' };
+    cleaner = startAddressBarCleaner({ getOptions: () => options });
+    expect(location.search).toContain('utm_source=');
+    options = { mode: 'strip', key: 'k' };
+    cleaner.clean();
+    expect(location.search).toBe('');
+  });
+
   it('leaves the URL alone while cleaning is off or the extension is gone', () => {
     history.replaceState(null, '', '/?utm_source=newsletter');
     start(null).clean();

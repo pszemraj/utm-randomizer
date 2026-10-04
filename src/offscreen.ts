@@ -1,8 +1,13 @@
 // Offscreen document: the single coordinator for post-copy clipboard writes. Reads and commits
 // run synchronously through execCommand because this document never has browser focus.
 import { hasRewritableClipboard, rewriteHtml } from './lib/clipboard-html';
-import { createLoopGuard } from './lib/loop-guard';
-import { isExtensionMessage, isWorkerSender, sendNotification, type WatchConfig } from './lib/messages';
+import {
+  isExtensionMessage,
+  isWorkerSender,
+  sendNotification,
+  type ClipboardSnapshot,
+  type WatchConfig,
+} from './lib/messages';
 import { rewriteText, type RewriteOptions } from './lib/rewrite';
 import { describeMode } from './lib/settings';
 
@@ -11,26 +16,18 @@ const POLL_MS = 750;
 /** Lets synchronous page copy handlers handle their clipboard payload first. */
 const GRACE_MS = 250;
 
-/** Clipboard flavors captured together by one synchronous paste. */
-interface ClipboardSnapshot {
-  text: string;
-  html: string | null;
-  types: string[];
-}
-
 let config: WatchConfig | null = null;
 let timer = 0;
 let graceTimer = 0;
 /** Last observed clipboard payload, including its formats. */
 let lastSeen: string | null = null;
-/** The exact restored payload remains suppressed until any clipboard flavor changes. */
-let ignored: ClipboardSnapshot | null = null;
+/** Only the current successful write is retained, until different clipboard flavors are observed. */
+let lastWrite: { before: ClipboardSnapshot | null; after: ClipboardSnapshot; restored: boolean } | null = null;
 /** Clipboard payload waiting out the grace period. */
 let candidate: ClipboardSnapshot | null = null;
 let inspectionPending = false;
 /** Invalidates native reads started before newer page intent, Undo, explicit copies, or reconfiguration. */
 let epoch: string = crypto.randomUUID();
-const loopGuard = createLoopGuard(() => Date.now());
 
 /** The editable element used for clipboard operations. */
 function field(): HTMLTextAreaElement {
@@ -73,7 +70,11 @@ function supported(snapshot: ClipboardSnapshot): boolean {
 }
 
 /** Writes the provided plain-text and HTML flavors together. */
-function writeClipboard(snapshot: ClipboardSnapshot): boolean {
+function writeClipboard(
+  snapshot: ClipboardSnapshot,
+  before: ClipboardSnapshot | null = null,
+  restored = false,
+): boolean {
   const textarea = field();
   const onCopy = (event: ClipboardEvent) => {
     event.preventDefault();
@@ -89,7 +90,10 @@ function writeClipboard(snapshot: ClipboardSnapshot): boolean {
   const ok = document.execCommand('copy');
   textarea.removeEventListener('copy', onCopy);
   textarea.value = '';
-  if (ok) lastSeen = identity(snapshot);
+  if (ok) {
+    lastSeen = identity(snapshot);
+    lastWrite = { before, after: snapshot, restored };
+  }
   return ok;
 }
 
@@ -100,12 +104,12 @@ function plainText(text: string): ClipboardSnapshot {
 
 /** Whether the current payload is exactly the one restored by Undo. */
 function isIgnored(snapshot: ClipboardSnapshot): boolean {
-  return ignored !== null && identity(snapshot) === identity(ignored);
+  return lastWrite?.restored === true && identity(snapshot) === identity(lastWrite.after);
 }
 
-/** Expires Undo suppression after observing different text or clipboard formats. */
+/** Releases the completed-write record after observing different text or clipboard formats. */
 function observe(snapshot: ClipboardSnapshot): void {
-  if (!isIgnored(snapshot)) ignored = null;
+  if (lastWrite && identity(snapshot) !== identity(lastWrite.after)) lastWrite = null;
 }
 
 /** Synchronously reads the current clipboard, checks the expected text, and commits a supported rewrite. */
@@ -117,19 +121,21 @@ function reconcile(
   readEpoch: string,
   tabId?: number,
   baseline?: string,
+  observeOnly = false,
 ): boolean {
   // An invalidated inspection must leave its background candidate available for a fresh read.
   if (readEpoch !== epoch) return false;
   const snapshot = readClipboard();
   if (!snapshot) return false;
+  if (snapshot.text !== text || JSON.stringify([...types].sort()) !== JSON.stringify(snapshot.types)) return true;
   observe(snapshot);
-  if (snapshot.text === text && baseline !== undefined && baseline !== ignored?.text) ignored = null;
+  if (observeOnly) return true;
+  if (isIgnored(snapshot) && snapshot.text === text && baseline !== undefined && baseline !== lastWrite?.after.text)
+    lastWrite = null;
   if (
-    snapshot.text !== text ||
     isIgnored(snapshot) ||
     !supported(snapshot) ||
-    JSON.stringify([...types].sort()) !== JSON.stringify(snapshot.types) ||
-    loopGuard.blocks(snapshot.text)
+    (lastWrite !== null && identity(snapshot) === identity(lastWrite.after))
   ) {
     return true;
   }
@@ -139,9 +145,8 @@ function reconcile(
   const rewritten = { ...snapshot, text: result?.text ?? snapshot.text, html: rewrittenHtml?.html ?? snapshot.html };
   const current = readClipboard();
   if (!current || identity(current) !== identity(snapshot)) return true;
-  if (!writeClipboard(rewritten)) return false;
+  if (!writeClipboard(rewritten, snapshot)) return false;
   candidate = null;
-  loopGuard.record(snapshot.text, rewritten.text);
   const urls = Math.max(result?.urls ?? 0, rewrittenHtml?.urls ?? 0);
   const { emoji, done } = describeMode(options.mode);
   sendNotification({
@@ -230,16 +235,39 @@ chrome.runtime.onMessage.addListener(
         'offscreen-reconcile',
         'offscreen-epoch',
         'offscreen-intent',
+        'rewritten',
         'watch-config',
       ].includes(String(message.type))
     ) {
       return false;
     }
+    // Original notifications also reach this document; only the worker's forwarded registration is ours to acknowledge.
+    if (message.type === 'rewritten' && !isWorkerSender(sender)) return false;
     if (!isExtensionMessage(message) || !isWorkerSender(sender)) {
       sendResponse({ ok: false });
       return false;
     }
     switch (message.type) {
+      case 'rewritten': {
+        const write = message.clipboard;
+        if (!write) {
+          sendResponse({ ok: false });
+          break;
+        }
+        const snapshot = readClipboard();
+        if (!snapshot || identity(snapshot) !== identity({ ...write.after, types: [...write.after.types].sort() })) {
+          sendResponse({ ok: false });
+          break;
+        }
+        if (!lastWrite || identity(lastWrite.after) !== identity(snapshot)) {
+          lastWrite = { before: write.before, after: snapshot, restored: false };
+        }
+        lastSeen = identity(snapshot);
+        candidate = null;
+        window.clearTimeout(graceTimer);
+        sendResponse({ ok: true });
+        break;
+      }
       case 'offscreen-copy':
         epoch = crypto.randomUUID();
         candidate = null;
@@ -250,8 +278,7 @@ chrome.runtime.onMessage.addListener(
         const restored = plainText(message.text);
         candidate = null;
         window.clearTimeout(graceTimer);
-        const ok = writeClipboard(restored);
-        if (ok) ignored = restored;
+        const ok = writeClipboard(restored, null, true);
         sendResponse({ ok });
         break;
       }
@@ -265,6 +292,7 @@ chrome.runtime.onMessage.addListener(
             message.epoch,
             message.tabId,
             message.baseline,
+            message.observeOnly,
           ),
         });
         break;

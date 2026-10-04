@@ -30,6 +30,7 @@ export function startAddressBarCleaner(deps: AddressBarDeps): AddressBarCleaner 
   const listeners = new AbortController();
   const { signal } = listeners;
   let pending = 0;
+  let lastWritten: { url: string; mode: RewriteOptions['mode']; key: RewriteOptions['key'] } | null = null;
   // The page gets to finish loading with its URL untouched.
   let loaded = document.readyState === 'complete';
 
@@ -53,6 +54,10 @@ export function startAddressBarCleaner(deps: AddressBarDeps): AddressBarCleaner 
       return;
     }
     const current = location.href;
+    if (current === lastWritten?.url && options.mode === lastWritten.mode && options.key === lastWritten.key) {
+      return;
+    }
+    lastWritten = null;
     const result = rewriteUrl(current, options);
     if (!result || result.url === current) {
       return;
@@ -60,6 +65,7 @@ export function startAddressBarCleaner(deps: AddressBarDeps): AddressBarCleaner 
     try {
       // Keep the page's history state: routers store their own bookkeeping there.
       history.replaceState(history.state, '', result.url);
+      lastWritten = { url: location.href, mode: options.mode, key: options.key };
     } catch {
       // Sandboxed or opaque-origin documents cannot change their URL.
     }
