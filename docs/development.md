@@ -28,7 +28,7 @@ npm run icons
 
 The end-to-end tests load `dist/` into Playwright's Chromium and exercise single-URL clipboard changes, unchanged page addresses, settings, and non-URL and non-text controls. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser.
 
-Focus tests require `HEADED=1`. Headless runs skip them because minimizing a headless window does not dispatch the native focus events those tests exercise.
+Focus tests require `HEADED=1`: minimizing a headless window does not dispatch the native focus events they exercise. State this limitation before a headless run and run the focus cases in a visible browser before claiming full coverage.
 
 See the [validation requirements](../CONTRIBUTING.md#checks) when choosing local checks.
 
@@ -57,7 +57,7 @@ CI runs only lint, formatting, and type checks. Run tests and packaging locally 
 - `src/background.ts`: service worker: focus checks, settings updates, and clipboard watcher lifecycle.
 - `src/offscreen.ts`: background clipboard watcher and clipboard writer.
 - `src/options.*`: on/off and mode settings, opened through Chrome's extension management page.
-- `src/lib/params.ts`: exact global tracking-parameter allowlist.
+- `src/lib/params.ts`: campaign namespaces, exact tracking names, and replacement categories.
 - `src/lib/rewrite.ts`: in-place rewriting of a whole URL.
 - `src/lib/values.ts`, `prng.ts`: Decoy, Silly, and Hybrid replacement values, seeded per copy.
 - `src/lib/messages.ts`: runtime message contracts and sender checks.

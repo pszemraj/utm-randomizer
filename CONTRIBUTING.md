@@ -34,11 +34,11 @@ In `scripts/*.mjs`, which are plain JavaScript, write types inside the tags (`@p
 
 ## Adding a tracking parameter
 
-The exact allowlist lives in `src/lib/params.ts`. Keep coverage small and deliberate: missing tracking is preferable to breaking functional links. Add a name only for explicitly requested coverage, with vendor documentation establishing its tracking purpose and a source comment beside the entry. Leave uncertain or ambiguous names untouched; do not add site rules or prefix matches.
+Recognition lives in `src/lib/params.ts`: [campaign namespaces and exact names](docs/behavior.md#what-gets-rewritten) use one classifier. Keep coverage deliberate: missing tracking is preferable to breaking functional links. Add names or namespaces only for explicitly requested coverage, with vendor documentation establishing their campaign purpose and a source comment beside the rule. Leave uncertain or ambiguous names untouched; do not add site rules.
 
-Each entry declares a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](docs/behavior.md#replacement-values). Use `id` for click IDs; it always takes the identifier path.
+Known names declare a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](docs/behavior.md#replacement-values). Use `id` for identifiers. Unknown names inside a supported namespace draw from pooled vocabulary; do not invent category inference.
 
-Every new entry needs a regression in [`tests/unit/rewrite.test.ts`](tests/unit/rewrite.test.ts) showing the link being cleaned while unrelated query bytes stay intact. Extend the existing preservation controls for names outside the allowlist. A rewriting test establishes the chosen behavior; vendor evidence establishes whether the name belongs in the allowlist.
+Every new rule needs a regression in [`tests/unit/rewrite.test.ts`](tests/unit/rewrite.test.ts) showing cleaning while unrelated query bytes stay intact. For namespaces, cover unseen suffixes and names outside the boundary. A rewriting test establishes the chosen behavior; vendor evidence establishes the campaign use.
 
 ## Adding replacement values
 

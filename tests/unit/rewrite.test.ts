@@ -93,7 +93,7 @@ describe('rewriteUrl (decoy)', () => {
   });
 
   it('leaves valueless and empty tracking parameters alone', () => {
-    expect(rewriteUrl('https://example.com/?utm_source&utm_medium=', decoy)).toBeNull();
+    expect(rewriteUrl('https://example.com/?utm_source&utm_medium=&utm_extra=&mtm_extra&hsa_extra=', decoy)).toBeNull();
   });
 
   it('is deterministic per key and link, and different across keys', () => {
@@ -251,6 +251,68 @@ describe('replacing current values', () => {
   );
 });
 
+describe('campaign namespaces', () => {
+  it.each(['decoy', 'silly', 'hybrid', 'strip'] as const)(
+    'rewrites campaign fields and preserves unrelated bytes (%s)',
+    (mode) => {
+      const keys = [
+        'mtm_campaign',
+        'mtm_source',
+        'mtm_medium',
+        'mtm_keyword',
+        'mtm_kwd',
+        'mtm_content',
+        'mtm_placement',
+        'mtm_cid',
+        'mtm_group',
+        'pk_campaign',
+        'pk_cpn',
+        'pk_keyword',
+        'pk_kwd',
+        'piwik_campaign',
+        'piwik_kwd',
+        'matomo_campaign',
+        'matomo_kwd',
+        'pk_source',
+        'pk_medium',
+        'pk_content',
+        'pk_cid',
+        'hsa_cam',
+        'hsa_grp',
+        'hsa_ad',
+        'hsa_acc',
+        'hsa_tgt',
+        'hsa_kw',
+        'hsa_src',
+        'hsa_net',
+        'hsa_mt',
+        'hsa_ver',
+        'utm_penis',
+        'utm_penis',
+        'UTM%5FUNSEEN',
+        'mtm_extra',
+        'hsa_extra',
+      ];
+      const prefix = 'https://example.com/a%20b/?q=a%2fb&pk_abe=checkout&pk_abv=blue&';
+      const suffix = '&keep=a+b&flag&empty=#part?utm_source=untouched';
+      const link = prefix + keys.map((key) => `${key}=${key === 'utm_penis' ? 'chode' : '12345'}`).join('&') + suffix;
+      const result = rewriteUrl(link, { mode, key: 'campaign-test' });
+      expect(hasTrackingParams(link)).toBe(true);
+      expect(result?.params).toBe(keys.length);
+      if (mode === 'strip') {
+        expect(result?.url).toBe(prefix.slice(0, -1) + suffix);
+        expect(hasTrackingParams(result?.url ?? '')).toBe(false);
+      } else {
+        expect(result?.url.startsWith(prefix)).toBe(true);
+        expect(result?.url.endsWith(suffix)).toBe(true);
+        const segments = result?.url.slice(prefix.length, -suffix.length).split('&') ?? [];
+        expect(segments.map((segment) => segment.split('=')[0])).toEqual(keys);
+        for (const segment of segments) expect(segment.split('=')[1]).not.toMatch(/^(?:12345|chode)$/);
+      }
+    },
+  );
+});
+
 describe('rewriteUrl (strip)', () => {
   it('removes tracking parameters and keeps the rest verbatim', () => {
     expect(rewriteUrl('https://example.com/p?id=5&utm_source=x&fbclid=y&b=a,b#top', strip)).toEqual({
@@ -321,7 +383,7 @@ describe('core URL work limits', () => {
 
 describe('omitted global and former site parameters', () => {
   it.each([
-    'https://example.com/?utm_unknown=a%2Fb&ga_extra=1&itm_extra=2&elqAnything=3&cm_mmcExtra=4&hsa_extra=5&ref=a&ref=b&empty=&flag#part',
+    'https://example.com/?ga_extra=1&itm_extra=2&elqAnything=3&cm_mmcExtra=4&pk_abe=checkout&pk_abv=blue&ref=a&ref=b&empty=&flag#part',
     'https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123456',
     'https://www.youtube.com/watch?v=dQw4w9WgXcQ&pp=ygUEdGVzdA%3D%3D',
     'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c',

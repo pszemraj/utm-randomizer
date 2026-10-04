@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { classifyParam } from '../../src/lib/params';
 
 describe('classifyParam', () => {
-  it('categorizes the exact UTM allowlist', () => {
+  it('categorizes known UTM fields', () => {
     expect(classifyParam('utm_source')).toBe('source');
     expect(classifyParam('utm_medium')).toBe('medium');
     expect(classifyParam('utm_campaign')).toBe('campaign');
@@ -12,6 +12,51 @@ describe('classifyParam', () => {
     for (const key of ['utm_source_platform', 'utm_creative_format', 'utm_marketing_tactic']) {
       expect(classifyParam(key)).toBe('generic');
     }
+  });
+
+  it.each(['utm_penis', 'utm_unknown', 'utm_source_extra', 'mtm_extra', 'hsa_extra', 'utm_constructor'])(
+    'uses pooled replacements for additional campaign field %s',
+    (key) => {
+      expect(classifyParam(key)).toBe('unknown');
+      expect(classifyParam(key.toUpperCase())).toBe('unknown');
+    },
+  );
+
+  it.each([
+    ['mtm_campaign', 'campaign'],
+    ['mtm_source', 'source'],
+    ['mtm_medium', 'medium'],
+    ['mtm_keyword', 'term'],
+    ['mtm_kwd', 'term'],
+    ['mtm_content', 'content'],
+    ['mtm_placement', 'content'],
+    ['mtm_cid', 'id'],
+    ['mtm_group', 'generic'],
+    ['pk_campaign', 'campaign'],
+    ['pk_cpn', 'campaign'],
+    ['pk_keyword', 'term'],
+    ['pk_kwd', 'term'],
+    ['piwik_campaign', 'campaign'],
+    ['piwik_kwd', 'term'],
+    ['matomo_campaign', 'campaign'],
+    ['matomo_kwd', 'term'],
+    ['pk_source', 'source'],
+    ['pk_medium', 'medium'],
+    ['pk_content', 'content'],
+    ['pk_cid', 'id'],
+    ['hsa_cam', 'id'],
+    ['hsa_grp', 'id'],
+    ['hsa_ad', 'id'],
+    ['hsa_acc', 'id'],
+    ['hsa_tgt', 'id'],
+    ['hsa_kw', 'term'],
+    ['hsa_src', 'source'],
+    ['hsa_net', 'source'],
+    ['hsa_mt', 'generic'],
+    ['hsa_ver', 'generic'],
+  ])('categorizes documented campaign field %s', (key, category) => {
+    expect(classifyParam(key)).toBe(category);
+    expect(classifyParam(key.toUpperCase())).toBe(category);
   });
 
   it('matches allowlisted names case-insensitively', () => {
@@ -84,10 +129,6 @@ describe('classifyParam', () => {
     'tracking_source',
     'action_type_map',
     'spm',
-    'hsa_cam',
-    'hsa_acc',
-    'mtm_kwd',
-    'pk_source',
     'elqTrackId',
     'cm_mmc',
     'int_source',
@@ -98,22 +139,25 @@ describe('classifyParam', () => {
   });
 
   it.each([
-    'utm_unknown',
-    'utm_source_extra',
     'utm_',
+    'mtm_',
+    'hsa_',
+    'not_utm_source',
+    'utmsource',
+    'pk_extra',
+    'pk_abe',
+    'pk_abv',
     'ga_anything',
-    'mtm_anything',
     'otm_anything',
     'itm_anything',
-    'hsa_anything',
     'bsft_anything',
     'elqAnything',
     'cm_mmcAnything',
-  ])('does not expand a prefix into %s', (key) => {
+  ])('does not classify an ambiguous or incomplete name %s', (key) => {
     expect(classifyParam(key)).toBeNull();
   });
 
-  it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty', 'utm_constructor', 'hsa_constructor'])(
+  it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
     'does not classify Object.prototype-like name %s',
     (key) => {
       expect(classifyParam(key)).toBeNull();

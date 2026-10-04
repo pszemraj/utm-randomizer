@@ -352,7 +352,7 @@ const DECOY_GENERIC = [
   'mobile',
 ];
 
-const FUNNY: Record<Exclude<Category, 'id'>, readonly string[]> = {
+const FUNNY: Record<Exclude<Category, 'id' | 'unknown'>, readonly string[]> = {
   source: [
     'definitely-not-facebook',
     'mystery-meat',
@@ -651,7 +651,7 @@ function decoyContent(random: Random): string {
 }
 
 /** A believable word value for a marketing parameter category. */
-function decoyWord(category: Exclude<Category, 'id'>, random: Random): string {
+function decoyWord(category: Exclude<Category, 'id' | 'unknown'>, random: Random): string {
   switch (category) {
     case 'source':
       return pick(random, DECOY_SOURCES);
@@ -669,7 +669,7 @@ function decoyWord(category: Exclude<Category, 'id'>, random: Random): string {
 }
 
 /** Existing vocabulary used when a composed decoy happens to match the original word. */
-const WORD_ALTERNATIVES: Record<Exclude<Category, 'id'>, readonly string[]> = {
+const WORD_ALTERNATIVES: Record<Exclude<Category, 'id' | 'unknown'>, readonly string[]> = {
   source: DECOY_SOURCES,
   medium: DECOY_MEDIUMS,
   campaign: CAMPAIGN_THEMES,
@@ -677,6 +677,12 @@ const WORD_ALTERNATIVES: Record<Exclude<Category, 'id'>, readonly string[]> = {
   content: CONTENT_WORDS,
   generic: DECOY_GENERIC,
 };
+
+/** Existing vocabulary pooled for campaign fields with no known category. */
+const UNKNOWN_DECOYS = Object.values(WORD_ALTERNATIVES)
+  .flat()
+  .map((word) => word.replace(/\+/g, ' '));
+const UNKNOWN_SILLY = Object.values(FUNNY).flat();
 
 /** Picks another value from a vocabulary with at least two distinct entries. */
 function pickDifferent(random: Random, words: readonly string[], original: string): string {
@@ -713,13 +719,18 @@ function sillyToken(random: Random): string {
  * @param category What the parameter carries; picks the vocabulary for word values.
  * @param raw The current value, still URL-encoded.
  * @param seed Shared within one copy, derived from its fresh seed, link, and parameter.
- * @returns A URL-safe replacement in the same encoding style as `raw`.
+ * @returns A URL-safe replacement. Unknown fields draw from pooled words; known decoy IDs keep their format.
  */
 export function replacementValue(style: Style, category: Category, raw: string, seed: string): string {
   if (style === 'hybrid') {
     // The pick depends only on the seed, never on the value, so a rewritten link keeps its mix.
     const pickSilly = seededRandom(`${seed}|hybrid`)() < 0.5;
     return replacementValue(pickSilly ? 'silly' : 'decoy', category, raw, seed);
+  }
+  if (category === 'unknown') {
+    const words = style === 'silly' ? UNKNOWN_SILLY : UNKNOWN_DECOYS;
+    const original = isWordy(raw) ? decodeURIComponent(raw.replace(/\+/g, ' ')) : raw;
+    return encodeURIComponent(pickDifferent(seededRandom(`${seed}|${raw}|unknown`), words, original));
   }
   if (style === 'silly') {
     const random = seededRandom(`${seed}|${raw}|silly`);

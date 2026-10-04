@@ -61,6 +61,7 @@ test.describe('native clipboard processing', () => {
       readClipboard,
       setSettings,
       waitForWatcher,
+      writeClipboardExternally,
     }) => {
       await setSettings({ mode });
       await waitForWatcher(true);
@@ -70,6 +71,22 @@ test.describe('native clipboard processing', () => {
       if (mode === 'strip') expect(copied).toBe(CLEAN);
       if (mode === 'silly')
         expect(new URL(copied).searchParams.get('utm_source')).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)+$/);
+
+      const campaign =
+        'https://example.com/article?id=43&utm_penis=chode&mtm_unseen=123&hsa_extra=news&pk_campaign=spring&keep=%2F#part';
+      await writeClipboardExternally(campaign);
+      const rewritten = await waitForClipboard(
+        readClipboard,
+        (text) => text !== campaign && new URL(text).searchParams.get('id') === '43',
+      );
+      expect(rewritten).toContain('keep=%2F#part');
+      if (mode === 'strip') expect(rewritten).toBe('https://example.com/article?id=43&keep=%2F#part');
+      else {
+        const query = new URL(rewritten).searchParams;
+        for (const [key, value] of new URL(campaign).searchParams) {
+          if (key !== 'id' && key !== 'keep') expect(query.get(key)).not.toBe(value);
+        }
+      }
     });
   }
 

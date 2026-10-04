@@ -111,7 +111,7 @@ describe('replacementValue', () => {
   it.each(['decoy', 'silly', 'hybrid'] as const)(
     'replaces existing %s values instead of treating them as final',
     (style) => {
-      for (const category of CATEGORIES) {
+      for (const category of [...CATEGORIES, 'unknown'] as const) {
         const raw = category === 'id' ? '1' : 'newsletter';
         const once = replacementValue(style, category, raw, 'collision');
         expect(once).not.toBe(raw);
@@ -183,6 +183,42 @@ describe('replacementValue', () => {
     expect(replacementValue('decoy', 'id', 'abcdef', 'seed')).toMatch(/^[a-z]{6}$/);
   });
 
+  it('draws unknown fields from the existing word pools without inferring their input type', () => {
+    const decoys = new Set<string>();
+    const jokes = new Set<string>();
+    const hybridStyles = new Set<string>();
+    for (let i = 0; i < 2000; i += 1) {
+      const seed = `unknown-${String(i)}`;
+      const raw = pick(seededRandom(seed), ['chode', '123456789', '%qz', 'crm+software', 'google']);
+      const decoy = replacementValue('decoy', 'unknown', raw, seed);
+      const silly = replacementValue('silly', 'unknown', raw, seed);
+      const hybrid = replacementValue('hybrid', 'unknown', raw, seed);
+      expect(isWordy(decoy)).toBe(true);
+      expect(isWordy(silly)).toBe(true);
+      expect([decoy, silly]).toContain(hybrid);
+      hybridStyles.add(hybrid === decoy ? 'decoy' : 'silly');
+      for (const value of [decoy, silly, hybrid]) {
+        expect(decodeURIComponent(value)).not.toBe(raw.replace(/\+/g, ' '));
+        expect(value).not.toMatch(/[&#=]/);
+      }
+      decoys.add(decodeURIComponent(decoy));
+      jokes.add(decodeURIComponent(silly));
+    }
+    // Representatives from source, medium, campaign, term, content, and generic pools.
+    for (const word of ['bing', 'cpc', 'brand', 'vpn', 'logo', 'default']) expect(decoys.has(word), word).toBe(true);
+    for (const word of [
+      'carrier-pigeon',
+      'telepathy',
+      'operation-click-bait',
+      'pixel-dust',
+      'shiny-button',
+      'privacy-police',
+    ]) {
+      expect(jokes.has(word), word).toBe(true);
+    }
+    expect(hybridStyles).toEqual(new Set(['decoy', 'silly']));
+  });
+
   it.each(['%E6%96%B0%E9%97%BB', 'новости', '%6E%65%77%73', 'spring%20sale', 'cafe%CC%81'])(
     'replaces encoded and non-Latin word values, including generated values (%s)',
     (raw) => {
@@ -229,7 +265,7 @@ describe('replacementValue', () => {
     const random = seededRandom('fuzz');
     for (let i = 0; i < 20_000; i += 1) {
       const raw = randomRaw(random);
-      const category = pick(random, CATEGORIES);
+      const category = pick(random, [...CATEGORIES, 'unknown'] as const);
       const style = pick(random, ['decoy', 'silly', 'hybrid'] as const);
       const seed = `seed-${String(i % 97)}`;
       const once = replacementValue(style, category, raw, seed);

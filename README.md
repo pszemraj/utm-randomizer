@@ -4,7 +4,7 @@ A Chrome extension that replaces tracking parameters in copied URLs with believa
 
 ![A copied link keeps its destination and id=42: Decoy uses plausible tracking values, Silly uses nonsense, Hybrid mixes both, and Remove deletes tracking.](assets/modes.svg)
 
-Only known UTM fields and ad click IDs are rewritten. Ambiguous and site-specific fields stay untouched. See [supported parameters and limits](docs/behavior.md#what-gets-rewritten) and [mode details](docs/behavior.md#replacement-values).
+UTM and other supported campaign fields and ad click IDs are rewritten. Ambiguous and site-specific fields stay untouched. See [supported parameters and limits](docs/behavior.md#what-gets-rewritten) and [mode details](docs/behavior.md#replacement-values).
 
 ## Install
 

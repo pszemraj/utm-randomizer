@@ -18,16 +18,19 @@ Each new copy draws a fresh random seed; copying the same original again draws n
 
 **Silly** uses obvious nonsense (`utm_source=carrier-pigeon`, click IDs as word salad). **Hybrid** picks a decoy or nonsense separately for each value, so one link can carry a believable click ID next to a joke source. **Remove** deletes the tracking parameters.
 
+Unrecognized fields in supported campaign namespaces draw a word from the combined existing Decoy or Silly vocabulary; Hybrid chooses between those pools. For example, `utm_penis=chode` gets another word regardless of its original value. There is no inference of a field's meaning or data type. Known fields retain their category-specific replacements.
+
 ## What gets rewritten
 
 The copied text must be one whole URL; surrounding whitespace is stripped when rewriting. Documents, sentences containing URLs, multiple URLs, Markdown links, and HTML link destinations are not processed. A copied hyperlink whose text is only a label stays unchanged; use **Copy link address** to copy its URL.
 
-Only these exact names are rewritten, case-insensitively, on every website:
+Recognition is case-insensitive and applies on every website:
 
-- **UTM campaign fields:** `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `utm_id`, `utm_source_platform`, `utm_creative_format`, and `utm_marketing_tactic`.
+- **Campaign namespaces:** any name beginning with `utm_`, `mtm_` (Matomo), or `hsa_` (HubSpot), followed by a nonempty suffix. Documented fields such as `utm_source`, `mtm_keyword`, and `hsa_cam` have specific replacement categories; unseen fields use the pooled vocabulary.
+- **Legacy campaign aliases:** documented `pk_`, `piwik_`, and `matomo_` names, including `pk_campaign` and `piwik_kwd`. These prefixes are not matched broadly; `pk_abe`, `pk_abv`, and unknown `pk_` fields stay untouched.
 - **Ad click IDs:** `gclid`, `dclid`, `gbraid`, `wbraid`, `fbclid`, `msclkid`, `ttclid`, `twclid`, and `li_fat_id`.
 
-All other parameters stay untouched. Coverage is deliberately limited: YouTube and Spotify's `si`, X's `s` and `t`, Amazon's `ref` and `qid`, email and affiliate markers such as `mc_eid` and `irclickid`, and unknown fields such as `utm_custom` remain in shared links. Supported UTM fields and click IDs are still rewritten on those sites. There are no site-specific rules or prefix matches. The parameter categories and vendor references are in [`src/lib/params.ts`](../src/lib/params.ts).
+Other parameters stay untouched, including YouTube and Spotify's `si`, X's `s` and `t`, Amazon's `ref` and `qid`, and email and affiliate markers such as `mc_eid` and `irclickid`. Supported campaign fields and click IDs are still rewritten on those sites. Unseen suffixes are recognized by this extension's policy; that does not mean vendors consume every possible field. There are no site-specific rules. Exact aliases, categories, and vendor references are in [`src/lib/params.ts`](../src/lib/params.ts).
 
 Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less links such as `www.example.com/page?utm_source=x` are supported. Relative URLs stay unchanged because clipboard text does not identify the page they came from. Trailing punctuation remains part of a standalone URL.
 
