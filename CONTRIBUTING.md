@@ -18,11 +18,16 @@ Every function, class, method, interface, type alias, and exported constant need
 
 ```ts
 /**
- * Rewrites the tracking parameters of a single link, editing the query string in place.
+ * Rewrites tracking parameters
+ * in a single link.
  *
- * @returns The rewritten link, or null when it is not a link or has nothing to rewrite.
+ * @returns The rewritten link,
+ *   or null when no rewrite applies.
  */
-export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | null {
+export function rewriteUrl(
+  link: string,
+  options: RewriteOptions,
+): UrlRewrite | null {
 ```
 
 In `scripts/*.mjs`, which are plain JavaScript, write types inside the tags (`@param {number} [port]`).

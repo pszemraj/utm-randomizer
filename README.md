@@ -97,22 +97,22 @@ The [privacy policy](PRIVACY.md) describes data handling, clipboard-access promp
 ## Development
 
 ```bash
-# Rebuild on edits; reload the extension card
+# Rebuild on edits, then reload
 npm run dev
 
-# Lint, format, types, and unit tests
+# Lint, format, types, unit tests
 npm run check
 
-# Build and test the loaded extension
+# Test the loaded extension
 npm run test:e2e
 
-# Serve the manual page at 127.0.0.1:5173
+# Manual page: 127.0.0.1:5173
 npm run playground
 
-# Build a Web Store zip in release/
+# Build Web Store zip in release/
 npm run package
 
-# Render icons from assets/icon.svg
+# Render icons from icon.svg
 npm run icons
 ```
 
