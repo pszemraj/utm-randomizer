@@ -68,9 +68,8 @@ Links inside longer plain text can be cleaned, including standalone Markdown lin
 
 ```mermaid
 flowchart TD
-  page["Web page<br/>Inspect copied formats"] --> worker["Service worker<br/>Route reconciliation, Copy, Undo"]
-  worker --> writer["Offscreen document<br/>Coordinate clipboard writes"]
-  writer --> clipboard[("Clipboard")]
+  page["Page: inspect copied formats"] --> worker["Worker: route the request"]
+  worker --> writer["Offscreen: write the clipboard"]
 ```
 
 ### Page copies
@@ -125,26 +124,24 @@ CI runs the checks, the end-to-end tests, and packaging on every pull request, a
 
 ### Source map
 
-| Path                             | Contents                                                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------ |
-| `src/manifest.json`              | Extension manifest; the build fills in `version` from `package.json`                 |
-| `src/content.ts`                 | Content script entry: settings, copy watcher, address bar, notifications             |
-| `src/background.ts`              | Service worker: context menu, shortcut, statistics, key, clipboard watcher lifecycle |
-| `src/offscreen.ts`               | Background clipboard watcher and clipboard writer                                    |
-| `src/popup.*`                    | Toolbar popup                                                                        |
-| `src/lib/params.ts`              | Exact global tracking-parameter allowlist                                            |
-| `src/lib/rewrite.ts`             | In-place link and text rewriting                                                     |
-| `src/lib/values.ts`, `prng.ts`   | Decoy, silly, and hybrid replacement values, seeded per install                      |
-| `src/lib/copy-watcher.ts`        | Copy detection on pages: copy events, `clipboardchange`, polling fallback            |
-| `src/lib/clipboard-html.ts`      | Rich clipboard rewriting and link counting                                           |
-| `src/lib/address-bar.ts`         | Address-bar cleaning                                                                 |
-| `src/lib/toast.ts`               | On-page notification in a shadow root on the top layer                               |
-| `src/lib/messages.ts`            | Runtime message contracts and sender checks                                          |
-| `src/lib/settings.ts`            | Settings defaults, storage subscriptions, and per-install key requests               |
-| `tests/unit/`                    | Vitest: rules, rewriting, values, and the page watchers in a simulated DOM           |
-| `tests/e2e/`                     | Playwright tests with the extension loaded                                           |
-| `tests/fixtures/playground.html` | Manual and end-to-end test page                                                      |
-| `scripts/`                       | Build, packaging, playground server, icon renderer                                   |
+- `src/manifest.json`: extension manifest; the build fills in `version` from `package.json`.
+- `src/content.ts`: content script entry: settings, copy watcher, address bar, notifications.
+- `src/background.ts`: service worker: context menu, shortcut, statistics, key, clipboard watcher lifecycle.
+- `src/offscreen.ts`: background clipboard watcher and clipboard writer.
+- `src/popup.*`: toolbar popup.
+- `src/lib/params.ts`: exact global tracking-parameter allowlist.
+- `src/lib/rewrite.ts`: in-place link and text rewriting.
+- `src/lib/values.ts`, `prng.ts`: Decoy, Silly, and Hybrid replacement values, seeded per install.
+- `src/lib/copy-watcher.ts`: copy events, `clipboardchange`, and the polling fallback.
+- `src/lib/clipboard-html.ts`: rich clipboard rewriting and link counting.
+- `src/lib/address-bar.ts`: address-bar cleaning.
+- `src/lib/toast.ts`: on-page notification in a shadow root on the top layer.
+- `src/lib/messages.ts`: runtime message contracts and sender checks.
+- `src/lib/settings.ts`: settings defaults, storage subscriptions, and per-install key requests.
+- `tests/unit/`: rules, rewriting, values, and page watchers in a simulated DOM, using Vitest.
+- `tests/e2e/`: Playwright tests with the extension loaded.
+- `tests/fixtures/playground.html`: manual and end-to-end test page.
+- `scripts/`: build, packaging, playground server, and icon renderer.
 
 ## License
 
