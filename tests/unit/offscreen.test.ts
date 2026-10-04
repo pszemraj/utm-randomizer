@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from 'vitest';
+import { isExtensionMessage } from '../../src/lib/messages';
 
 const TRACKED = 'https://example.com/page?utm_source=linkedin';
 const CLEAN = 'https://example.com/page';
-const CONFIG = { mode: 'strip' as const };
+const CONFIG = { mode: 'strip' as const, focused: true };
 const WORKER = { id: 'extension-id' };
 
 /** Clipboard flavors presented by one fake synchronous paste. */
@@ -34,10 +35,16 @@ async function start() {
   let onMessage:
     | ((message: unknown, sender: chrome.runtime.MessageSender, respond: (response: { ok: boolean }) => void) => void)
     | undefined;
+  let workerConfig: import('../../src/lib/messages').WatchConfig | null = CONFIG;
+  const requestFocus = vi.fn(() => {
+    onMessage?.({ type: 'watch-config', config: workerConfig }, WORKER, () => undefined);
+    return Promise.resolve({ ok: true });
+  });
   vi.stubGlobal('chrome', {
     runtime: {
       id: WORKER.id,
       getURL: (path: string) => `chrome-extension://${WORKER.id}/${path}`,
+      sendMessage: requestFocus,
       onMessage: {
         addListener(listener: NonNullable<typeof onMessage>) {
           onMessage = listener;
@@ -46,8 +53,10 @@ async function start() {
     },
   });
   const writes = vi.fn();
+  const reads = vi.fn();
   const execCommand = (command: string) => {
     if (command === 'paste') {
+      reads();
       const data = new DataTransfer();
       for (const type of clipboard.types) {
         data.setData(
@@ -72,12 +81,15 @@ async function start() {
   if (!onMessage) throw new Error('Missing offscreen listener');
   const listener = onMessage;
   const message = (payload: unknown, sender: chrome.runtime.MessageSender = WORKER) => {
-    const response = vi.fn();
+    const response = vi.fn<(response: { ok: boolean }) => void>();
     listener(payload, sender, response);
+    if (response.mock.calls[0]?.[0].ok && isExtensionMessage(payload) && payload.type === 'watch-config') {
+      workerConfig = payload.config;
+    }
     return response;
   };
   message({ type: 'watch-config', config: CONFIG });
-  return { clipboard, message, writes };
+  return { clipboard, message, writes, reads, requestFocus };
 }
 
 it('leaves startup and focus-gain baselines untouched', async () => {
@@ -99,13 +111,16 @@ it('observes a fresh entry across a same-focus worker refresh', async () => {
   expect(writes).toHaveBeenCalledOnce();
 });
 
-it('does not rewrite entries while stopped and baselines the next focused interval', async () => {
-  const { clipboard, message, writes } = await start();
-  message({ type: 'watch-config', config: null });
+it('checks focus without reading the clipboard while unfocused, then baselines the next interval', async () => {
+  const { clipboard, message, writes, reads, requestFocus } = await start();
+  message({ type: 'watch-config', config: { ...CONFIG, focused: false } });
+  const previousReads = reads.mock.calls.length;
   clipboard.text = TRACKED;
   clipboard.html = `<a href="${TRACKED}">External copy</a>`;
   clipboard.types = ['text/plain', 'text/html'];
   await vi.advanceTimersByTimeAsync(1000);
+  expect(reads).toHaveBeenCalledTimes(previousReads);
+  expect(requestFocus).toHaveBeenCalledTimes(5);
   message({ type: 'watch-config', config: CONFIG });
   await vi.advanceTimersByTimeAsync(1000);
   expect(writes).not.toHaveBeenCalled();
@@ -119,7 +134,7 @@ it('does not rewrite entries while stopped and baselines the next focused interv
 it('processes an entry copied after the last poll on blur and stops afterward', async () => {
   const { clipboard, message, writes } = await start();
   clipboard.text = TRACKED;
-  expect(message({ type: 'offscreen-blur' })).toHaveBeenCalledWith({ ok: true });
+  expect(message({ type: 'watch-config', config: { ...CONFIG, focused: false } })).toHaveBeenCalledWith({ ok: true });
   expect(clipboard.text).toBe(CLEAN);
   expect(writes).toHaveBeenCalledOnce();
   clipboard.text = TRACKED;
@@ -148,11 +163,31 @@ it('rewrites a fresh URL without a website reader and leaves its output stable',
   expect(writes).toHaveBeenCalledOnce();
 });
 
+it('waits for a focus check without overlapping requests or retaining an older clipboard candidate', async () => {
+  const { clipboard, writes, requestFocus } = await start();
+  let release!: () => void;
+  requestFocus.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve({ ok: true });
+      }),
+  );
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(requestFocus).toHaveBeenCalledOnce();
+  expect(writes).not.toHaveBeenCalled();
+  clipboard.text = 'https://example.com/newer?utm_source=linkedin';
+  release();
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe('https://example.com/newer');
+  expect(writes).toHaveBeenCalledOnce();
+});
+
 it.each(['decoy', 'silly', 'hybrid'] as const)(
   'replaces plausible input on each fresh copy without an output loop (%s)',
   async (mode) => {
     const { clipboard, message, writes } = await start();
-    message({ type: 'watch-config', config: { mode } });
+    message({ type: 'watch-config', config: { mode, focused: true } });
     const results = new Set<string>();
     for (let copy = 0; copy < 8; copy += 1) {
       clipboard.text = TRACKED;
@@ -180,7 +215,7 @@ it('removes tracking deterministically on repeated fresh copies', async () => {
 
 it.each([false, true])('retains completed output across configuration (HTML %s)', async (rich) => {
   const { clipboard, writes, message } = await start();
-  message({ type: 'watch-config', config: { mode: 'decoy' } });
+  message({ type: 'watch-config', config: { mode: 'decoy', focused: true } });
   clipboard.text = TRACKED;
   if (rich) {
     clipboard.html = `<a href="${TRACKED}">${TRACKED}</a>`;
@@ -188,7 +223,7 @@ it.each([false, true])('retains completed output across configuration (HTML %s)'
   }
   await vi.advanceTimersByTimeAsync(200);
   const output = { ...clipboard };
-  message({ type: 'watch-config', config: { mode: 'decoy' } });
+  message({ type: 'watch-config', config: { mode: 'decoy', focused: true } });
   await vi.advanceTimersByTimeAsync(1000);
   expect(clipboard).toEqual(output);
   expect(writes).toHaveBeenCalledOnce();

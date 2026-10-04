@@ -8,13 +8,14 @@ export interface ClipboardSnapshot {
   types: string[];
 }
 
-/** Mode pushed to the focused clipboard watcher. */
+/** Mode and queried browser focus pushed to the clipboard watcher. */
 export interface WatchConfig {
   mode: Mode;
+  focused: boolean;
 }
 
 /** Extension runtime operations and their direction-specific payloads. */
-export type ExtensionMessage = { type: 'watch-config'; config: WatchConfig | null } | { type: 'offscreen-blur' };
+export type ExtensionMessage = { type: 'watch-config'; config: WatchConfig | null } | { type: 'watch-focus' };
 
 /** Whether a value has named payload fields. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -24,7 +25,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Validates the mode supplied to the coordinator. */
 function isWatchConfig(value: unknown): value is WatchConfig {
   return (
-    isRecord(value) && typeof value.mode === 'string' && ['decoy', 'silly', 'hybrid', 'strip'].includes(value.mode)
+    isRecord(value) &&
+    typeof value.focused === 'boolean' &&
+    typeof value.mode === 'string' &&
+    ['decoy', 'silly', 'hybrid', 'strip'].includes(value.mode)
   );
 }
 
@@ -34,11 +38,20 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
   switch (value.type) {
     case 'watch-config':
       return value.config === null || isWatchConfig(value.config);
-    case 'offscreen-blur':
+    case 'watch-focus':
       return true;
     default:
       return false;
   }
+}
+
+/** Only this extension's clipboard document may request a browser-focus check. */
+export function isOffscreenSender(sender: chrome.runtime.MessageSender): boolean {
+  return (
+    sender.id === chrome.runtime.id &&
+    sender.tab === undefined &&
+    sender.url === chrome.runtime.getURL('offscreen.html')
+  );
 }
 
 /** Only this extension's worker may control the offscreen clipboard. */

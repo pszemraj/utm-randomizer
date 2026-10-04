@@ -1,12 +1,12 @@
-import { type ExtensionMessage, type WatchConfig } from './lib/messages';
-import { DEFAULT_SETTINGS, loadSettings, watchSettings } from './lib/settings';
+import { isExtensionMessage, isOffscreenSender, type ExtensionMessage } from './lib/messages';
+import { DEFAULT_SETTINGS, loadSettings, watchSettings, type Settings } from './lib/settings';
 
 const WINDOW_TYPES: `${chrome.windows.WindowType}`[] = ['normal', 'popup', 'devtools'];
 let offscreenQueue: Promise<unknown> = Promise.resolve();
 /** Invalidates queued watcher configuration on settings or window-focus changes. */
 let automaticRevision = 0;
-/** Focus events are authoritative; the initial window query only establishes startup state. */
-let focused: boolean | undefined;
+/** Replaced on settings changes; ordinary focus checks do not read storage. */
+let settingsReady: Promise<Settings>;
 
 /** Serializes offscreen creation and configuration. */
 function withOffscreen<T>(task: () => Promise<T>): Promise<T> {
@@ -40,22 +40,26 @@ async function tellOffscreen(message: ExtensionMessage): Promise<void> {
   }
 }
 
-/** Starts, reconfigures, or suspends polling; focus regain always takes a baseline. */
+/** Queries real focus without waiting for clipboard-document lifecycle work. */
+async function refreshFocus(): Promise<void> {
+  const revision = automaticRevision;
+  const settings = await settingsReady;
+  if (!settings.enabled || revision !== automaticRevision) return;
+  const window = await chrome.windows.getLastFocused({ windowTypes: WINDOW_TYPES });
+  if (revision !== automaticRevision) return;
+  await tellOffscreen({ type: 'watch-config', config: { mode: settings.mode, focused: window.focused } });
+}
+
+/** Applies on/off and mode changes and creates the clipboard document when enabled. */
 function syncWatcher(): Promise<void> {
   const revision = automaticRevision;
   return withOffscreen(async () => {
-    const settings = await loadSettings();
-    if (focused === undefined) {
-      const window = await chrome.windows.getLastFocused({ windowTypes: WINDOW_TYPES });
-      if (revision !== automaticRevision) return;
-      focused = window.focused;
-    }
+    const settings = await settingsReady;
     if (revision !== automaticRevision) return;
-    const config: WatchConfig | null = settings.enabled && focused ? { mode: settings.mode } : null;
     if (settings.enabled) {
       await ensureOffscreen();
       if (revision !== automaticRevision) return;
-      await tellOffscreen({ type: 'watch-config', config });
+      await refreshFocus();
     } else if (await hasOffscreen()) {
       if (revision !== automaticRevision) return;
       await tellOffscreen({ type: 'watch-config', config: null });
@@ -67,17 +71,30 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) automaticRevision += 1;
 });
 chrome.windows.onFocusChanged.addListener(
-  (windowId) => {
+  () => {
     automaticRevision += 1;
-    focused = windowId !== chrome.windows.WINDOW_ID_NONE;
-    if (!focused) {
-      // Flush directly: a pending settings lookup must not delay the last focused observation.
-      void tellOffscreen({ type: 'offscreen-blur' }).catch(() => undefined);
-    } else {
-      void syncWatcher();
-    }
+    void refreshFocus().catch((error: unknown) =>
+      console.debug('UTM Randomizer: could not check browser focus', error),
+    );
   },
   { windowTypes: WINDOW_TYPES },
 );
-watchSettings(() => void syncWatcher());
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (response: { ok: boolean }) => void) => {
+  if (!(typeof message === 'object' && message !== null && 'type' in message && message.type === 'watch-focus'))
+    return false;
+  if (!isExtensionMessage(message) || !isOffscreenSender(sender)) {
+    sendResponse({ ok: false });
+    return false;
+  }
+  void refreshFocus().then(
+    () => sendResponse({ ok: true }),
+    () => sendResponse({ ok: false }),
+  );
+  return true;
+});
+watchSettings((settings) => {
+  settingsReady = Promise.resolve(settings);
+  void syncWatcher();
+});
+settingsReady = loadSettings();
 void syncWatcher();

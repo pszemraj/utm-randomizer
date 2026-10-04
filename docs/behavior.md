@@ -56,10 +56,10 @@ The coordinator retains the current entry's before-and-after identities in memor
 
 ### Background watching
 
-The background watcher checks every 0.2 seconds while Chrome is focused. It handles new clipboard entries from any source. Starting it or returning to Chrome records existing clipboard contents as an untouched baseline; focusing Chrome, pasting, or loading a page does not authorize rewriting that baseline.
+The background watcher queries Chrome's window focus every 0.2 seconds and checks the clipboard while focused. It handles new clipboard entries from any source. Starting it or returning to Chrome records existing clipboard contents as an untouched baseline; focusing Chrome, pasting, or loading a page does not authorize rewriting that baseline.
 
-Subsequent changed clipboard entries containing one eligible URL are processed on the next check. Reads and writes happen inside the extension and do not require a focused web page: browser controls, an HTTP page, or the address bar can retain focus. Switching to another application triggers a final tick and then stops the watcher. The address bar itself is never changed.
+Subsequent changed clipboard entries containing one eligible URL are processed on the next check. Reads and writes happen inside the extension and do not require a focused web page: browser controls, an HTTP page, or the address bar can retain focus. Losing Chrome focus triggers a final tick and then stops clipboard reads; focus checks continue to detect its return. Native menus do not stop cleaning when Chrome's window remains focused. The address bar itself is never changed.
 
 Polling observes contents, not native copy events. Recopying identical contents without an intervening clipboard change cannot be distinguished from leaving the clipboard unchanged, so it does not trigger another rewrite.
 
-Polling and delivery of Chrome's focus events have a short delay. The final tick may therefore observe an entry written just after focus changed but before the extension received that change. It cannot determine which application wrote the entry.
+Polling and delivery of Chrome's focus state have a short delay. The final tick may therefore observe an entry written just after focus changed but before the extension received that change. It cannot determine which application wrote the entry.

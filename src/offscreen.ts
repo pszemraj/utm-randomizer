@@ -7,6 +7,7 @@ import { createSeed } from './lib/prng';
 const POLL_MS = 200;
 let config: WatchConfig | null = null;
 let timer = 0;
+let checkingFocus = false;
 /** One current entry; different observed contents replace both identities. */
 let entry: { before: string; after?: string } | null = null;
 
@@ -98,19 +99,30 @@ function tick(baseline = false): void {
   }
 }
 
-/** Starts or stops automatic processing; only a new focused interval takes a baseline. */
-function configure(next: WatchConfig | null): void {
-  const starting = config === null && next !== null;
-  config = next;
-  window.clearInterval(timer);
-  if (starting) tick(true);
-  if (next) timer = window.setInterval(tick, POLL_MS);
+/** Queries Chrome focus before the next clipboard observation, without overlapping requests. */
+function checkFocus(): void {
+  if (checkingFocus) return;
+  checkingFocus = true;
+  void chrome.runtime
+    .sendMessage({ type: 'watch-focus' })
+    .catch(() => undefined)
+    .finally(() => {
+      checkingFocus = false;
+    });
 }
 
-/** Flushes the end of the focused interval before stopping, without attributing the entry's source. */
-function blur(): void {
-  if (config) tick();
-  configure(null);
+/** Applies queried focus: flush on blur, baseline on regain, and process ordinary focused ticks. */
+function configure(next: WatchConfig | null): void {
+  const wasFocused = config?.focused === true;
+  const focused = next?.focused === true;
+  if (wasFocused && next !== null && !focused) tick();
+  config = next;
+  if (focused) tick(!wasFocused);
+  if (next && !timer) timer = window.setInterval(checkFocus, POLL_MS);
+  if (!next) {
+    window.clearInterval(timer);
+    timer = 0;
+  }
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (response: { ok: boolean }) => void) => {
@@ -118,7 +130,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r
     typeof message === 'object' &&
     message !== null &&
     'type' in message &&
-    ['offscreen-blur', 'watch-config'].includes(String(message.type))
+    String(message.type) === 'watch-config'
   ))
     return false;
   if (!isExtensionMessage(message) || !isWorkerSender(sender)) {
@@ -126,10 +138,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r
     return false;
   }
   switch (message.type) {
-    case 'offscreen-blur':
-      blur();
-      sendResponse({ ok: true });
-      break;
     case 'watch-config':
       configure(message.config);
       sendResponse({ ok: true });

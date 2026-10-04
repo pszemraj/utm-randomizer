@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isExtensionMessage, isWorkerSender } from '../../src/lib/messages';
+import { isExtensionMessage, isOffscreenSender, isWorkerSender } from '../../src/lib/messages';
 
-const config = { mode: 'strip' };
+const config = { mode: 'strip', focused: true };
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('runtime message payloads', () => {
-  it.each([{ type: 'offscreen-blur' }, { type: 'watch-config', config }, { type: 'watch-config', config: null }])(
+  it.each([{ type: 'watch-focus' }, { type: 'watch-config', config }, { type: 'watch-config', config: null }])(
     'accepts a valid $type payload',
     (message) => {
       expect(isExtensionMessage(message)).toBe(true);
@@ -19,6 +19,8 @@ describe('runtime message payloads', () => {
     { type: 'unknown' },
     { type: 'watch-config' },
     { type: 'watch-config', config: false },
+    { type: 'watch-config', config: { mode: 'strip' } },
+    { type: 'watch-config', config: { mode: 'strip', focused: 'true' } },
     { type: 'watch-config', config: { mode: 'invalid' } },
     { type: 'copy-clipboard', text: 'obsolete action' },
   ])('rejects malformed messages %#', (message) => {
@@ -39,5 +41,10 @@ describe('offscreen worker authorization', () => {
       false,
     );
     expect(isWorkerSender({ id: 'test-extension', tab: { id: 7 } as chrome.tabs.Tab })).toBe(false);
+    const offscreen = { id: 'test-extension', url: 'chrome-extension://test-extension/offscreen.html' };
+    expect(isOffscreenSender(offscreen)).toBe(true);
+    expect(isOffscreenSender({ ...offscreen, id: 'other-extension' })).toBe(false);
+    expect(isOffscreenSender({ ...offscreen, url: 'chrome-extension://test-extension/options.html' })).toBe(false);
+    expect(isOffscreenSender({ ...offscreen, tab: { id: 7 } as chrome.tabs.Tab })).toBe(false);
   });
 });

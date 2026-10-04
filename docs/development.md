@@ -28,7 +28,7 @@ npm run icons
 
 The end-to-end tests load `dist/` into Playwright's Chromium and exercise single-URL clipboard changes, unchanged page addresses, settings, and non-URL and non-text controls. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser.
 
-Focus tests require `HEADED=1`: minimizing a headless window does not dispatch the native focus events they exercise. State this limitation before a headless run and run the focus cases in a visible browser before claiming full coverage.
+Focus tests require `HEADED=1` to exercise a visible browser's native window focus. State this limitation before a headless run and run the focus cases in a visible browser before claiming full coverage.
 
 See the [validation requirements](../CONTRIBUTING.md#checks) when choosing local checks.
 
@@ -41,7 +41,7 @@ The playground provides copy controls, tracked and functional links, and a box t
 Use Chrome's actual controls for the workflows outside the automated suite:
 
 - Copy the tracked address with Ctrl+L / Cmd+L followed by Ctrl+C / Cmd+C. Check the clipboard both while the address bar remains focused and after returning to the page; separately try switching directly to another app to exercise the final tick. The page address must stay unchanged. See the [current focus limits](behavior.md#background-watching).
-- Select **Copy link address** from a real context menu. Check Chrome's focus events while the menu or address-bar dropdown is open; neither should report Chrome as unfocused.
+- Select **Copy link address** from a real context menu. Check `chrome.windows.getLastFocused().focused` while the menu or address-bar dropdown is open; Chrome's window must remain focused even if its focus event reports `WINDOW_ID_NONE`.
 - Open `chrome://extensions` -> **UTM Randomizer** -> **Details** -> **Extension options**. Check on/off and each replacement mode.
 - With Chrome unfocused and the watcher stopped, copy a tracked link in another app, then focus Chrome and paste. That existing clipboard entry must remain unchanged. Separately write a new URL to the clipboard while Chrome stays focused: it should be processed regardless of the writing application.
 

@@ -347,7 +347,7 @@ test.describe('focus and navigation', () => {
   }) => {
     test.skip(
       !process.env.HEADED,
-      'Headless Chromium changes window state without dispatching native focus events; run HEADED=1 for this control.',
+      'Native window-focus coverage requires a visible browser; run HEADED=1 for this control.',
     );
     await waitForWatcher(true);
     await serviceWorker.evaluate(async () => {
@@ -389,7 +389,7 @@ test.describe('focus and navigation', () => {
   }) => {
     test.skip(
       !process.env.HEADED,
-      'Headless Chromium changes window state without dispatching native focus events; run HEADED=1 for this control.',
+      'Native window-focus coverage requires a visible browser; run HEADED=1 for this control.',
     );
     await setSettings({ mode: 'strip' });
     await waitForWatcher(true);
