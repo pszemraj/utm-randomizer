@@ -1,7 +1,7 @@
 # AGENTS.md - UTM Randomizer
 
 UTM Randomizer is a Chrome extension that changes or removes known tracking
-parameters from copied links and the address bar. Preserve functional URL bytes
+parameters from copied links. Leave page addresses unchanged and preserve functional URL bytes
 and clipboard formats. Decoy, Silly, Hybrid, and Remove are the four modes.
 
 ## Working rules
@@ -48,8 +48,10 @@ configurations must pass when browser checks apply.
    Prefer removing or narrowing an overbroad rule to accumulating site-specific
    exceptions, and do not expand site coverage opportunistically during fixes.
    Follow the [parameter rules and required control tests](CONTRIBUTING.md#adding-a-tracking-parameter).
-3. **Keep replacements stable.** Preserve the [replacement behavior](docs/behavior.md#replacement-values).
-   The service worker creates the per-install key; other contexts request it.
+3. **Share replacements within one copy.** Preserve the [replacement behavior](docs/behavior.md#replacement-values).
+   Draw one fresh random seed per accepted copy, shared by its text and HTML.
+   Suppress repeated processing by the current successful clipboard write record,
+   never by replacement vocabulary or a deterministic mapping across copies.
 4. **DOM events are a trust boundary.** Content scripts run in the isolated
    world, but page code shares the DOM and can dispatch synthetic events.
    Copy/cut authorization, gesture intent, clipboard-change handling, and Undo
@@ -57,7 +59,9 @@ configurations must pass when browser checks apply.
    consume the listener for a later real click.
 5. **Coordinate post-copy writes.** Preserve the [shared writer and cancellation
    guarantees](docs/behavior.md#clipboard-coordination). Use a shared epoch to reject
-   older reads from other frames.
+   older reads from other frames. Automatic observation requires Chrome-window
+   focus; starting or regaining focus establishes an untouched clipboard baseline.
+   Paste, load, and ordinary typing do not authorize a copy.
 6. **Preserve complete clipboard formats.** Follow the [format limits](docs/behavior.md#clipboard-formats)
    and [background inspection requirements](docs/behavior.md#background-watching).
    Preserve [Undo eligibility](docs/behavior.md#usage); do not restore rich copies as plain text.
@@ -73,7 +77,7 @@ configurations must pass when browser checks apply.
    deriving per-parameter seeds. Keep URL and HTML entry points bounded;
    many tracking parameters must not cause repeated full-link hashing.
 10. **Respect cleaning controls.** Preserve the [automatic and explicit action
-    behavior](docs/behavior.md#usage) and [address-bar behavior](docs/behavior.md#page-copies).
+    behavior](docs/behavior.md#usage) and [browser-copy focus limits](docs/behavior.md#background-watching).
 
 ## Validation
 
