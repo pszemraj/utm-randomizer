@@ -32,7 +32,7 @@
 
 - [Copy detection](docs/behavior.md#page-copies) handles shadow-root text fields, stopped propagation, late page handlers, interrupted baseline reads, and oversized previous clipboard values.
 - [Clipboard formats](docs/behavior.md#clipboard-formats) survive rich-copy cleaning; changed HTML is detected even with unchanged text, and plain-text Undo no longer discards formatting.
-- [Clipboard coordination](docs/behavior.md#clipboard-coordination) rejects stale reads after newer copies, settings changes, Undo, and coordinator recreation without worker requests for ordinary typing. Undo suppression survives cross-frame work and worker restarts; lost acknowledgements report failure.
+- [Clipboard coordination](docs/behavior.md#clipboard-coordination) rejects stale reads after newer copies, settings changes, Undo, and coordinator recreation without worker requests for ordinary typing. Undo suppression survives cross-frame work and worker restarts; failed restores do not suppress later copies, and lost acknowledgements report failure.
 - [Background watching](docs/behavior.md#background-watching) skips unrelated clipboard contents and retries tracked links after unavailable readers, invalidated inspections, or custom-format removal. Page copies without rewritable links skip writer reconciliation; settings updates no longer depend on context-menu updates.
 - Synthetic copy, gesture, and Undo events and malformed or forged runtime messages are rejected.
 - [URL rewriting](docs/behavior.md#what-gets-rewritten) preserves Bing Maps collections, TikTok player display controls, Amazon store selectors, signed links, standalone punctuation, adjacent non-Latin prose, relative page-link forms, and empty query segments, and handles standalone Markdown links.

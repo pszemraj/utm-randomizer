@@ -158,9 +158,26 @@ it.each([undefined, 'https://example.com/page', 'https://www.youtube.com/feed'])
 it('atomically restores and suppresses Undo across reconfiguration, then expires after another copy', async () => {
   const { clipboard, sendMessage, message, readEpoch } = await start();
   clipboard.text = TRACKED;
+  const failedCopy = vi.spyOn(document, 'execCommand').mockReturnValueOnce(false);
+  expect(message({ type: 'offscreen-restore', text: TRACKED })).toHaveBeenCalledWith({ ok: false });
+  failedCopy.mockRestore();
+  message({
+    type: 'offscreen-reconcile',
+    epoch: readEpoch(),
+    types: clipboard.types,
+    text: TRACKED,
+    embedded: true,
+    config: CONFIG,
+  });
+  expect(clipboard.text).toBe(CLEAN);
+  sendMessage.mockClear();
+  clipboard.text = TRACKED;
   await vi.advanceTimersByTimeAsync(750);
   clipboard.text = CLEAN;
   message({ type: 'offscreen-restore', text: TRACKED });
+  const failedReplacement = vi.spyOn(document, 'execCommand').mockReturnValueOnce(false);
+  expect(message({ type: 'offscreen-restore', text: 'another tracked link' })).toHaveBeenCalledWith({ ok: false });
+  failedReplacement.mockRestore();
   message({ type: 'watch-config', config: null });
   message({ type: 'watch-config', config: CONFIG });
   message({

@@ -1516,17 +1516,83 @@ test.describe('extension pages', () => {
     await expect(popup.getByText('Deletes tracking parameters from the link')).toBeVisible();
   });
 
-  test('offscreen document writes to the clipboard for the context menu and shortcut', async ({
+  test('offscreen document writes explicit copies and does not suppress failed Undo', async ({
+    context,
+    playground,
+    extensionId,
     serviceWorker,
     readClipboard,
+    setSettings,
     waitForWatcher,
   }) => {
-    await waitForWatcher(true);
+    await setSettings({ enabled: true, mode: 'strip', watchClipboard: false });
+    await waitForWatcher(false);
+    // Isolate the shared writer from page events while retaining the real native clipboard.
+    await playground.goto('about:blank');
     const response: unknown = await serviceWorker.evaluate(() =>
       chrome.runtime.sendMessage({ type: 'offscreen-copy', text: 'https://example.com/clean' }),
     );
     expect(response).toEqual({ ok: true });
     expect(await readClipboard()).toBe('https://example.com/clean');
+
+    await serviceWorker.evaluate((text) => chrome.runtime.sendMessage({ type: 'offscreen-copy', text }), ARTICLE);
+    expect(await readClipboard()).toBe(ARTICLE);
+    const session = await context.newCDPSession(playground);
+    const { targetInfos } = await session.send('Target.getTargets');
+    const offscreen = targetInfos.find(
+      (target: { url: string }) => target.url === `chrome-extension://${extensionId}/offscreen.html`,
+    );
+    if (!offscreen) throw new Error('Missing offscreen clipboard target');
+    const { sessionId } = await session.send('Target.attachToTarget', { targetId: offscreen.targetId, flatten: false });
+    const evaluation = new Promise<string>((resolve) => {
+      session.once('Target.receivedMessageFromTarget', (event: { message: string }) => resolve(event.message));
+    });
+    // Fail only the next native write; reads and subsequent writes use Chromium's implementation.
+    await session.send('Target.sendMessageToTarget', {
+      sessionId,
+      message: JSON.stringify({
+        id: 1,
+        method: 'Runtime.evaluate',
+        params: {
+          expression: `(() => {
+            const copy = document.execCommand.bind(document);
+            let fail = true;
+            document.execCommand = (command) => {
+              if (command === 'copy' && fail) {
+                fail = false;
+                return false;
+              }
+              return copy(command);
+            };
+            return true;
+          })()`,
+          returnByValue: true,
+        },
+      }),
+    });
+    expect(JSON.parse(await evaluation) as unknown).toMatchObject({ id: 1, result: { result: { value: true } } });
+    const restored: unknown = await serviceWorker.evaluate(
+      (text) => chrome.runtime.sendMessage({ type: 'offscreen-restore', text }),
+      ARTICLE,
+    );
+    expect(restored).toEqual({ ok: false });
+    expect(await readClipboard()).toBe(ARTICLE);
+    const reconciled: unknown = await serviceWorker.evaluate(async (text) => {
+      const response = await chrome.runtime.sendMessage<unknown, { epoch: string }>({ type: 'offscreen-epoch' });
+      const result: unknown = await chrome.runtime.sendMessage({
+        type: 'offscreen-reconcile',
+        text,
+        embedded: false,
+        config: { mode: 'strip', key: 'test' },
+        types: ['text/plain'],
+        epoch: response.epoch,
+      });
+      return result;
+    }, ARTICLE);
+    expect(reconciled).toEqual({ ok: true });
+    expect(await readClipboard()).toBe('https://example.com/article?id=42');
+    await session.send('Target.detachFromTarget', { sessionId });
+    await session.detach();
   });
 
   test('registers the context menu entries and the shortcut', async ({ serviceWorker }) => {

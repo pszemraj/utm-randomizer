@@ -248,10 +248,11 @@ chrome.runtime.onMessage.addListener(
       case 'offscreen-restore': {
         epoch = crypto.randomUUID();
         const restored = plainText(message.text);
-        ignored = restored;
         candidate = null;
         window.clearTimeout(graceTimer);
-        sendResponse({ ok: writeClipboard(restored) });
+        const ok = writeClipboard(restored);
+        if (ok) ignored = restored;
+        sendResponse({ ok });
         break;
       }
       case 'offscreen-reconcile':
