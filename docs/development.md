@@ -26,7 +26,7 @@ npm run icons
 
 ## Browser tests
 
-The end-to-end tests load `dist/` into Playwright's Chromium and exercise page copies, background watching, the address bar, format preservation, and Undo. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser.
+The end-to-end tests load `dist/` into Playwright's Chromium and exercise page copies, background watching, unchanged page addresses, format preservation, and Undo. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser.
 
 The suite runs with native `clipboardchange` events and with that capability removed from a temporary extension copy; a polling-specific case skips the event configuration. Both projects verify the capability in the content script's isolated world. This exercises the fallback in current Chromium, not an older Chrome installation. See the [validation requirements](../CONTRIBUTING.md#checks) when choosing local checks.
 
@@ -43,7 +43,7 @@ CI runs only lint, formatting, and type checks. Run tests and packaging locally 
 ## Source map
 
 - `src/manifest.json`: extension manifest; the build fills in `version` from `package.json`.
-- `src/content.ts`: content script entry: settings, copy watcher, address bar, notifications.
+- `src/content.ts`: content script entry: settings, copy watcher, notifications.
 - `src/background.ts`: service worker: context menu, shortcut, statistics, key, clipboard watcher lifecycle.
 - `src/offscreen.ts`: background clipboard watcher and clipboard writer.
 - `src/popup.*`: toolbar popup.
@@ -52,7 +52,6 @@ CI runs only lint, formatting, and type checks. Run tests and packaging locally 
 - `src/lib/values.ts`, `prng.ts`: Decoy, Silly, and Hybrid replacement values, seeded per install.
 - `src/lib/copy-watcher.ts`: copy events, `clipboardchange`, and the polling fallback.
 - `src/lib/clipboard-html.ts`: rich clipboard rewriting and link counting.
-- `src/lib/address-bar.ts`: address-bar cleaning.
 - `src/lib/toast.ts`: on-page notification in a shadow root on the top layer.
 - `src/lib/messages.ts`: runtime message contracts and sender checks.
 - `src/lib/settings.ts`: settings defaults, storage subscriptions, and per-install key requests.

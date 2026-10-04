@@ -643,7 +643,7 @@ test.describe('copying on web pages', () => {
   });
 
   for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
-    test(`keeps signed URLs unchanged in ${mode} clipboard, address-bar and popup paths`, async ({
+    test(`keeps signed URLs unchanged in ${mode} clipboard and popup copies`, async ({
       playground,
       server,
       readClipboard,
@@ -1103,7 +1103,7 @@ test.describe('copying on web pages', () => {
       setSettings,
       waitForWatcher,
     }) => {
-      await setSettings({ mode: 'strip', watchClipboard: false, cleanAddressBar: false });
+      await setSettings({ mode: 'strip', watchClipboard: false });
       await playground.route('http://probe.test/shadow-copy', (route) =>
         route.fulfill({ contentType: 'text/html', body: '<div id="shadow-host"></div>' }),
       );
@@ -1479,21 +1479,15 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
 });
 
 test.describe('address bar', () => {
-  test('swaps tracking in the address bar for decoys once the page has loaded', async ({
+  test('keeps the page address unchanged and rewrites it only when copied', async ({
     playground,
     server,
     readClipboard,
   }) => {
-    await playground.goto(
-      `${server.origin}/?id=5&utm_source=linkedin&utm_medium=email&utm_campaign=spring&fbclid=IwAR3xYz123AbC456dEf789`,
-    );
-    await expect.poll(() => new URL(playground.url()).searchParams.get('utm_source')).not.toBe('linkedin');
-    const url = new URL(playground.url());
-    expect(url.searchParams.get('id')).toBe('5');
-    expect([...url.searchParams.keys()]).toEqual(['id', 'utm_source', 'utm_medium', 'utm_campaign', 'fbclid']);
-    // Own replaceState navigation events leave the successful output in place.
+    const original = `${server.origin}/?id=5&utm_source=linkedin&utm_medium=email&utm_campaign=spring&fbclid=IwAR3xYz123AbC456dEf789`;
+    await playground.goto(original);
     await playground.waitForTimeout(1000);
-    expect(playground.url()).toBe(url.href);
+    expect(playground.url()).toBe(original);
     await playground.evaluate(() => {
       const field = document.createElement('textarea');
       field.id = 'copy-address';
@@ -1510,27 +1504,26 @@ test.describe('address bar', () => {
         new URL(text).searchParams.get('utm_source') !== 'linkedin',
     );
     expect(await expectStable(readClipboard, 1500)).toBe(copied);
-    expect(playground.url()).toBe(url.href);
+    expect(playground.url()).toBe(original);
   });
 
-  test('removes tracking from the address bar in Remove mode, including after in-page navigation', async ({
+  test('keeps page addresses unchanged after navigation and settings changes', async ({
     playground,
     setSettings,
     server,
   }) => {
-    await setSettings({ mode: 'strip' });
     await playground.getByTestId('open-tracked').click();
-    await expect.poll(() => playground.url()).toBe(`${server.origin}/?id=5`);
-
+    await playground.waitForTimeout(600);
+    const loaded = playground.url();
+    expect(loaded).toContain('fbclid=IwAR3xYz123AbC456dEf789');
+    for (const mode of ['strip', 'silly', 'hybrid', 'decoy']) {
+      await setSettings({ mode });
+      await playground.waitForTimeout(400);
+      expect(playground.url()).toBe(loaded);
+    }
     await playground.getByTestId('push-tracked').click();
-    await expect.poll(() => playground.url()).toBe(`${server.origin}/?page=2`);
-  });
-
-  test('can be switched off', async ({ playground, setSettings }) => {
-    await setSettings({ cleanAddressBar: false });
-    await playground.getByTestId('open-tracked').click();
-    await playground.waitForTimeout(1500);
-    expect(playground.url()).toContain('fbclid=IwAR3xYz123AbC456dEf789');
+    await playground.waitForTimeout(600);
+    expect(playground.url()).toBe(`${server.origin}/?page=2&utm_source=homepage&utm_content=promo_tile`);
   });
 });
 
@@ -1571,7 +1564,7 @@ test.describe('extension pages', () => {
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(popup.getByRole('heading', { name: 'UTM Randomizer' })).toBeVisible();
     await expect(popup.getByRole('switch', { name: /Clean links automatically/ })).toBeChecked();
-    await expect(popup.getByRole('switch', { name: /Clean the address bar/ })).toBeChecked();
+    await expect(popup.getByRole('switch', { name: /Clean the address bar/ })).toHaveCount(0);
     await expect(popup.getByRole('switch', { name: /Watch the whole clipboard/ })).toBeChecked();
     await expect(popup.getByRole('radio', { name: 'Decoy' })).toBeChecked();
     await expect(popup.getByRole('radio', { name: 'Hybrid' })).not.toBeChecked();

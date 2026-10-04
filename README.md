@@ -1,6 +1,6 @@
 # UTM Randomizer
 
-A Chrome extension that replaces tracking parameters in shared links with believable decoys, nonsense, or nothing. It works on copied links and the address bar. [Everything stays in your browser](PRIVACY.md).
+A Chrome extension that replaces tracking parameters in copied links with believable decoys, nonsense, or nothing. Page addresses stay unchanged. [Everything stays in your browser](PRIVACY.md).
 
 ![A copied link keeps its destination and id=42: Decoy uses plausible tracking values, Silly uses nonsense, Hybrid mixes both, and Remove deletes tracking.](assets/modes.svg)
 
@@ -20,8 +20,8 @@ If the release only offers **Source code** archives, use the [source build](#bui
 ## Usage
 
 - Copy links as usual: Ctrl+C / Cmd+C, a site's copy button, or **Copy link address**.
-- Open the toolbar popup to choose **Decoy**, **Silly**, **Hybrid**, or **Remove**, pause cleaning, or change the cleaning layers and notifications.
-- Decoy, all automatic cleaning layers, and notifications are enabled by default. Each clipboard entry is processed once; automatic plain-text rewrites offer **Undo**.
+- Open the toolbar popup to choose **Decoy**, **Silly**, **Hybrid**, or **Remove**, pause cleaning, or change whole-clipboard watching and notifications.
+- Decoy, automatic clipboard cleaning, and notifications are enabled by default. Each clipboard entry is processed once; automatic plain-text rewrites offer **Undo**.
 - To copy the current page explicitly, use **Alt+Shift+U** or **Copy this page's link** in the popup.
 
 Try it: right-click [this test link](https://example.com/article?id=42&utm_source=newsletter&utm_medium=email), select **Copy link address**, and paste into a text field. The tracking values should change while `id=42` stays intact.

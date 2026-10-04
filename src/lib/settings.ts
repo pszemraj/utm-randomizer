@@ -7,8 +7,6 @@ export interface Settings {
   enabled: boolean;
   /** Believable decoys, obvious nonsense, or removal. */
   mode: Mode;
-  /** Clean tracking parameters out of the address bar, so copying or sharing the page URL is clean. */
-  cleanAddressBar: boolean;
   /** Watch the whole clipboard, catching links copied anywhere (address bar, other apps). */
   watchClipboard: boolean;
   /** Show an on-page notification after a rewrite. */
@@ -19,7 +17,6 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   mode: 'decoy',
-  cleanAddressBar: true,
   watchClipboard: true,
   notify: true,
 };
@@ -30,14 +27,13 @@ const SECRET_KEY = 'secret';
 
 /** Fills in defaults for missing or malformed stored values. */
 function normalize(stored: Record<string, unknown>): Settings {
-  const flag = (key: 'enabled' | 'cleanAddressBar' | 'watchClipboard' | 'notify') => {
+  const flag = (key: 'enabled' | 'watchClipboard' | 'notify') => {
     const value = stored[key];
     return typeof value === 'boolean' ? value : DEFAULT_SETTINGS[key];
   };
   return {
     enabled: flag('enabled'),
     mode: MODES.find((mode) => mode === stored.mode) ?? DEFAULT_SETTINGS.mode,
-    cleanAddressBar: flag('cleanAddressBar'),
     watchClipboard: flag('watchClipboard'),
     notify: flag('notify'),
   };

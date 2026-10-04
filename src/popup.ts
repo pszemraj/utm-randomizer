@@ -22,7 +22,6 @@ function element<T extends HTMLElement>(id: string, type: new () => T): T {
 
 const enabledToggle = element('enabled', HTMLInputElement);
 const notifyToggle = element('notify', HTMLInputElement);
-const addressBarToggle = element('cleanAddressBar', HTMLInputElement);
 const clipboardToggle = element('watchClipboard', HTMLInputElement);
 const modeInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="mode"]'));
 const modeHint = element('modeHint', HTMLParagraphElement);
@@ -43,7 +42,6 @@ function render(current: Settings): void {
   settings = current;
   enabledToggle.checked = current.enabled;
   notifyToggle.checked = current.notify;
-  addressBarToggle.checked = current.cleanAddressBar;
   clipboardToggle.checked = current.watchClipboard;
   for (const input of modeInputs) {
     input.checked = input.value === current.mode;
@@ -134,7 +132,6 @@ async function init(): Promise<void> {
 
 enabledToggle.addEventListener('change', () => void saveSettings({ enabled: enabledToggle.checked }));
 notifyToggle.addEventListener('change', () => void saveSettings({ notify: notifyToggle.checked }));
-addressBarToggle.addEventListener('change', () => void saveSettings({ cleanAddressBar: addressBarToggle.checked }));
 clipboardToggle.addEventListener('change', () => void saveSettings({ watchClipboard: clipboardToggle.checked }));
 for (const input of modeInputs) {
   input.addEventListener('change', () => {

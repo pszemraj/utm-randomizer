@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.1] - 2026-10-04
+
+### Fixed
+
+- Page addresses remain unchanged on load, navigation, and settings changes; tracking is cleaned only in copied links.
+
 ## [2.0.0] - 2026-09-29
 
 ### Breaking

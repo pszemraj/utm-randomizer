@@ -1,4 +1,3 @@
-import { startAddressBarCleaner, type AddressBarCleaner } from './lib/address-bar';
 import { startCopyWatcher, type WatchedClipboard } from './lib/copy-watcher';
 import {
   isClipboardEpoch,
@@ -21,7 +20,6 @@ import { showToast } from './lib/toast';
 
 let settings: Settings = DEFAULT_SETTINGS;
 let key: string | null = null;
-let addressBar: AddressBarCleaner | null = null;
 
 const isTopFrame = window === window.top;
 // The async Clipboard API only exists in secure contexts; copy events still work without it.
@@ -38,20 +36,17 @@ void loadSettings().then((loaded) => {
     settings = loaded;
     watcher.invalidate();
   }
-  addressBar?.clean();
 });
 void requestSecret()
   .catch(() => null)
   .then((loaded) => {
     key ??= loaded;
     watcher.invalidate();
-    addressBar?.clean();
   });
 const unwatchSettings = watchSettings((updated) => {
   settingsUpdated = true;
   settings = updated;
   watcher.invalidate();
-  addressBar?.clean();
 });
 const unwatchSecret = watchSecret((updated) => {
   key = updated;
@@ -148,13 +143,6 @@ async function coordinate(message: ExtensionMessage): Promise<void> {
 }
 
 if (isTopFrame) {
-  // Only the top frame's URL is shown in the address bar.
-  addressBar = startAddressBarCleaner({
-    isContextValid,
-    getOptions: () =>
-      settings.enabled && settings.cleanAddressBar && key !== null ? { mode: settings.mode, key } : null,
-  });
-
   const onMessage = (
     message: unknown,
     sender: chrome.runtime.MessageSender,

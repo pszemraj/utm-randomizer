@@ -2,11 +2,11 @@
 
 ## Usage
 
-Automatic plain-text rewrites show an **Undo** notification on supported web pages when notifications are enabled. Hovering or keyboard focus keeps the notification open; its countdown resumes after both leave. Undo restores the original clipboard text until different contents are observed; a later fresh copy is cleaned again. A failed restore is reported and does not suppress later copies. Copies with HTML or custom formats and address-bar changes have no Undo button.
+Automatic plain-text rewrites show an **Undo** notification on supported web pages when notifications are enabled. Hovering or keyboard focus keeps the notification open; its countdown resumes after both leave. Undo restores the original clipboard text until different contents are observed; a later fresh copy is cleaned again. A failed restore is reported and does not suppress later copies. Copies with HTML or custom formats have no Undo button.
 
 Explicit actions copy a cleaned link on demand: right-click a link → **Copy link with decoy tracking**; right-click a page → **Copy page link with decoy tracking**; and **Alt+Shift+U** or the popup's **Copy this page's link** button for the current page. These actions use the selected mode and still work while automatic cleaning is paused. The shortcut can be changed at `chrome://extensions/shortcuts`.
 
-Turning off **Watch the whole clipboard** stops background checks; page copy handling stays active. The counters track rewritten clipboard links in total and in the current browser session, excluding address-bar changes. Rich copies include rewritten anchor destinations, counting each link once across its text and HTML representations.
+Turning off **Watch the whole clipboard** stops background checks; page copy handling stays active. The counters track rewritten clipboard links in total and in the current browser session. Rich copies include rewritten anchor destinations, counting each link once across its text and HTML representations.
 
 ## Replacement values
 
@@ -49,7 +49,7 @@ Successful page observations refresh the current clipboard record even when the 
 
 Chrome 123-143 polls after copy and cut events, including events whose propagation the page stops or whose data a later page handler overwrites. Button or link clicks and right-clicks on links also start a pre-gesture clipboard read followed by short polling. Comparing text and HTML against that baseline leaves existing clipboard contents alone after unrelated gestures; polling continues if a new copy interrupts the baseline read. Legacy polling rewrites lone plain-text links and both representations of rich copies. Only trusted browser events authorize these page checks; synthetic copy events and programmatic Undo clicks are ignored. If the async Clipboard API is unavailable, synchronous copy handling still works, but that page cannot inspect asynchronous copies.
 
-The address bar is cleaned with `history.replaceState` once the page's `load` event has fired, so the page has already done its own work with the URL, and again 300 ms after each in-page navigation. The cleaner remembers its successful output and leaves it in place during its own navigation events; a new address or mode can be cleaned again.
+Page addresses remain unchanged on load, navigation, and settings changes. Rewriting a copied page address affects only the clipboard.
 
 ### Clipboard coordination
 

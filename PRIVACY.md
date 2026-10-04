@@ -6,7 +6,7 @@ UTM Randomizer processes copied text and page addresses inside your browser. It 
 
 - **Copied text and HTML on web pages**, from copy events and clipboard reads around relevant interactions. On older Chrome, a gesture can trigger a clipboard read before a copy occurs. See the [copy detection limits](docs/behavior.md#page-copies).
 - **Clipboard text, HTML, and format information in the background**, while [whole-clipboard watching](docs/behavior.md#background-watching) is enabled. Background reads can cause system clipboard-access prompts.
-- **The page address**, while "Clean the address bar" is on, and the current tab's address when you use an [explicit copy action](docs/behavior.md#usage).
+- **The page address**, for resolving relative links copied from a page, and the current tab's address when you use an [explicit copy action](docs/behavior.md#usage). Page addresses are not changed.
 
 Clipboard contents and addresses are never written to extension storage, logged, or transmitted outside your browser.
 
@@ -24,7 +24,7 @@ The [clipboard coordinator](docs/behavior.md#clipboard-coordination) keeps one c
 
 | Permission                      | Why it is needed                                                                   |
 | ------------------------------- | ---------------------------------------------------------------------------------- |
-| Content script on http(s) pages | Copy detection and address-bar cleaning on supported pages                         |
+| Content script on http(s) pages | Copy detection on supported pages                                                  |
 | `clipboardRead`                 | Reading a link a page just copied, and the background watcher's clipboard checks   |
 | `clipboardWrite`                | Writing the cleaned link back to the clipboard                                     |
 | `contextMenus`                  | The "Copy link with ... tracking" menu entries                                     |
