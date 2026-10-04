@@ -190,7 +190,7 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
   }
 
   const query = kept.join('&');
-  const head = query ? link.slice(0, queryStart + 1) + query : link.slice(0, queryStart);
+  const head = kept.length > 0 ? link.slice(0, queryStart + 1) + query : link.slice(0, queryStart);
   return { url: head + link.slice(queryEnd), params: changed };
 }
 

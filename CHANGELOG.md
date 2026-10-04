@@ -35,7 +35,7 @@
 - [Clipboard coordination](docs/behavior.md#clipboard-coordination) rejects stale reads after newer copies, settings changes, Undo, and coordinator recreation without worker requests for ordinary typing. Undo suppression survives cross-frame work and worker restarts; lost acknowledgements report failure.
 - [Background watching](docs/behavior.md#background-watching) skips unrelated clipboard contents and retries tracked links after unavailable readers, invalidated inspections, or custom-format removal. Page copies without rewritable links skip writer reconciliation; settings updates no longer depend on context-menu updates.
 - Synthetic copy, gesture, and Undo events and malformed or forged runtime messages are rejected.
-- [URL rewriting](docs/behavior.md#what-gets-rewritten) preserves Bing Maps collections, TikTok player display controls, Amazon store selectors, signed links, standalone punctuation, and relative page-link forms, and handles standalone Markdown links.
+- [URL rewriting](docs/behavior.md#what-gets-rewritten) preserves Bing Maps collections, TikTok player display controls, Amazon store selectors, signed links, standalone punctuation, relative page-link forms, and empty query segments, and handles standalone Markdown links.
 - [Replacement values](docs/behavior.md#replacement-values) stay stable for encoded, mixed-case hexadecimal, non-Latin, malformed-percent, and `magic-8-ball` inputs.
 - Synchronous rewriting is bounded and avoids repeated full-link hashing; explicit Copy accepts unchanged or generated links beyond the automatic input bound.
 - [Notifications and statistics](docs/behavior.md#usage) resume expiry after keyboard focus leaves and count rich-copy links without duplicate text/HTML counts.

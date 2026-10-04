@@ -233,11 +233,19 @@ describe('rewriteUrl (strip)', () => {
     });
   });
 
-  it('drops the question mark when nothing is left', () => {
+  it('drops the question mark only when no query segments remain', () => {
     expect(rewriteUrl('https://example.com/p?utm_source=x&utm_medium#top', strip)?.url).toBe(
       'https://example.com/p#top',
     );
     expect(rewriteUrl('https://youtu.be/dQw4w9WgXcQ?gclid=AbCdEf123', strip)?.url).toBe('https://youtu.be/dQw4w9WgXcQ');
+    for (const [query, kept] of [
+      ['utm_source=x&', ''],
+      ['&utm_source=x', ''],
+      ['utm_source=x&&', '&'],
+      ['&utm_source=x&', '&'],
+    ]) {
+      expect(rewriteUrl(`https://example.com/p?${query}#top`, strip)?.url).toBe(`https://example.com/p?${kept}#top`);
+    }
   });
 });
 
