@@ -28,6 +28,8 @@ npm run icons
 
 The end-to-end tests load `dist/` into Playwright's Chromium and exercise single-URL clipboard changes, unchanged page addresses, non-URL and non-text controls, and Undo. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser.
 
+Focus tests require `HEADED=1`. Headless runs skip them because minimizing a headless window does not dispatch the native focus events those tests exercise.
+
 See the [validation requirements](../CONTRIBUTING.md#checks) when choosing local checks.
 
 Popup controls run in extension tabs; Copy button tests supply the tab URL. Background-watcher tests write through an extension tab, including cleaning without a webpage reader; focus tests minimize and restore the browser window. These tests do not exercise native address-bar copying, browser menu selection, shortcut invocation, toolbar popup opening, or copying from another application.
