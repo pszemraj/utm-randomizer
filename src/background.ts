@@ -69,6 +69,8 @@ function countRewrites(urls: number): Promise<void> {
 let offscreenQueue: Promise<unknown> = Promise.resolve();
 /** Cancels automatic work waiting in the worker when settings or Chrome-window focus change. */
 let automaticRevision = 0;
+/** Cancels queued explicit actions when Chrome-window focus changes. */
+let focusRevision = 0;
 
 /** Runs `task` after every earlier offscreen operation has finished. */
 function withOffscreen<T>(task: () => Promise<T>): Promise<T> {
@@ -134,16 +136,19 @@ async function focusedWindow(): Promise<chrome.windows.Window> {
   const window = await chrome.windows.getLastFocused();
   if (!window.focused && revision === automaticRevision) {
     automaticRevision += 1;
+    focusRevision += 1;
     void syncWatcher(true);
   }
   return window;
 }
 
 /** Sends an explicit clipboard operation through the offscreen coordinator. */
-function performClipboardOperation(message: ExtensionMessage): Promise<void> {
+function performClipboardOperation(message: ExtensionMessage, revision = focusRevision): Promise<void> {
   return withOffscreen(async () => {
     await ensureOffscreen();
     try {
+      const focused = await focusedWindow();
+      if (!focused.focused || revision !== focusRevision) throw new Error('Chrome clipboard focus changed');
       await tellOffscreen(message);
     } finally {
       // Keep Undo suppression while automatic cleaning is enabled, even without global polling.
@@ -155,8 +160,8 @@ function performClipboardOperation(message: ExtensionMessage): Promise<void> {
 }
 
 /** Puts `text` on the clipboard through the offscreen document. */
-function writeClipboard(text: string): Promise<void> {
-  return performClipboardOperation({ type: 'offscreen-copy', text });
+function writeClipboard(text: string, revision = focusRevision): Promise<void> {
+  return performClipboardOperation({ type: 'offscreen-copy', text }, revision);
 }
 
 /** Reconciles a page's observation against the current clipboard and settings. */
@@ -268,10 +273,11 @@ async function notifyTab(tabId: number | undefined, toast: ToastPayload, ok: boo
 
 /** Copies `url` with its tracking parameters rewritten (explicit user action: menu or shortcut). */
 async function copyCleanLink(url: string, tabId: number | undefined): Promise<void> {
+  const revision = focusRevision;
   const settings = await loadSettings();
   const result = rewriteUrl(url, { mode: settings.mode, key: createSeed() });
   try {
-    await writeClipboard(result?.url ?? url);
+    await writeClipboard(result?.url ?? url, revision);
   } catch (error) {
     console.debug('UTM Randomizer: copy failed', error);
     await notifyTab(tabId, { message: 'Could not copy the link' }, false);
@@ -356,7 +362,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 chrome.windows.onFocusChanged.addListener((windowId) => {
   automaticRevision += 1;
-  void syncWatcher(windowId === chrome.windows.WINDOW_ID_NONE);
+  focusRevision += 1;
+  // Chrome can omit the loss notification, so every gain also starts a fresh baseline.
+  void syncWatcher(true);
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) void syncWatcher();
 });
 
 watchSettings((settings) => {
@@ -410,16 +419,12 @@ chrome.runtime.onMessage.addListener(
     const offscreen = isOffscreenSender(sender);
     switch (message.type) {
       case 'rewritten': {
-        if (
-          (!content && !offscreen) ||
-          (message.tabId !== undefined && !offscreen) ||
-          (message.clipboard !== undefined && !content)
-        ) {
+        if (!offscreen) {
           sendResponse({ ok: false });
           return false;
         }
         void countRewrites(message.urls);
-        const tabId = offscreen ? message.tabId : sender.tab?.id;
+        const tabId = message.tabId;
         if (message.relayToast) {
           const toast = message.relayToast;
           void loadSettings().then((settings) => {
@@ -433,10 +438,6 @@ chrome.runtime.onMessage.addListener(
               void notifyActiveTab(toast);
             }
           });
-        }
-        if (message.clipboard) {
-          acknowledge(performClipboardOperation(message), sendResponse);
-          return true;
         }
         return false;
       }

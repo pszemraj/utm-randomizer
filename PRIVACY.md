@@ -4,7 +4,7 @@ UTM Randomizer processes copied text and page addresses inside your browser. It 
 
 ## What the extension reads
 
-- **Copied text and HTML on web pages**, from copy events and clipboard reads around copy controls. These controls can trigger a clipboard read before a copy occurs. See the [copy detection limits](docs/behavior.md#page-copies).
+- **Copied text and HTML on web pages**, through clipboard reads after copy events and around copy controls. These controls can trigger a clipboard read before a copy occurs. See the [copy detection limits](docs/behavior.md#page-copies).
 - **Clipboard text, HTML, and format information in the background**, while Chrome is focused and [browser-copy watching](docs/behavior.md#background-watching) is enabled. Background reads can cause system clipboard-access prompts.
 - **The page address**, for resolving relative links copied from a page, and the current tab's address when you use an [explicit copy action](docs/behavior.md#usage). Page addresses are not changed.
 

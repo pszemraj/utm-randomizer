@@ -27,6 +27,17 @@ it('leaves the focus-gain baseline untouched when an observer reports it', async
   expect(writes).not.toHaveBeenCalled();
 });
 
+it('baselines an outside copy when focus gain resets an already active watcher', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  // Chrome may report only the gain; the worker still sends a suspend/resume pair.
+  message({ type: 'watch-config', config: null });
+  message({ type: 'watch-config', config: CONFIG });
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+});
+
 it('retains a staged candidate across a same-focus worker refresh', async () => {
   const { clipboard, message, writes } = await start();
   clipboard.text = TRACKED;
@@ -160,40 +171,6 @@ it.each([false, true])(
   },
 );
 
-it('records a completed synchronous output after newer intent invalidates pending reads', async () => {
-  const { clipboard, message, readEpoch, writes } = await start();
-  const before = { text: TRACKED, html: null, types: ['text/plain'] };
-  const after = { text: 'https://example.com/page?utm_source=email', html: null, types: ['text/plain'] };
-  Object.assign(clipboard, after);
-  const registration = { type: 'rewritten', urls: 1, clipboard: { before, after } };
-  message({ type: 'offscreen-intent' });
-  expect(message(registration)).toHaveBeenCalledWith({ ok: true });
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text: after.text,
-    types: after.types,
-    epoch: readEpoch(),
-    embedded: true,
-    config: { mode: 'decoy' },
-  });
-  expect(writes).not.toHaveBeenCalled();
-  clipboard.text = 'a later payload';
-  expect(message(registration)).toHaveBeenCalledWith({ ok: false });
-});
-
-it('leaves original page rewrite notifications unanswered until the worker forwards registration', async () => {
-  const { clipboard, message } = await start();
-  const content = { ...WORKER, tab: { id: 1 } as chrome.tabs.Tab, url: 'https://example.com/' };
-  const after = { text: TRACKED, html: null, types: ['text/plain'] };
-  const payload = { type: 'rewritten', urls: 1, clipboard: { before: after, after } };
-  Object.assign(clipboard, after);
-  expect(message(payload, content)).not.toHaveBeenCalled();
-  expect(message({ ...payload, clipboard: null }, content)).not.toHaveBeenCalled();
-  expect(message(payload, WORKER)).toHaveBeenCalledWith({ ok: true });
-  expect(message({ ...payload, clipboard: null }, WORKER)).toHaveBeenCalledWith({ ok: false });
-});
-
 it('expires completed output after a nonrewritable observation with polling disabled', async () => {
   const { clipboard, message, readEpoch, writes } = await start();
   message({ type: 'watch-config', config: null });
@@ -223,24 +200,6 @@ it('expires completed output after a nonrewritable observation with polling disa
   });
   expect(writes).toHaveBeenCalledTimes(2);
   expect(clipboard.text).not.toBe(output);
-});
-
-it('keeps a restored current payload when a completed-write report arrives late', async () => {
-  const { clipboard, message, readEpoch, writes } = await start();
-  message({ type: 'offscreen-restore', text: TRACKED });
-  const snapshot = { text: TRACKED, html: null, types: ['text/plain'] };
-  message({ type: 'rewritten', urls: 1, clipboard: { before: snapshot, after: snapshot } });
-  message({
-    type: 'offscreen-reconcile',
-    pageCopy: true,
-    text: TRACKED,
-    embedded: true,
-    types: clipboard.types,
-    epoch: readEpoch(),
-    config: CONFIG,
-  });
-  expect(writes).toHaveBeenCalledOnce();
-  expect(clipboard.text).toBe(TRACKED);
 });
 
 /** Clipboard flavors presented by one fake synchronous paste. */

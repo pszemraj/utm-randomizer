@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2] - 2026-10-04
+
+### Fixed
+
+- All clipboard writes, including page copies, explicit Copy, and Undo, pass through the browser-focus check. Pending operations cannot resume after losing and regaining focus.
+- Native copy/cut data stays unchanged during dispatch. The coordinator rewrites supported text and HTML afterward; copies with custom formats or without a Clipboard API reader stay untouched.
+
 ## [2.0.1] - 2026-10-04
 
 ### Fixed

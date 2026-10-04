@@ -3,7 +3,6 @@ import { isExtensionMessage, isWorkerSender } from '../../src/lib/messages';
 
 const EPOCH = '00000000-0000-4000-8000-000000000001';
 const config = { mode: 'strip' };
-const snapshot = { text: 'https://example.com/?utm_source=email', html: null, types: ['text/plain'] };
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -16,7 +15,6 @@ describe('runtime message payloads', () => {
     { type: 'offscreen-epoch' },
     { type: 'count', urls: 1 },
     { type: 'rewritten', urls: 2, relayToast: { message: 'Cleaned', undoText: '' }, tabId: 7 },
-    { type: 'rewritten', urls: 1, clipboard: { before: snapshot, after: snapshot } },
     {
       type: 'reconcile-clipboard',
       text: 'ordinary prose',
@@ -121,8 +119,6 @@ describe('runtime message payloads', () => {
       epoch: EPOCH,
       observeOnly: 'yes',
     },
-    { type: 'rewritten', urls: 1, clipboard: { before: null, after: snapshot } },
-    { type: 'rewritten', urls: 1, clipboard: { before: snapshot, after: { ...snapshot, html: 7 } } },
     { type: 'offscreen-copy' },
     { type: 'offscreen-copy', text: 5 },
     { type: 'copy-clipboard', text: 5 },

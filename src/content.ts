@@ -3,17 +3,16 @@ import {
   isClipboardEpoch,
   isExtensionMessage,
   isWorkerSender,
-  sendNotification,
   type ExtensionMessage,
   type ToastPayload,
 } from './lib/messages';
-import { DEFAULT_SETTINGS, describeMode, loadSettings, watchSettings, type Settings } from './lib/settings';
+import { DEFAULT_SETTINGS, loadSettings, watchSettings, type Settings } from './lib/settings';
 import { showToast } from './lib/toast';
 
 let settings: Settings = DEFAULT_SETTINGS;
 
 const isTopFrame = window === window.top;
-// The async Clipboard API only exists in secure contexts; copy events still work without it.
+// Automatic rewriting needs the native format reader, available only in secure contexts.
 const clipboard: WatchedClipboard | null =
   window.isSecureContext && 'clipboard' in navigator ? navigator.clipboard : null;
 
@@ -70,30 +69,6 @@ const watcher = startCopyWatcher({
       pageCopy,
       observeOnly,
     }),
-  onRewrite: async ({ original, urls, undoable }, write) => {
-    const { emoji, done } = describeMode(settings.mode);
-    const payload: ToastPayload | undefined = settings.notify
-      ? {
-          message: `${emoji} Tracking ${done}${urls > 1 ? ` in ${urls} links` : ''}`,
-          undoText: undoable === false ? undefined : original,
-        }
-      : undefined;
-    if (payload && isTopFrame) {
-      toast(payload);
-    }
-    if (write) {
-      // The browser commits clipboardData after event dispatch and the native default action.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await coordinate({
-        type: 'rewritten',
-        urls,
-        relayToast: isTopFrame ? undefined : payload,
-        clipboard: write,
-      });
-    } else {
-      sendNotification({ type: 'rewritten', urls, relayToast: isTopFrame ? undefined : payload });
-    }
-  },
 });
 
 /** Obtains the generation acknowledged for a new trusted intent or a whole-clipboard inspection. */

@@ -1,24 +1,9 @@
-import { hasRewritableClipboard, rewriteHtml } from './clipboard-html';
-import { rewriteText, type RewriteOptions } from './rewrite';
-import type { ClipboardWrite } from './messages';
+import { hasRewritableClipboard } from './clipboard-html';
 import type { Settings } from './settings';
-import { createSeed } from './prng';
 
 /** The subset of `navigator.clipboard` the watcher uses. */
 export interface WatchedClipboard extends EventTarget {
   read(): Promise<readonly Pick<ClipboardItem, 'types' | 'getType'>[]>;
-}
-
-/** Reported through {@link WatcherDeps.onRewrite} after each rewrite. */
-export interface RewriteEvent {
-  /** Clipboard text before the rewrite; what Undo restores. */
-  original: string;
-  /** Clipboard text after the rewrite. */
-  rewritten: string;
-  /** Number of links that changed. */
-  urls: number;
-  /** False when restoring plain text would discard another clipboard format. */
-  undoable?: boolean;
 }
 
 /** Everything {@link startCopyWatcher} needs from its environment; tests pass fakes. */
@@ -46,8 +31,6 @@ export interface WatcherDeps {
     pageCopy: boolean,
     observeOnly?: boolean,
   ) => Promise<void>;
-  /** Called after each rewrite, to show a notification and count it. */
-  onRewrite: (event: RewriteEvent, write?: ClipboardWrite) => void | Promise<void>;
   /** False once the extension was reloaded or removed; the watcher then shuts itself down. */
   isContextValid?: () => boolean;
 }
@@ -76,7 +59,6 @@ const SWEEP_AFTER_COPY = [40, 150, 400];
 const SWEEP_AFTER_CLICK = [120, 350, 800, 1600, 2800];
 const SWEEP_AFTER_CONTEXT_MENU = [400, 1000, 2000, 3500, 5500, 8000];
 
-const SELECTABLE_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel']);
 const COPY_HINT = /copy|clipboard/i;
 const INTERACTIVE_ROLES = new Set(['button', 'menuitem', 'option', 'link', 'switch', 'tab']);
 
@@ -84,26 +66,6 @@ const INTERACTIVE_ROLES = new Set(['button', 'menuitem', 'option', 'link', 'swit
 interface ClipboardChangeLike extends Event {
   /** MIME types now on the clipboard. */
   types?: readonly string[];
-}
-
-/** Text the default copy action would put on the clipboard. `plain` is true for form fields (no HTML flavor). */
-function selectedText(): { text: string; plain: boolean } | null {
-  let active = document.activeElement;
-  while (active?.shadowRoot?.activeElement) {
-    active = active.shadowRoot.activeElement;
-  }
-  if (
-    active instanceof HTMLTextAreaElement ||
-    (active instanceof HTMLInputElement && SELECTABLE_INPUT_TYPES.has(active.type))
-  ) {
-    const { selectionStart, selectionEnd, value } = active;
-    if (selectionStart === null || selectionEnd === null || selectionStart === selectionEnd) {
-      return null;
-    }
-    return { text: value.slice(selectionStart, selectionEnd), plain: true };
-  }
-  const text = window.getSelection()?.toString() ?? '';
-  return text ? { text, plain: false } : null;
 }
 
 /**
@@ -142,19 +104,16 @@ function looksLikeCopyControl(target: EventTarget | null): boolean {
 /**
  * Watches for links being copied on the page and rewrites their tracking parameters.
  *
- * - `copy`/`cut` events are rewritten synchronously through `clipboardData` (covers Ctrl+C,
- *   `execCommand('copy')` buttons, and pages that set clipboard data themselves).
+ * - Trusted `copy`/`cut` events schedule reconciliation after the browser commits the full payload.
  * - Copy controls and context menus compare against the clipboard before the gesture.
  * - `clipboardchange` (Chrome 144+) supplies observations to the focused background watcher;
  *   the event alone does not prove that a fresh copy occurred on this page.
  */
 export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
-  const { clipboard, getSettings, onRewrite } = deps;
+  const { clipboard, getSettings } = deps;
   const isContextValid = deps.isContextValid ?? (() => true);
   const supportsChangeEvent = clipboard !== null && 'onclipboardchange' in clipboard;
 
-  /** A synchronous output awaiting registration with the shared coordinator. */
-  let lastWritten: ClipboardSnapshot | null = null;
   let generation = 0;
   let restoring = false;
   let sweep: AbortController | null = null;
@@ -176,76 +135,6 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     invalidate();
   }
 
-  /**
-   * Rewrites a copy or cut while it is being dispatched, through `event.clipboardData`.
-   *
-   * @returns Whether the event's clipboard data was rewritten.
-   */
-  function onCopy(event: ClipboardEvent): boolean {
-    const data = event.clipboardData;
-    if (!event.isTrusted || restoring || !data || !active()) {
-      return false;
-    }
-
-    let original: string;
-    let embedded: boolean;
-    let html: string | null = null;
-    if (event.defaultPrevented) {
-      // The page put its own data on the clipboard.
-      original = data.getData('text/plain');
-      html = data.types.includes('text/html') ? data.getData('text/html') : null;
-      embedded = true;
-    } else if (event.type === 'copy') {
-      const selection = selectedText();
-      // Native rich copies must create their full payload before format-aware reconciliation.
-      if (!selection?.plain) {
-        return false;
-      }
-      original = selection.text;
-      embedded = true;
-    } else {
-      // Canceling a native cut would also cancel the deletion; leave it to the async path.
-      return false;
-    }
-
-    const options: RewriteOptions = { mode: getSettings().mode, key: createSeed(), baseUrl: location.href };
-    const result = original ? rewriteText(original, { ...options, embedded }) : null;
-    const rewrittenHtml = html ? rewriteHtml(html, options) : null;
-    if (!result && !rewrittenHtml) {
-      return false;
-    }
-
-    const before = { text: original, html, types: Array.from(data.types) };
-    event.preventDefault();
-    if (result) {
-      data.setData('text/plain', result.text);
-    }
-    if (rewrittenHtml) {
-      data.setData('text/html', rewrittenHtml.html);
-    }
-    lastWritten = {
-      text: data.getData('text/plain'),
-      html: data.types.includes('text/html') ? data.getData('text/html') : null,
-      types: Array.from(data.types),
-    };
-    const written = lastWritten;
-    const acknowledgement = onRewrite(
-      {
-        original,
-        rewritten: result?.text ?? original,
-        urls: Math.max(result?.urls ?? 0, rewrittenHtml?.urls ?? 0),
-        ...(data.types.some((type) => type !== 'text/plain') ? { undoable: false } : {}),
-      },
-      { before, after: { ...written, types: [...written.types] } },
-    );
-    void Promise.resolve(acknowledgement)
-      .catch(() => undefined)
-      .finally(() => {
-        if (lastWritten === written) lastWritten = null;
-      });
-    return true;
-  }
-
   /** Whether two clipboard payloads contain the same text, HTML, and flavors. */
   function sameSnapshot(left: ClipboardSnapshot, right: ClipboardSnapshot): boolean {
     return (
@@ -256,13 +145,11 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     );
   }
 
-  /** Reads supported flavors and expires suppression without clearing a newer write. */
-  async function readClipboard(source: WatchedClipboard, job = generation): Promise<ClipboardSnapshot | null> {
-    const written = lastWritten;
+  /** Reads the complete supported payload without changing the native clipboard. */
+  async function readClipboard(source: WatchedClipboard): Promise<ClipboardSnapshot | null> {
     const items = await source.read();
     // An empty clipboard is a complete baseline, unlike an unreadable or unsupported payload.
     if (items.length === 0) {
-      if (generation === job && lastWritten === written) lastWritten = null;
       return { text: '', html: null, types: [] };
     }
     const item = items[0];
@@ -272,11 +159,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     const types = item.types;
     const text = types.includes('text/plain') ? await (await item.getType('text/plain')).text() : '';
     const html = types.includes('text/html') ? await (await item.getType('text/html')).text() : null;
-    const snapshot = { text, html, types };
-    if (generation === job && lastWritten === written && written && !sameSnapshot(snapshot, written)) {
-      lastWritten = null;
-    }
-    return snapshot;
+    return { text, html, types };
   }
 
   /**
@@ -301,7 +184,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     try {
       epoch = await (pageCopy ? (pendingIntent ??= deps.invalidateReads()) : deps.beginRead());
       if (generation !== job || listeners.signal.aborted || !active()) return false;
-      snapshot = await readClipboard(clipboard, job);
+      snapshot = await readClipboard(clipboard);
     } catch {
       return false;
     }
@@ -311,7 +194,6 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     // Keep the background candidate: removing a web-custom flavor is invisible to synthetic paste.
     if (!snapshot) return false;
     const { text, html, types } = snapshot;
-    if (lastWritten && sameSnapshot(snapshot, lastWritten)) return true;
     const observeOnly =
       Boolean(baseline && sameSnapshot(snapshot, baseline)) ||
       !hasRewritableClipboard(text, html, embedded, pageCopy ? location.href : undefined);
@@ -325,7 +207,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   }
 
   /** Checks after a gesture; an optional pre-gesture read distinguishes a new copy from existing text. */
-  function runSweep(offsets: number[], baseline?: () => Promise<ClipboardSnapshot | null>): void {
+  function runSweep(offsets: number[], baseline?: () => Promise<ClipboardSnapshot | null>, embedded = false): void {
     sweep?.abort();
     const job = ++generation;
     const controller = new AbortController();
@@ -354,7 +236,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
         if (controller.signal.aborted || generation !== job) {
           return;
         }
-        await rewriteClipboard(false, previous, job);
+        await rewriteClipboard(embedded, previous, job);
       }
     })().finally(() => {
       if (sweep === controller) {
@@ -380,23 +262,15 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     window.addEventListener(
       type,
       (event) => {
-        if (!event.isTrusted || !active()) return;
+        if (!event.isTrusted || !clipboard || restoring || !active()) return;
         markIntent(event);
         pendingIntent = deps.invalidateReads();
         void pendingIntent.catch(() => undefined);
         const job = generation;
-        // Runs after previously registered page handlers. Handlers added during dispatch may run later.
-        const late = (lateEvent: ClipboardEvent) => {
-          if (lateEvent === event) {
-            onCopy(event);
-          }
-        };
-        window.addEventListener(type, late, { once: true, signal: listeners.signal });
-        // Check stopped events and fallback copies after every page handler and the default action finish.
+        // Capture also covers stopped events; read after every handler and the default action finish.
         setTimeout(() => {
-          window.removeEventListener(type, late);
-          if (generation === job && clipboard && !restoring && !listeners.signal.aborted && active()) {
-            runSweep(SWEEP_AFTER_COPY);
+          if (generation === job && !restoring && !listeners.signal.aborted && active()) {
+            runSweep(SWEEP_AFTER_COPY, undefined, true);
           }
         }, 0);
       },
@@ -414,7 +288,6 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
         }
         if (types?.some((type) => type !== 'text/plain' && type !== 'text/html')) {
           invalidate();
-          lastWritten = null;
           return;
         }
         // An authorized sweep already owns this copy; observers must not cancel its baseline read.
@@ -450,7 +323,6 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   function stop(): void {
     listeners.abort();
     invalidate();
-    lastWritten = null;
   }
 
   /** Cancels pending reconciliation when newer intent, Undo, or configuration supersedes it. */

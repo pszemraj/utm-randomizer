@@ -9,16 +9,9 @@ export interface ClipboardSnapshot {
   types: string[];
 }
 
-/** A synchronous page rewrite reported after the browser commits its payload. */
-export interface ClipboardWrite {
-  before: ClipboardSnapshot;
-  after: ClipboardSnapshot;
-}
-
 /**
- * Content script or offscreen document → service worker: a copied link was rewritten. From a
- * subframe, the toast is shown in the tab's top frame; from the background clipboard watcher, in the
- * active tab.
+ * Offscreen document → service worker: a copied link was rewritten. Page-copy notifications
+ * target the originating tab; background-copy notifications target the active tab.
  */
 export interface RewrittenMessage {
   type: 'rewritten';
@@ -28,8 +21,6 @@ export interface RewrittenMessage {
   relayToast?: ToastPayload;
   /** Originating tab for a reconciliation performed by the offscreen document. */
   tabId?: number;
-  /** Present only when a content script registers its synchronous clipboard write. */
-  clipboard?: ClipboardWrite;
 }
 
 /** What the background clipboard watcher needs to rewrite links on its own. */
@@ -223,16 +214,6 @@ export function isClipboardEpoch(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
-/** Validates the complete before/after payload of a synchronous rewrite. */
-function isClipboardWrite(value: unknown): value is ClipboardWrite {
-  const snapshot = (item: unknown): boolean =>
-    isRecord(item) &&
-    typeof item.text === 'string' &&
-    (item.html === null || typeof item.html === 'string') &&
-    isTypes(item.types);
-  return isRecord(value) && snapshot(value.before) && snapshot(value.after);
-}
-
 /** Validates every known runtime message payload before a listener acts on it. */
 export function isExtensionMessage(value: unknown): value is ExtensionMessage {
   if (!isRecord(value)) {
@@ -251,8 +232,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
       return (
         isCount(value.urls) &&
         (value.relayToast === undefined || isToast(value.relayToast)) &&
-        (value.tabId === undefined || isNonnegativeInteger(value.tabId)) &&
-        (value.clipboard === undefined || isClipboardWrite(value.clipboard))
+        (value.tabId === undefined || isNonnegativeInteger(value.tabId))
       );
     case 'toast':
       return isToast(value.toast);

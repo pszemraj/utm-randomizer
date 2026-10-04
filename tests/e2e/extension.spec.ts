@@ -504,7 +504,7 @@ test.describe('copying on web pages', () => {
     await playground.locator('#copy-rich').click();
     await expect.poll(readHtml).toContain('href="https://shop.example/new"');
 
-    // Seed the synchronous rewrite cache, then copy a different HTML target with the same plain text.
+    // Record a completed rewrite, then copy a different HTML target with the same plain text.
     await playground.evaluate(() => {
       const seed = document.createElement('button');
       seed.id = 'seed-rich-cache';
@@ -534,7 +534,10 @@ test.describe('copying on web pages', () => {
     expect(await readHtml()).toContain('<strong>');
   });
 
-  test('bounds synchronous work for an HTML anchor with many tracking parameters', async ({ playground }) => {
+  test('leaves copy dispatch unchanged before rewriting a large HTML link', async ({ playground, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: new URL(playground.url()).origin,
+    });
     await playground.evaluate(() => {
       const link = 'https://example.com/?' + Array.from({ length: 5000 }, () => 'utm_id=x').join('&');
       const button = document.createElement('button');
@@ -561,7 +564,7 @@ test.describe('copying on web pages', () => {
       );
       button.onclick = () => {
         const start = performance.now();
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- measures the synchronous copy-handler route
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises native dispatch before the coordinated write
         document.execCommand('copy');
         button.dataset.elapsed = String(performance.now() - start);
       };
@@ -569,8 +572,20 @@ test.describe('copying on web pages', () => {
     });
     const button = playground.locator('#copy-many-parameters');
     await button.click();
-    await expect(button).toHaveAttribute('data-changed', 'true');
+    await expect(button).toHaveAttribute('data-changed', 'false');
     expect(Number(await button.getAttribute('data-elapsed'))).toBeLessThan(500);
+    await expect
+      .poll(() =>
+        playground.evaluate(async () => {
+          const [item] = await navigator.clipboard.read();
+          if (!item?.types.includes('text/html')) return false;
+          const html = await (await item.getType('text/html')).text();
+          const href = new DOMParser().parseFromString(html, 'text/html').querySelector('a')?.getAttribute('href');
+          const values = href ? new URL(href).searchParams.getAll('utm_id') : [];
+          return values.length === 5000 && values.every((value) => value !== 'x');
+        }),
+      )
+      .toBe(true);
   });
 
   test('top-frame Undo suppresses an iframe copy through the shared writer', async ({
@@ -838,8 +853,9 @@ test.describe('copying on web pages', () => {
     );
   });
 
-  test('preserves custom copy formats without offering destructive plain-text Undo', async ({
+  test('leaves custom-format copies unchanged without offering Undo', async ({
     playground,
+    readClipboard,
     setSettings,
     waitForWatcher,
   }) => {
@@ -868,14 +884,13 @@ test.describe('copying on web pages', () => {
     await field.focus();
     await field.press('ControlOrMeta+A');
     await field.press('ControlOrMeta+C');
-    const toast = playground.locator('utm-randomizer-toast');
-    await expect(toast).toContainText('Tracking removed');
-    expect(await toast.getByRole('button', { name: 'Undo' }).count()).toBe(0);
+    expect(await expectStable(readClipboard, 1000)).toBe('https://example.com/?utm_source=email');
+    await expect(playground.locator('utm-randomizer-toast')).toHaveCount(0);
     await field.focus();
     await field.press('ControlOrMeta+V');
     await expect(field).toHaveValue(
       JSON.stringify({
-        text: 'https://example.com/',
+        text: 'https://example.com/?utm_source=email',
         custom: 'opaque payload',
         types: ['text/plain', 'application/x-example'],
       }),
@@ -1108,7 +1123,7 @@ test.describe('copying on web pages', () => {
   }
 
   for (const tag of ['textarea', 'input'] as const) {
-    test(`cleans a shadow ${tag} copy on HTTP without the Clipboard API`, async ({
+    test(`leaves a shadow ${tag} copy unchanged on HTTP without the Clipboard API`, async ({
       playground,
       readClipboard,
       setSettings,
@@ -1144,7 +1159,7 @@ test.describe('copying on web pages', () => {
       await field.press('ControlOrMeta+A');
       await field.press('ControlOrMeta+C');
 
-      await expect.poll(readClipboard).toBe('Read https://example.com/article?id=42 today');
+      expect(await expectStable(readClipboard, 1000)).toBe(`Read ${ARTICLE} today`);
       await expect(field).toHaveValue(`Read ${ARTICLE} today`);
     });
   }
@@ -1364,6 +1379,37 @@ test.describe('browser clipboard watching', () => {
     server,
   }) => {
     await waitForWatcher(true);
+    // A rapid round trip must reset the baseline even if Chrome reports only focus gain.
+    await serviceWorker.evaluate(async () => {
+      const window = await chrome.windows.getLastFocused();
+      if (window.id === undefined) throw new Error('Missing browser window');
+      await chrome.windows.update(window.id, { state: 'minimized' });
+    });
+    await writeClipboardExternally(OUTSIDE);
+    await serviceWorker.evaluate(async () => {
+      const window = await chrome.windows.getLastFocused();
+      if (window.id === undefined) throw new Error('Missing browser window');
+      await chrome.windows.update(window.id, { state: 'normal', focused: true });
+    });
+    expect(await expectStable(readClipboard, 1500)).toBe(OUTSIDE);
+    await playground.evaluate((text) => {
+      const button = document.createElement('button');
+      button.id = 'copy-after-blur';
+      button.textContent = 'Copy after losing Chrome focus';
+      button.onclick = () => {
+        setTimeout(() => {
+          const field = document.createElement('textarea');
+          field.value = text;
+          document.body.append(field);
+          field.select();
+          // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises a native copy after browser focus loss
+          button.dataset.copied = String(document.execCommand('copy'));
+          field.remove();
+        }, 800);
+      };
+      document.body.append(button);
+    }, ARTICLE);
+    await playground.locator('#copy-after-blur').click();
     await serviceWorker.evaluate(async () => {
       const window = await chrome.windows.getLastFocused();
       if (window.id === undefined) throw new Error('Missing browser window');
@@ -1372,6 +1418,8 @@ test.describe('browser clipboard watching', () => {
     await expect
       .poll(() => serviceWorker.evaluate(async () => (await chrome.windows.getLastFocused()).focused))
       .toBe(false);
+    await expect(playground.locator('#copy-after-blur')).toHaveAttribute('data-copied', 'true');
+    expect(await expectStable(readClipboard, 1500)).toBe(ARTICLE);
     await writeClipboardExternally(OUTSIDE);
     expect(await expectStable(readClipboard, 1500)).toBe(OUTSIDE);
     await serviceWorker.evaluate(async () => {
@@ -1603,6 +1651,72 @@ test.describe('address bar', () => {
 });
 
 test.describe('extension pages', () => {
+  for (const action of ['Copy', 'Undo'] as const) {
+    test(`Chrome focus loss cancels a queued explicit ${action} after focus returns`, async ({
+      context,
+      extensionId,
+      playground,
+      serviceWorker,
+      readClipboard,
+      writeClipboardExternally,
+      setSettings,
+      waitForWatcher,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false });
+      await waitForWatcher(false);
+      let popup;
+      if (action === 'Copy') {
+        await writeClipboardExternally('prior clipboard contents');
+        popup = await context.newPage();
+        await popup.addInitScript((url) => {
+          Object.defineProperty(chrome.tabs, 'query', { value: () => Promise.resolve([{ url }]) });
+        }, ARTICLE);
+        await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+        await expect(popup.locator('#copyPage')).toBeEnabled();
+      } else {
+        await playground.getByTestId('copy-writetext').click();
+        await expect.poll(readClipboard).toBe('https://example.com/article?id=42');
+      }
+      const before = await readClipboard();
+      await serviceWorker.evaluate(`(() => {
+        const original = chrome.runtime.getContexts.bind(chrome.runtime);
+        const gate = globalThis.explicitGate = { held: false };
+        chrome.runtime.getContexts = async (...args) => {
+          const contexts = await original(...args);
+          if (!gate.held) {
+            gate.held = true;
+            await new Promise(resolve => { gate.release = resolve; });
+          }
+          return contexts;
+        };
+      })()`);
+      if (popup) await popup.locator('#copyPage').click();
+      else await playground.locator('utm-randomizer-toast').getByRole('button', { name: 'Undo' }).click();
+      await expect.poll(() => serviceWorker.evaluate('globalThis.explicitGate.held')).toBe(true);
+      await serviceWorker.evaluate(async () => {
+        const window = await chrome.windows.getLastFocused();
+        if (window.id === undefined) throw new Error('Missing browser window');
+        await chrome.windows.update(window.id, { state: 'minimized' });
+      });
+      await expect
+        .poll(() => serviceWorker.evaluate(async () => (await chrome.windows.getLastFocused()).focused))
+        .toBe(false);
+      await serviceWorker.evaluate(async () => {
+        const window = await chrome.windows.getLastFocused();
+        if (window.id === undefined) throw new Error('Missing browser window');
+        await chrome.windows.update(window.id, { state: 'normal', focused: true });
+      });
+      await serviceWorker.evaluate('globalThis.explicitGate.release()');
+      if (popup) {
+        await expect(popup.locator('#copyStatus')).toHaveText('Could not write to the clipboard');
+        await popup.close();
+      } else {
+        await expect(playground.locator('utm-randomizer-toast')).toContainText('Could not restore the original link');
+      }
+      expect(await expectStable(readClipboard, 1500)).toBe(before);
+    });
+  }
+
   test('explicitly copies generated and unchanged links beyond the rewrite input bound', async ({
     context,
     extensionId,

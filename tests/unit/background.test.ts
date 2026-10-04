@@ -148,7 +148,7 @@ it('keeps the coordinator idle when whole-clipboard polling is disabled', async 
   expect(worker.closeDocument).not.toHaveBeenCalled();
 });
 
-it('rejects automatic work in an unfocused Chrome window while allowing explicit copies and Undo', async () => {
+it('rejects automatic work, explicit copies, and Undo in an unfocused Chrome window', async () => {
   const worker = await startBackground({ enabled: true });
   worker.changeFocus(false);
   await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
@@ -173,10 +173,74 @@ it('rejects automatic work in an unfocused Chrome window while allowing explicit
   ] as const) {
     const response = vi.fn();
     worker.listener({ type, text: 'explicit' }, sender, response);
-    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
+    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: false }));
   }
-  expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-copy', text: 'explicit' });
-  expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-restore', text: 'explicit' });
+  expect(worker.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'offscreen-copy' }));
+  expect(worker.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'offscreen-restore' }));
+});
+
+it.each(['copy-clipboard', 'restore-clipboard'] as const)(
+  'rejects a queued %s after focus loss and regain',
+  async (type) => {
+    const worker = await startBackground({ enabled: true });
+    await vi.waitFor(() =>
+      expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+    );
+    worker.sendMessage.mockClear();
+    let release: (() => void) | undefined;
+    worker.getContexts.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve([{}]);
+        }),
+    );
+    const response = vi.fn();
+    worker.listener({ type, text: 'old action' }, type === 'copy-clipboard' ? popupSender : contentSender, response);
+    await vi.waitFor(() => expect(release).toBeDefined());
+    worker.changeFocus(false);
+    worker.changeFocus(true);
+    release?.();
+    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: false }));
+    expect(worker.sendMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: type === 'copy-clipboard' ? 'offscreen-copy' : 'offscreen-restore' }),
+    );
+  },
+);
+
+it('rejects a menu copy when focus changes during its settings lookup', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+  );
+  worker.sendMessage.mockClear();
+  let release: (() => void) | undefined;
+  vi.mocked(loadSettings).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve(DEFAULT_SETTINGS);
+      }),
+  );
+  worker.menuListener(
+    { menuItemId: 'copy-clean-link', linkUrl: 'https://example.com/?utm_source=email', editable: false },
+    { id: 7, windowId: 1 } as chrome.tabs.Tab,
+  );
+  worker.changeFocus(false);
+  worker.changeFocus(true);
+  release?.();
+  await vi.waitFor(() => expect(worker.tabsSendMessage).toHaveBeenCalled());
+  expect(worker.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'offscreen-copy' }));
+});
+
+it('resets the watcher baseline on focus gain even when Chrome omitted the loss notification', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  worker.changeFocus(true);
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledTimes(2));
+  expect(worker.sendMessage.mock.calls.map(([message]): unknown => message)).toEqual([
+    { type: 'watch-config', config: null },
+    { type: 'watch-config', config: { mode: 'decoy' } },
+  ]);
 });
 
 it('preserves a rapid focus-loss boundary while an automatic operation holds the queue', async () => {
@@ -213,6 +277,7 @@ it('preserves a rapid focus-loss boundary while an automatic operation holds the
     expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
   );
   expect(worker.sendMessage.mock.calls.map(([message]): unknown => message)).toEqual([
+    { type: 'watch-config', config: null },
     { type: 'watch-config', config: null },
     { type: 'watch-config', config: { mode: 'decoy' } },
   ]);
@@ -478,19 +543,6 @@ it('accepts the popup count and rejects a foreign extension sender', async () =>
   worker.listener({ type: 'count', urls: 2 }, popupSender, vi.fn());
   await vi.waitFor(() => expect(worker.localSet).toHaveBeenCalledWith({ totalCount: 2 }));
   expect(worker.sessionSet).toHaveBeenCalledWith({ sessionCount: 2 });
-});
-
-it('acknowledges synchronous write registration only from a content sender', async () => {
-  const worker = await startBackground({ enabled: true });
-  const snapshot = { text: 'https://example.com/?utm_source=email', html: null, types: ['text/plain'] };
-  const payload = { type: 'rewritten', urls: 1, clipboard: { before: snapshot, after: snapshot } };
-  const response = vi.fn();
-  expect(worker.listener(payload, contentSender, response)).toBe(true);
-  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
-  expect(worker.sendMessage).toHaveBeenCalledWith(payload);
-  const rejected = vi.fn();
-  expect(worker.listener(payload, offscreenSender, rejected)).toBe(false);
-  expect(rejected).toHaveBeenCalledWith({ ok: false });
 });
 
 it('forwards observation-only snapshots without creating a copy action', async () => {

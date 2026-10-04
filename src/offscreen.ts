@@ -257,39 +257,16 @@ chrome.runtime.onMessage.addListener(
         'offscreen-reconcile',
         'offscreen-epoch',
         'offscreen-intent',
-        'rewritten',
         'watch-config',
       ].includes(String(message.type))
     ) {
       return false;
     }
-    // Original notifications also reach this document; only the worker's forwarded registration is ours to acknowledge.
-    if (message.type === 'rewritten' && !isWorkerSender(sender)) return false;
     if (!isExtensionMessage(message) || !isWorkerSender(sender)) {
       sendResponse({ ok: false });
       return false;
     }
     switch (message.type) {
-      case 'rewritten': {
-        const write = message.clipboard;
-        if (!write) {
-          sendResponse({ ok: false });
-          break;
-        }
-        const snapshot = readClipboard();
-        if (!snapshot || identity(snapshot) !== identity({ ...write.after, types: [...write.after.types].sort() })) {
-          sendResponse({ ok: false });
-          break;
-        }
-        if (!lastWrite || identity(lastWrite.after) !== identity(snapshot)) {
-          lastWrite = { before: write.before, after: snapshot, restored: false };
-        }
-        lastSeen = identity(snapshot);
-        candidate = null;
-        window.clearTimeout(graceTimer);
-        sendResponse({ ok: true });
-        break;
-      }
       case 'offscreen-copy':
         epoch = crypto.randomUUID();
         candidate = null;
