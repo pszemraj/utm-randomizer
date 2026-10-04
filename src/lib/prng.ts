@@ -1,8 +1,7 @@
 /**
  * Deterministic pseudo-random numbers seeded from a string.
  *
- * Replacement values are derived from a secret per-install key and the current link values, so
- * identical inputs get identical replacements across clipboard formats and extension contexts.
+ * Each copy gets a fresh seed, shared by its text and HTML so matching links agree within that copy.
  * Writers record completed changes to avoid processing their own output. This is not cryptography.
  */
 
@@ -73,8 +72,8 @@ export function pick<T>(random: Random, items: readonly T[]): T {
   return item;
 }
 
-/** A fresh random per-install key (base64url), used to seed replacement values. */
-export function createSecret(): string {
+/** A fresh random seed for one clipboard copy, shared across its formats. */
+export function createSeed(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, '-')

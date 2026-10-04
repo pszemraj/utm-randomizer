@@ -12,8 +12,7 @@ export type Mode = 'decoy' | 'silly' | 'hybrid' | 'strip';
 export interface RewriteOptions {
   mode: Mode;
   /**
-   * Secret per-install key that seeds replacement values. Replacements are a function of the key and
-   * the current link values, so identical inputs get identical replacements. Writers track their
+   * Fresh seed supplied by the copy handler and shared across that copy's formats. Writers track
    * completed output separately; plausible tracking values are always eligible inputs.
    */
   key?: string;

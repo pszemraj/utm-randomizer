@@ -2,6 +2,7 @@ import { hasRewritableClipboard, rewriteHtml } from './clipboard-html';
 import { rewriteText, type RewriteOptions } from './rewrite';
 import type { ClipboardWrite } from './messages';
 import type { Settings } from './settings';
+import { createSeed } from './prng';
 
 /** The subset of `navigator.clipboard` the watcher uses. */
 export interface WatchedClipboard extends EventTarget {
@@ -26,8 +27,6 @@ export interface WatcherDeps {
   clipboard: WatchedClipboard | null;
   /** Current settings; read on every event so changes apply immediately. */
   getSettings: () => Settings;
-  /** The per-install key that seeds replacement values, or null while it is still loading. */
-  getKey: () => string | null;
   /**
    * Called before Undo puts the original back, so other watchers (the background clipboard watcher)
    * leave it alone instead of rewriting it again.
@@ -154,7 +153,7 @@ function looksLikeCopyControl(target: EventTarget | null): boolean {
  * - Without `clipboardchange`, the clipboard is polled briefly after copy-like gestures.
  */
 export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
-  const { clipboard, getSettings, getKey, onRewrite } = deps;
+  const { clipboard, getSettings, onRewrite } = deps;
   const isContextValid = deps.isContextValid ?? (() => true);
   const now = deps.now ?? (() => performance.now());
   const supportsChangeEvent = clipboard !== null && 'onclipboardchange' in clipboard;
@@ -167,13 +166,6 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   let sweep: AbortController | null = null;
   let pendingIntent: Promise<string> | null = null;
   const listeners = new AbortController();
-
-  /** Current rewrite options, or null while replacement values cannot be computed yet. */
-  const rewriteOptions = (): RewriteOptions | null => {
-    const { mode } = getSettings();
-    const key = getKey();
-    return key === null && mode !== 'strip' ? null : { mode, key: key ?? '', baseUrl: location.href };
-  };
 
   /** Whether to act on events; shuts the watcher down once the extension context is gone. */
   function active(): boolean {
@@ -238,10 +230,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       return false;
     }
 
-    const options = rewriteOptions();
-    if (!options) {
-      return false;
-    }
+    const options: RewriteOptions = { mode: getSettings().mode, key: createSeed(), baseUrl: location.href };
     const result = original ? rewriteText(original, { ...options, embedded }) : null;
     const rewrittenHtml = html ? rewriteHtml(html, options) : null;
     if (!result && !rewrittenHtml) {

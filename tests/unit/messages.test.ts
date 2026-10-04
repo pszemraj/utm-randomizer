@@ -2,14 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isExtensionMessage, isWorkerSender } from '../../src/lib/messages';
 
 const EPOCH = '00000000-0000-4000-8000-000000000001';
-const config = { mode: 'strip', key: 'test-key' };
+const config = { mode: 'strip' };
 const snapshot = { text: 'https://example.com/?utm_source=email', html: null, types: ['text/plain'] };
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('runtime message payloads', () => {
   it.each([
-    { type: 'get-secret' },
     { type: 'inspect-clipboard' },
     { type: 'clipboard-epoch' },
     { type: 'clipboard-intent' },
@@ -144,10 +143,7 @@ describe('runtime message payloads', () => {
       config,
     },
     { type: 'restore-clipboard', text: null },
-    { type: 'watch-config', config: { mode: 'invalid', key: 'key' } },
-    { type: 'watch-config', config: { mode: 'strip', key: 123 } },
-    { type: 'watch-config', config: { mode: 'strip', key: '' } },
-    { type: 'watch-config', config: { mode: 'strip', key: 'x'.repeat(100_001) } },
+    { type: 'watch-config', config: { mode: 'invalid' } },
     { type: 'toast', toast: { message: 'ok', undoText: 5 } },
     { type: 'toast', toast: { message: 'x'.repeat(100_001) } },
     {

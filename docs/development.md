@@ -44,17 +44,17 @@ CI runs only lint, formatting, and type checks. Run tests and packaging locally 
 
 - `src/manifest.json`: extension manifest; the build fills in `version` from `package.json`.
 - `src/content.ts`: content script entry: settings, copy watcher, notifications.
-- `src/background.ts`: service worker: context menu, shortcut, statistics, key, clipboard watcher lifecycle.
+- `src/background.ts`: service worker: context menu, shortcut, statistics, clipboard watcher lifecycle.
 - `src/offscreen.ts`: background clipboard watcher and clipboard writer.
 - `src/popup.*`: toolbar popup.
 - `src/lib/params.ts`: exact global tracking-parameter allowlist.
 - `src/lib/rewrite.ts`: in-place link and text rewriting.
-- `src/lib/values.ts`, `prng.ts`: Decoy, Silly, and Hybrid replacement values, seeded per install.
+- `src/lib/values.ts`, `prng.ts`: Decoy, Silly, and Hybrid replacement values, seeded per copy.
 - `src/lib/copy-watcher.ts`: copy events, `clipboardchange`, and the polling fallback.
 - `src/lib/clipboard-html.ts`: rich clipboard rewriting and link counting.
 - `src/lib/toast.ts`: on-page notification in a shadow root on the top layer.
 - `src/lib/messages.ts`: runtime message contracts and sender checks.
-- `src/lib/settings.ts`: settings defaults, storage subscriptions, and per-install key requests.
+- `src/lib/settings.ts`: settings defaults and storage subscriptions.
 - `tests/unit/`: rules, rewriting, values, and page watchers in a simulated DOM, using Vitest.
 - `tests/e2e/`: Playwright tests with the extension loaded.
 - `tests/fixtures/playground.html`: manual and end-to-end test page.

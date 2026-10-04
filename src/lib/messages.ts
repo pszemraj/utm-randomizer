@@ -32,16 +32,9 @@ export interface RewrittenMessage {
   clipboard?: ClipboardWrite;
 }
 
-/** Content script or popup → service worker: create (if needed) and return the per-install key. */
-export interface GetSecretMessage {
-  type: 'get-secret';
-}
-
 /** What the background clipboard watcher needs to rewrite links on its own. */
 export interface WatchConfig {
   mode: Mode;
-  /** Per-install key that seeds replacement values. */
-  key: string;
 }
 
 /** Service worker → offscreen document: start, reconfigure (config), or stop (null) watching the clipboard. */
@@ -161,7 +154,6 @@ export type ExtensionMessage =
   | ToastMessage
   | OffscreenCopyMessage
   | CountMessage
-  | GetSecretMessage
   | WatchConfigMessage
   | ReconcileClipboardMessage
   | RestoreClipboardMessage
@@ -212,14 +204,10 @@ function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
-/** Validates the mode and per-install key supplied to the coordinator. */
+/** Validates the mode supplied to the coordinator. */
 function isWatchConfig(value: unknown): value is WatchConfig {
   return (
-    isRecord(value) &&
-    typeof value.mode === 'string' &&
-    ['decoy', 'silly', 'hybrid', 'strip'].includes(value.mode) &&
-    isText(value.key) &&
-    value.key.length > 0
+    isRecord(value) && typeof value.mode === 'string' && ['decoy', 'silly', 'hybrid', 'strip'].includes(value.mode)
   );
 }
 
@@ -249,7 +237,6 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
     return false;
   }
   switch (value.type) {
-    case 'get-secret':
     case 'inspect-clipboard':
     case 'clipboard-epoch':
     case 'clipboard-intent':

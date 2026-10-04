@@ -1,25 +1,18 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { rewriteUrl } from '../../src/lib/rewrite';
-import {
-  createOrReadSecret,
-  DEFAULT_SETTINGS,
-  loadSettings,
-  watchSettings,
-  type Settings,
-} from '../../src/lib/settings';
+import { DEFAULT_SETTINGS, loadSettings, watchSettings, type Settings } from '../../src/lib/settings';
 
 vi.mock('../../src/lib/settings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/settings')>()),
   loadSettings: vi.fn(),
   watchSettings: vi.fn(),
-  createOrReadSecret: vi.fn(),
 }));
 
 /** Background runtime listener captured by the test Chrome implementation. */
 type MessageListener = (
   message: unknown,
   sender: chrome.runtime.MessageSender,
-  respond: (response: { ok: boolean; secret?: string }) => void,
+  respond: (response: { ok: boolean; epoch?: string }) => void,
 ) => boolean;
 
 const EPOCH = '00000000-0000-4000-8000-000000000001';
@@ -80,7 +73,6 @@ async function startBackground(settings: Partial<Settings> = {}) {
     tabs: { sendMessage: tabsSendMessage, query: tabsQuery },
   });
   vi.mocked(loadSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, enabled: false, ...settings });
-  vi.mocked(createOrReadSecret).mockResolvedValue('test-key');
   await import('../../src/background');
   await vi.waitFor(() => expect(getContexts).toHaveBeenCalled());
   const listener = onMessage.mock.calls[0]?.[0];
@@ -125,14 +117,14 @@ it('applies mode and Pause independently of menu updates', async () => {
   await vi.waitFor(() =>
     expect(worker.sendMessage).toHaveBeenCalledWith({
       type: 'watch-config',
-      config: { mode: 'decoy', key: 'test-key' },
+      config: { mode: 'decoy' },
     }),
   );
   worker.changeSettings({ mode: 'strip' });
   await vi.waitFor(() =>
     expect(worker.sendMessage).toHaveBeenCalledWith({
       type: 'watch-config',
-      config: { mode: 'strip', key: 'test-key' },
+      config: { mode: 'strip' },
     }),
   );
   worker.changeSettings({ enabled: false });
@@ -154,7 +146,7 @@ it('starts watcher synchronization despite rejected cosmetic menu updates', asyn
   await vi.waitFor(() =>
     expect(worker.sendMessage).toHaveBeenCalledWith({
       type: 'watch-config',
-      config: { mode: 'decoy', key: 'test-key' },
+      config: { mode: 'decoy' },
     }),
   );
 });
@@ -269,33 +261,25 @@ it('forwards page reconciliation with fresh settings and the originating frame U
     epoch: EPOCH,
     baseline: 'before',
     baseUrl: 'https://www.youtube.com/frame',
-    config: { mode: 'strip', key: 'test-key' },
+    config: { mode: 'strip' },
     tabId: 7,
   });
 });
 
-for (const boundary of ['coordinator lookup', 'key lookup'] as const) {
+for (const boundary of ['coordinator lookup'] as const) {
   it.each(['Pause', 'mode change', 'Pause and resume'] as const)(
     `cancels automatic reconciliation after %s during ${boundary}`,
     async (change) => {
       const worker = await startBackground({ enabled: true, watchClipboard: false, mode: 'strip' });
       await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
       let release: (() => void) | undefined;
-      if (boundary === 'coordinator lookup') {
-        worker.getContexts.mockImplementationOnce(
-          () =>
-            new Promise((resolve) => {
-              release = () => resolve([{}]);
-            }),
-        );
-      } else {
-        vi.mocked(createOrReadSecret).mockImplementationOnce(
-          () =>
-            new Promise((resolve) => {
-              release = () => resolve('test-key');
-            }),
-        );
-      }
+
+      worker.getContexts.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve([{}]);
+          }),
+      );
       const response = vi.fn();
       worker.listener(
         {
@@ -347,7 +331,7 @@ it('targets offscreen reconciliation notifications and honors notification setti
 it('accepts the popup count and rejects a foreign extension sender', async () => {
   const worker = await startBackground();
   const response = vi.fn();
-  worker.listener({ type: 'get-secret' }, { ...popupSender, id: 'foreign' }, response);
+  worker.listener({ type: 'count', urls: 2 }, { ...popupSender, id: 'foreign' }, response);
   expect(response).toHaveBeenCalledWith({ ok: false });
   worker.listener({ type: 'count', urls: 2 }, popupSender, vi.fn());
   await vi.waitFor(() => expect(worker.localSet).toHaveBeenCalledWith({ totalCount: 2 }));
@@ -418,7 +402,11 @@ it('routes explicit copies beyond the rewrite input limit while paused', async (
   }
   worker.sendMessage.mockClear();
   worker.menuListener({ menuItemId: 'copy-clean-link', linkUrl: input, editable: false }, { id: 7 } as chrome.tabs.Tab);
-  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-copy', text: rewritten }));
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledOnce());
+  const copied = worker.sendMessage.mock.calls[0]?.[0] as { type: string; text: string };
+  expect(copied.type).toBe('offscreen-copy');
+  expect(copied.text.length).toBeGreaterThan(100_000);
+  expect(copied.text).not.toBe(input);
 });
 
 it('requests native clipboard inspection from the active page without blocking nested reconciliation', async () => {
@@ -454,7 +442,7 @@ it('requests native clipboard inspection from the active page without blocking n
     epoch: EPOCH,
     baseline: undefined,
     baseUrl: undefined,
-    config: { mode: 'decoy', key: 'test-key' },
+    config: { mode: 'decoy' },
     tabId: 9,
   });
 });

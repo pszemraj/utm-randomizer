@@ -634,8 +634,9 @@ test.describe('copying on web pages', () => {
     await expect(playground.locator('utm-randomizer-toast')).toContainText('Could not restore the original link');
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    const restarted: unknown = await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'get-secret' }));
-    expect(restarted).toMatchObject({ ok: true });
+    const restarted: unknown = await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'clipboard-epoch' }));
+    // This content-only request wakes the worker without giving the popup a clipboard operation.
+    expect(restarted).toMatchObject({ ok: false });
     await playground.bringToFront();
     expect(await expectStable(readClipboard, 3000)).toBe(ARTICLE);
     await popup.close();
@@ -679,11 +680,19 @@ test.describe('copying on web pages', () => {
     });
   }
 
-  test('rewrites links copied with navigator.clipboard.writeText', async ({ playground, readClipboard }) => {
-    await playground.getByTestId('copy-writetext').click();
-    const copied = await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
-    expectReplaced(copied, ARTICLE);
-    expect(new URL(copied).searchParams.get('id')).toBe('42');
+  test('draws fresh replacements for repeated navigator.clipboard.writeText copies', async ({
+    playground,
+    readClipboard,
+  }) => {
+    let previous = '';
+    for (let i = 0; i < 4; i += 1) {
+      await playground.getByTestId('copy-writetext').click();
+      const copied = await waitForClipboard(readClipboard, (text) => text !== ARTICLE && text !== previous);
+      expectReplaced(copied, ARTICLE);
+      expect(new URL(copied).searchParams.get('id')).toBe('42');
+      previous = copied;
+    }
+    expect(await expectStable(readClipboard, 1500)).toBe(previous);
     await expect(playground.locator('utm-randomizer-toast')).toContainText('Tracking swapped for decoys');
   });
 

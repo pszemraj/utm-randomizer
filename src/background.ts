@@ -6,15 +6,9 @@ import {
   type ToastPayload,
   type WatchConfig,
 } from './lib/messages';
+import { createSeed } from './lib/prng';
 import { getRewriteSkipReason, hasTrackingParams, rewriteUrl } from './lib/rewrite';
-import {
-  createOrReadSecret,
-  DEFAULT_SETTINGS,
-  describeMode,
-  loadSettings,
-  watchSettings,
-  type Settings,
-} from './lib/settings';
+import { DEFAULT_SETTINGS, describeMode, loadSettings, watchSettings, type Settings } from './lib/settings';
 
 const MENU_COPY_LINK = 'copy-clean-link';
 const MENU_COPY_PAGE = 'copy-clean-page';
@@ -43,17 +37,6 @@ async function createMenus(): Promise<void> {
     contexts: ['page'],
     documentUrlPatterns: WEB_PAGES,
   });
-}
-
-let secretPromise: Promise<string> | null = null;
-
-/** The per-install key; created here and nowhere else, once per worker lifetime at most. */
-function secret(): Promise<string> {
-  secretPromise ??= createOrReadSecret().catch((error: unknown) => {
-    secretPromise = null;
-    throw error;
-  });
-  return secretPromise;
 }
 
 let statsQueue: Promise<void> = Promise.resolve();
@@ -120,15 +103,15 @@ async function tellOffscreen(message: ExtensionMessage): Promise<void> {
 }
 
 /** The background watcher's configuration for the given settings, or null when it should be off. */
-async function watchConfigFor(settings: Settings): Promise<WatchConfig | null> {
-  return settings.enabled && settings.watchClipboard ? { mode: settings.mode, key: await secret() } : null;
+function watchConfigFor(settings: Settings): WatchConfig | null {
+  return settings.enabled && settings.watchClipboard ? { mode: settings.mode } : null;
 }
 
 /** Starts, reconfigures, or stops the background clipboard watcher to match the current settings. */
 function syncWatcher(): Promise<void> {
   return withOffscreen(async () => {
     const settings = await loadSettings();
-    const config = await watchConfigFor(settings);
+    const config = watchConfigFor(settings);
     if (settings.enabled) {
       await ensureOffscreen();
       await tellOffscreen({ type: 'watch-config', config });
@@ -178,7 +161,6 @@ function reconcileClipboard(
       return;
     }
     await ensureOffscreen();
-    const key = await secret();
     if (revision !== settingsRevision) return;
     await tellOffscreen({
       type: 'offscreen-reconcile',
@@ -189,7 +171,7 @@ function reconcileClipboard(
       baseline,
       baseUrl,
       observeOnly,
-      config: { mode: settings.mode, key },
+      config: { mode: settings.mode },
       tabId,
     });
   });
@@ -258,7 +240,7 @@ async function notifyTab(tabId: number | undefined, toast: ToastPayload, ok: boo
 /** Copies `url` with its tracking parameters rewritten (explicit user action: menu or shortcut). */
 async function copyCleanLink(url: string, tabId: number | undefined): Promise<void> {
   const settings = await loadSettings();
-  const result = rewriteUrl(url, { mode: settings.mode, key: await secret() });
+  const result = rewriteUrl(url, { mode: settings.mode, key: createSeed() });
   try {
     await writeClipboard(result?.url ?? url);
   } catch (error) {
@@ -329,9 +311,8 @@ function acknowledge(operation: Promise<void>, sendResponse: (response: { ok: bo
 
 chrome.runtime.onInstalled.addListener(() => {
   void createMenus();
-  void secret();
-  // Version 1 kept a never-reset "session" counter in local storage.
-  void chrome.storage.local.remove('sessionCount');
+  // Remove obsolete lifetime seed and the version 1 never-reset "session" counter.
+  void chrome.storage.local.remove(['sessionCount', 'secret']);
 });
 
 // Menus normally persist, but recreating them on startup is cheap insurance (createMenus is idempotent).
@@ -367,7 +348,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, sender, sendResponse: (response: { ok: boolean; secret?: string; epoch?: string }) => void) => {
+  (message: unknown, sender, sendResponse: (response: { ok: boolean; epoch?: string }) => void) => {
     if (!isExtensionMessage(message)) {
       // Offscreen controls have their own receiver; do not race its acknowledgement.
       if (
@@ -378,7 +359,6 @@ chrome.runtime.onMessage.addListener(
         [
           'rewritten',
           'count',
-          'get-secret',
           'reconcile-clipboard',
           'restore-clipboard',
           'copy-clipboard',
@@ -433,20 +413,6 @@ chrome.runtime.onMessage.addListener(
         }
         void countRewrites(message.urls);
         return false;
-      case 'get-secret':
-        if (!content && !popup) {
-          sendResponse({ ok: false });
-          return false;
-        }
-        secret().then(
-          (value) => {
-            sendResponse({ ok: true, secret: value });
-          },
-          () => {
-            sendResponse({ ok: false });
-          },
-        );
-        return true;
       case 'reconcile-clipboard':
         if (!content) {
           sendResponse({ ok: false });

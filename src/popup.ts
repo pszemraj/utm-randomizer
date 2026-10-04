@@ -1,6 +1,7 @@
+import { createSeed } from './lib/prng';
 import type { ExtensionMessage } from './lib/messages';
 import { getRewriteSkipReason, rewriteUrl, type Mode } from './lib/rewrite';
-import { describeMode, loadSettings, requestSecret, saveSettings, watchSettings, type Settings } from './lib/settings';
+import { describeMode, loadSettings, saveSettings, watchSettings, type Settings } from './lib/settings';
 
 const COMMAND_COPY_PAGE = 'copy-clean-page-url';
 const MODE_HINTS: Record<Mode, string> = {
@@ -34,7 +35,6 @@ const shortcut = element('shortcut', HTMLElement);
 const changeShortcut = element('changeShortcut', HTMLAnchorElement);
 
 let settings: Settings;
-let key = '';
 let pageUrl: string | null = null;
 
 /** Syncs the controls and hints with the given settings. */
@@ -69,7 +69,7 @@ async function copyPageLink(): Promise<void> {
   if (!pageUrl) {
     return;
   }
-  const result = rewriteUrl(pageUrl, { mode: settings.mode, key });
+  const result = rewriteUrl(pageUrl, { mode: settings.mode, key: createSeed() });
   try {
     const message: ExtensionMessage = { type: 'copy-clipboard', text: result?.url ?? pageUrl };
     const response: unknown = await chrome.runtime.sendMessage(message);
@@ -99,7 +99,6 @@ async function init(): Promise<void> {
   element('version', HTMLSpanElement).textContent = `v${chrome.runtime.getManifest().version}`;
   render(await loadSettings());
   watchSettings(render);
-  key = await requestSecret();
 
   const [{ totalCount: total }, { sessionCount: session }] = await Promise.all([
     chrome.storage.local.get('totalCount'),

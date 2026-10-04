@@ -65,7 +65,6 @@ let watcher: CopyWatcher | undefined;
 let settings: Settings;
 let rewrites: RewriteEvent[];
 let now: number;
-let key: string | null;
 let reconcile: ReturnType<typeof vi.fn<WatcherDeps['reconcile']>>;
 let restore: ReturnType<typeof vi.fn<WatcherDeps['restore']>>;
 let invalidateReads: ReturnType<typeof vi.fn<WatcherDeps['invalidateReads']>>;
@@ -77,7 +76,6 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
   settings = { ...DEFAULT_SETTINGS, mode: 'strip', ...overrides };
   rewrites = [];
   now = 100_000;
-  key = 'test-key';
   acknowledgeWrite = undefined;
   reconcile = vi.fn<WatcherDeps['reconcile']>().mockResolvedValue(undefined);
   restore = vi.fn<WatcherDeps['restore']>().mockResolvedValue(undefined);
@@ -90,7 +88,6 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
     beginRead,
     invalidateReads,
     getSettings: () => settings,
-    getKey: () => key,
     onRewrite: (event) => {
       rewrites.push(event);
       return acknowledgeWrite;
@@ -330,39 +327,32 @@ describe('copy events', () => {
     expect(rewrites).toHaveLength(0);
   });
 
-  it('uses decoys when configured', () => {
+  it('draws fresh decoys for each copy and shares them across clipboard formats', () => {
     start(new FakeClipboard(true), { mode: 'decoy' });
     document.body.innerHTML = `<textarea id="link">${TRACKED}</textarea>`;
     const paragraph = document.getElementById('link');
     if (!paragraph) throw new Error('missing fixture');
     selectText(paragraph);
 
-    const event = copyEvent();
-    paragraph.dispatchEvent(event);
-
-    const copied = new URL(event.clipboardData?.getData('text/plain') ?? '');
-    expect(copied.searchParams.get('id')).toBe('7');
-    expect(copied.searchParams.get('utm_source')).not.toBe('newsletter');
-    expect(copied.searchParams.get('fbclid')).not.toBe('IwAR3abc');
-    expect(copied.searchParams.get('fbclid')).toHaveLength('IwAR3abc'.length);
-  });
-
-  it('waits for the key before producing decoys, but removes without it', () => {
-    start(new FakeClipboard(true), { mode: 'decoy' });
-    key = null;
-    document.body.innerHTML = `<textarea id="link">${TRACKED}</textarea>`;
-    const paragraph = document.getElementById('link');
-    if (!paragraph) throw new Error('missing fixture');
-    selectText(paragraph);
-
-    const decoyEvent = copyEvent();
-    paragraph.dispatchEvent(decoyEvent);
-    expect(decoyEvent.defaultPrevented).toBe(false);
-
-    settings = { ...settings, mode: 'strip' };
-    const stripEvent = copyEvent();
-    paragraph.dispatchEvent(stripEvent);
-    expect(stripEvent.clipboardData?.getData('text/plain')).toBe(CLEAN);
+    const outputs = new Set<string>();
+    for (let i = 0; i < 12; i += 1) {
+      const event = copyEvent();
+      event.preventDefault();
+      event.clipboardData?.setData('text/plain', TRACKED);
+      event.clipboardData?.setData('text/html', `<a href="${TRACKED}">${TRACKED}</a>`);
+      paragraph.dispatchEvent(event);
+      const text = event.clipboardData?.getData('text/plain') ?? '';
+      const copied = new URL(text);
+      expect(copied.searchParams.get('id')).toBe('7');
+      expect(copied.searchParams.get('utm_source')).not.toBe('newsletter');
+      expect(copied.searchParams.get('fbclid')).not.toBe('IwAR3abc');
+      expect(copied.searchParams.get('fbclid')).toHaveLength('IwAR3abc'.length);
+      expect(event.clipboardData?.getData('text/html')).toBe(
+        `<a href="${text.replace(/&/g, '&amp;')}">${text.replace(/&/g, '&amp;')}</a>`,
+      );
+      outputs.add(text);
+    }
+    expect(outputs.size).toBeGreaterThan(1);
   });
 });
 
@@ -515,10 +505,9 @@ describe('clipboard reconciliation', () => {
     expect(rewrites).toEqual([]);
   });
 
-  it('keeps tracked links eligible before the key loads and after decoy rewriting', async () => {
+  it('keeps tracked links eligible, including plausible decoy inputs', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard, { mode: 'decoy' });
-    key = null;
     interact();
     clipboard.change(TRACKED);
     await flush();
@@ -812,7 +801,7 @@ describe('gesture reconciliation', () => {
       const forwarded = {
         ...request,
         type: 'offscreen-reconcile',
-        config: { mode: settings.mode, key },
+        config: { mode: settings.mode },
       };
       if (!isExtensionMessage(request) || !isExtensionMessage(forwarded)) throw new Error('Rejected reconciliation');
       const result = rewriteUrl(text, { mode: settings.mode });

@@ -712,7 +712,7 @@ function sillyToken(random: Random): string {
  * @param style Believable decoys, obvious nonsense, or a per-value mix of both.
  * @param category What the parameter carries; picks the vocabulary for word values.
  * @param raw The current value, still URL-encoded.
- * @param seed Stable per link and parameter, including the secret per-install key.
+ * @param seed Shared within one copy, derived from its fresh seed, link, and parameter.
  * @returns A URL-safe replacement in the same encoding style as `raw`.
  */
 export function replacementValue(style: Style, category: Category, raw: string, seed: string): string {

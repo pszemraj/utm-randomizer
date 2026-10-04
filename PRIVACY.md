@@ -15,8 +15,7 @@ Clipboard contents and addresses are never written to extension storage, logged,
 Stored locally in Chrome's extension storage and never synced or transmitted:
 
 - your settings (on/off, Decoy, Silly, Hybrid, or Remove, and which cleaning layers and notifications are on);
-- a count of how many links were rewritten, in total and in the current browser session. Only the numbers are stored, not the links;
-- a random per-install key used to generate [replacement values](docs/behavior.md#replacement-values).
+- a count of how many links were rewritten, in total and in the current browser session. Only the numbers are stored, not the links.
 
 The [clipboard coordinator](docs/behavior.md#clipboard-coordination) keeps one current before-and-after record in memory for detecting replacement and preventing repeated rewrites. Notifications retain text for Undo, and page copies use temporary format snapshots. These records are replaced by observed clipboard changes or released when their page or offscreen document closes. No clipboard history is accumulated. Closing a notification alone does not clear the coordinator's current record.
 
@@ -30,7 +29,7 @@ The [clipboard coordinator](docs/behavior.md#clipboard-coordination) keeps one c
 | `contextMenus`                  | The "Copy link with ... tracking" menu entries                                     |
 | `offscreen`                     | The background clipboard watcher, and clipboard writes from the service worker     |
 | `activeTab`                     | Reading the current tab's address when you use the shortcut, menu, or popup button |
-| `storage`                       | Saving settings, the rewrite counter, and the key for decoys                       |
+| `storage`                       | Saving settings and the rewrite counter                                            |
 
 ## Open source
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Category } from '../../src/lib/params';
-import { createSecret, pick, seededRandom } from '../../src/lib/prng';
+import { createSeed, pick, seededRandom } from '../../src/lib/prng';
 import { isWordy, replacementValue, scrambleLike } from '../../src/lib/values';
 
 const CATEGORIES: Category[] = ['source', 'medium', 'campaign', 'term', 'content', 'generic', 'id'];
@@ -49,11 +49,11 @@ describe('seededRandom', () => {
     expect(a.every((value) => value >= 0 && value < 1)).toBe(true);
   });
 
-  it('creates distinct URL-safe secrets', () => {
-    const secrets = new Set(Array.from({ length: 50 }, createSecret));
-    expect(secrets.size).toBe(50);
-    for (const secret of secrets) {
-      expect(secret).toMatch(/^[A-Za-z0-9_-]{32}$/);
+  it('creates distinct URL-safe seeds', () => {
+    const seeds = new Set(Array.from({ length: 50 }, createSeed));
+    expect(seeds.size).toBe(50);
+    for (const seed of seeds) {
+      expect(seed).toMatch(/^[A-Za-z0-9_-]{32}$/);
     }
   });
 });

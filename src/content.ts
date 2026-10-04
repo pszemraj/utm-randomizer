@@ -7,19 +7,10 @@ import {
   type ExtensionMessage,
   type ToastPayload,
 } from './lib/messages';
-import {
-  DEFAULT_SETTINGS,
-  describeMode,
-  loadSettings,
-  requestSecret,
-  watchSecret,
-  watchSettings,
-  type Settings,
-} from './lib/settings';
+import { DEFAULT_SETTINGS, describeMode, loadSettings, watchSettings, type Settings } from './lib/settings';
 import { showToast } from './lib/toast';
 
 let settings: Settings = DEFAULT_SETTINGS;
-let key: string | null = null;
 
 const isTopFrame = window === window.top;
 // The async Clipboard API only exists in secure contexts; copy events still work without it.
@@ -29,27 +20,15 @@ const clipboard: WatchedClipboard | null =
 /** Set once a settings change arrives, so the initial load cannot overwrite it with older values. */
 let settingsUpdated = false;
 
-// Settings and key load separately: the key can take a round trip to the service worker, and
-// settings must not wait for it.
 void loadSettings().then((loaded) => {
   if (!settingsUpdated) {
     settings = loaded;
     watcher.invalidate();
   }
 });
-void requestSecret()
-  .catch(() => null)
-  .then((loaded) => {
-    key ??= loaded;
-    watcher.invalidate();
-  });
 const unwatchSettings = watchSettings((updated) => {
   settingsUpdated = true;
   settings = updated;
-  watcher.invalidate();
-});
-const unwatchSecret = watchSecret((updated) => {
-  key = updated;
   watcher.invalidate();
 });
 
@@ -76,7 +55,6 @@ function toast(payload: ToastPayload): void {
 const watcher = startCopyWatcher({
   clipboard,
   getSettings: () => settings,
-  getKey: () => key,
   isContextValid,
   restore: (text) => coordinate({ type: 'restore-clipboard', text }),
   invalidateReads: () => clipboardEpoch('clipboard-intent'),
@@ -151,7 +129,6 @@ if (isTopFrame) {
     if (!isContextValid()) {
       chrome.runtime.onMessage.removeListener(onMessage);
       unwatchSettings();
-      unwatchSecret();
       return;
     }
     if (!isWorkerSender(sender) || !isExtensionMessage(message)) return false;

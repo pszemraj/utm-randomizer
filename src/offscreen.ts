@@ -10,6 +10,7 @@ import {
 } from './lib/messages';
 import { rewriteText, type RewriteOptions } from './lib/rewrite';
 import { describeMode } from './lib/settings';
+import { createSeed } from './lib/prng';
 
 /** How often the clipboard is checked while watching. */
 const POLL_MS = 750;
@@ -139,6 +140,7 @@ function reconcile(
   ) {
     return true;
   }
+  options = { ...options, key: createSeed() };
   const result = rewriteText(snapshot.text, { ...options, embedded: embedded || snapshot.html !== null });
   const rewrittenHtml = snapshot.html === null ? null : rewriteHtml(snapshot.html, options);
   if (!result && rewrittenHtml === null) return true;

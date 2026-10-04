@@ -6,14 +6,14 @@ import { rewriteUrl } from '../../src/lib/rewrite';
 const EPOCH = '00000000-0000-4000-8000-000000000001';
 const TRACKED = 'https://example.com/page?utm_source=newsletter';
 const CLEAN = 'https://example.com/page';
-const CONFIG = { mode: 'strip' as const, key: 'test' };
+const CONFIG = { mode: 'strip' as const };
 const WORKER = { id: 'extension-id' };
 
 it.each([false, true])(
   'retains its exact successful output across intent and configuration (HTML %s)',
   async (rich) => {
     const { clipboard, writes, message, readEpoch } = await start();
-    const config = { mode: 'decoy' as const, key: 'test' };
+    const config = { mode: 'decoy' as const };
     clipboard.text = TRACKED;
     if (rich) {
       clipboard.html = `<a href="${TRACKED}">${TRACKED}</a>`;
@@ -62,7 +62,7 @@ it('records a completed synchronous output after newer intent invalidates pendin
     types: after.types,
     epoch: readEpoch(),
     embedded: true,
-    config: { mode: 'decoy', key: 'test' },
+    config: { mode: 'decoy' },
   });
   expect(writes).not.toHaveBeenCalled();
   clipboard.text = 'a later payload';
@@ -104,7 +104,7 @@ it('expires completed output after a nonrewritable observation with polling disa
     embedded: true,
     types: clipboard.types,
     epoch: readEpoch(),
-    config: { mode: 'decoy', key: 'test' },
+    config: { mode: 'decoy' },
   });
   expect(writes).toHaveBeenCalledTimes(2);
   expect(clipboard.text).not.toBe(output);
@@ -782,7 +782,7 @@ it('leaves oversized HTML alone before parsing it', async () => {
 it.each([
   { type: 'offscreen-copy' },
   { type: 'offscreen-restore', text: 1 },
-  { type: 'watch-config', config: { mode: 'invalid', key: 'test' } },
+  { type: 'watch-config', config: { mode: 'invalid' } },
   {
     type: 'offscreen-reconcile',
     epoch: EPOCH,
@@ -812,7 +812,7 @@ it('rejects tab-origin control messages and leaves unrelated requests unanswered
     message({ type: 'offscreen-copy', text: TRACKED }, { ...WORKER, tab: { id: 1 } as chrome.tabs.Tab }),
   ).toHaveBeenCalledWith({ ok: false });
   expect(
-    message({ type: 'get-secret' } satisfies ExtensionMessage, { ...WORKER, tab: { id: 1 } as chrome.tabs.Tab }),
+    message({ type: 'clipboard-epoch' } satisfies ExtensionMessage, { ...WORKER, tab: { id: 1 } as chrome.tabs.Tab }),
   ).not.toHaveBeenCalled();
   expect(clipboard.text).toBe('baseline');
   expect(writes).not.toHaveBeenCalled();

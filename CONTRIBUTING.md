@@ -42,12 +42,12 @@ Every new entry needs a regression in [`tests/unit/rewrite.test.ts`](tests/unit/
 
 ## Adding replacement values
 
-Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve the [stable per-link behavior](docs/behavior.md#replacement-values) when editing the lists or generators.
+Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve the [per-copy replacement behavior](docs/behavior.md#replacement-values) when editing the lists or generators.
 
 - **Decoy lists** (`DECOY_SOURCES`, `DECOY_MEDIUMS`, and the parts used to compose campaigns, terms, and placements) should read like values real marketing tools produce (`google`, `newsletter`, `paid_social`). Every value must pass `isWordy` after percent-decoding and converting `+` to a space: start with a Unicode letter or number, contain a letter, use only letters, combining marks, numbers, spaces, `_`, `.`, and `-`, and not look like a hexadecimal ID.
 - **Silly lists** (`FUNNY`, `FUNNY_TOKEN_PHRASES`) should be lowercase and hyphenated, humorous but not offensive, obviously fake, and free of real company or brand names.
 
-`npm run check` runs property tests in `tests/unit/values.test.ts` and `tests/unit/rewrite.test.ts` for format preservation, different replacements, and deterministic results for identical inputs. Completed clipboard processing is recognized from the [current write record](docs/behavior.md#clipboard-coordination), never from the value's vocabulary.
+`npm run check` runs property tests in `tests/unit/values.test.ts` and `tests/unit/rewrite.test.ts` for format preservation, different replacements, and consistent results within a copy and fresh seeds for new copies. Completed clipboard processing is recognized from the [current write record](docs/behavior.md#clipboard-coordination), never from the value's vocabulary.
 
 ## Submitting changes
 

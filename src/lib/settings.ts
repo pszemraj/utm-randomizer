@@ -1,4 +1,3 @@
-import { createSecret } from './prng';
 import type { Mode } from './rewrite';
 
 /** User settings, stored in `chrome.storage.local` and edited from the popup. */
@@ -23,7 +22,6 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
 const MODES: readonly Mode[] = ['decoy', 'silly', 'hybrid', 'strip'];
-const SECRET_KEY = 'secret';
 
 /** Fills in defaults for missing or malformed stored values. */
 function normalize(stored: Record<string, unknown>): Settings {
@@ -67,57 +65,6 @@ export function watchSettings(listener: (settings: Settings) => void): () => voi
       void loadSettings().then(listener);
     }
   });
-}
-
-/**
- * The per-install key that seeds replacement values (see `RewriteOptions.key`), or null before the
- * service worker has created it. It never leaves this browser profile.
- */
-export async function readSecret(): Promise<string | null> {
-  const { [SECRET_KEY]: stored } = await chrome.storage.local.get(SECRET_KEY);
-  return typeof stored === 'string' && stored ? stored : null;
-}
-
-/**
- * Reads the per-install key, creating it if needed. Only the service worker calls this (once, see
- * background.ts): two contexts creating keys at the same time would disagree about replacement values.
- */
-export async function createOrReadSecret(): Promise<string> {
-  const stored = await readSecret();
-  if (stored) {
-    return stored;
-  }
-  const secret = createSecret();
-  await chrome.storage.local.set({ [SECRET_KEY]: secret });
-  return secret;
-}
-
-/** Calls `listener` whenever the per-install key is created or replaced. Returns an unsubscribe function. */
-export function watchSecret(listener: (secret: string) => void): () => void {
-  return watchLocalChanges((changes) => {
-    const next: unknown = changes[SECRET_KEY]?.newValue;
-    if (typeof next === 'string' && next) {
-      listener(next);
-    }
-  });
-}
-
-/** The per-install key for contexts other than the service worker: read it, or ask the worker to create it. */
-export async function requestSecret(): Promise<string> {
-  const stored = await readSecret();
-  if (stored) {
-    return stored;
-  }
-  const response: unknown = await chrome.runtime.sendMessage({ type: 'get-secret' });
-  if (
-    typeof response === 'object' &&
-    response !== null &&
-    'secret' in response &&
-    typeof response.secret === 'string'
-  ) {
-    return response.secret;
-  }
-  throw new Error('The service worker did not provide a key');
 }
 
 /** Wording for notifications and menus in the given mode. */
