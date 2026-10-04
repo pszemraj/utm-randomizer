@@ -61,7 +61,7 @@ export interface ReconcileClipboardMessage {
   type: 'reconcile-clipboard';
   text: string;
   embedded: boolean;
-  /** Whether a page copy gesture, rather than whole-clipboard inspection, prompted this read. */
+  /** A trusted copy/cut event, or a changed snapshot after a page copy control, authorized this read. */
   pageCopy: boolean;
   /** Complete MIME inventory observed through the async Clipboard API. */
   types: string[];
@@ -92,6 +92,8 @@ export interface OffscreenReconcileMessage {
   embedded: boolean;
   types: string[];
   epoch: string;
+  /** Whether a fresh page copy authorized this operation independently of background observation. */
+  pageCopy: boolean;
   /** Previous clipboard text used only for comparison, not as rewrite input. */
   baseline?: string;
   /** Update completed-write lifetime without rewriting the current payload. */
@@ -261,6 +263,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
         (value.observeOnly === undefined || typeof value.observeOnly === 'boolean') &&
         isText(value.text) &&
         typeof value.embedded === 'boolean' &&
+        typeof value.pageCopy === 'boolean' &&
         isTypes(value.types) &&
         isClipboardEpoch(value.epoch) &&
         (value.baseline === undefined || typeof value.baseline === 'string') &&

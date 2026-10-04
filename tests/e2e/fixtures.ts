@@ -31,7 +31,7 @@ export interface ExtensionFixtures {
   playground: Page;
   /** Current clipboard text, read through an extension page. */
   readClipboard: () => Promise<string>;
-  /** Writes the clipboard from outside the page, like the browser's own "Copy link address" or another app. */
+  /** Writes without a page copy handler; window focus is unchanged unless the test changes it explicitly. */
   writeClipboardExternally: (text: string) => Promise<void>;
   /** Waits for watcher settings and the shared clipboard document's lifecycle to settle. */
   waitForWatcher: (running: boolean) => Promise<void>;

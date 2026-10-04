@@ -19,7 +19,7 @@ const EPOCH = '00000000-0000-4000-8000-000000000001';
 const extensionId = 'test-extension';
 const popupSender = { id: extensionId, url: `chrome-extension://${extensionId}/popup.html` };
 const offscreenSender = { id: extensionId, url: `chrome-extension://${extensionId}/offscreen.html` };
-const contentSender = { id: extensionId, tab: { id: 7 } as chrome.tabs.Tab, url: 'https://example.com/' };
+const contentSender = { id: extensionId, tab: { id: 7, windowId: 1 } as chrome.tabs.Tab, url: 'https://example.com/' };
 
 /** Installs menu APIs and the worker's storage/offscreen dependencies. */
 async function startBackground(settings: Partial<Settings> = {}) {
@@ -42,6 +42,8 @@ async function startBackground(settings: Partial<Settings> = {}) {
   const sessionSet = vi.fn().mockResolvedValue(undefined);
   const onInstalled = vi.fn<(listener: () => void) => void>();
   const onMessage = vi.fn<(listener: MessageListener) => void>();
+  const getLastFocused = vi.fn().mockResolvedValue({ id: 1, focused: true });
+  const onFocusChanged = vi.fn<(listener: (windowId: number) => void) => void>();
   const onStorageChanged =
     vi.fn<(listener: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void) => void>();
   const onClicked = vi.fn<(listener: (info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) => void) => void>();
@@ -71,6 +73,7 @@ async function startBackground(settings: Partial<Settings> = {}) {
       session: { get: vi.fn().mockResolvedValue({ sessionCount: 0 }), set: sessionSet },
     },
     tabs: { sendMessage: tabsSendMessage, query: tabsQuery },
+    windows: { getLastFocused, WINDOW_ID_NONE: -1, onFocusChanged: { addListener: onFocusChanged } },
   });
   vi.mocked(loadSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, enabled: false, ...settings });
   await import('../../src/background');
@@ -80,7 +83,8 @@ async function startBackground(settings: Partial<Settings> = {}) {
   const storageListener = onStorageChanged.mock.calls[0]?.[0];
   const installListener = onInstalled.mock.calls[0]?.[0];
   const menuListener = onClicked.mock.calls[0]?.[0];
-  if (!listener || !settingsListener || !storageListener || !installListener || !menuListener)
+  const focusListener = onFocusChanged.mock.calls[0]?.[0];
+  if (!listener || !settingsListener || !storageListener || !installListener || !menuListener || !focusListener)
     throw new Error('listeners were not registered');
   return {
     getContexts,
@@ -97,6 +101,11 @@ async function startBackground(settings: Partial<Settings> = {}) {
     listener,
     installListener,
     menuListener,
+    getLastFocused,
+    changeFocus(focused: boolean, windowId = 1) {
+      getLastFocused.mockResolvedValue({ id: windowId, focused });
+      focusListener(focused ? windowId : -1);
+    },
     changeSettings(next: Partial<Settings>) {
       storageListener(Object.fromEntries(Object.entries(next).map(([key, newValue]) => [key, { newValue }])), 'local');
       const changed = { ...DEFAULT_SETTINGS, ...next };
@@ -137,6 +146,138 @@ it('keeps the coordinator idle when whole-clipboard polling is disabled', async 
   await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
   expect(worker.createDocument).toHaveBeenCalledOnce();
   expect(worker.closeDocument).not.toHaveBeenCalled();
+});
+
+it('rejects automatic work in an unfocused Chrome window while allowing explicit copies and Undo', async () => {
+  const worker = await startBackground({ enabled: true });
+  worker.changeFocus(false);
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
+  worker.sendMessage.mockClear();
+  const inspected = vi.fn();
+  worker.listener({ type: 'inspect-clipboard' }, offscreenSender, inspected);
+  await vi.waitFor(() => expect(inspected).toHaveBeenCalledWith({ ok: false }));
+  expect(worker.tabsQuery).not.toHaveBeenCalled();
+  for (const pageCopy of [false, true]) {
+    const response = vi.fn();
+    worker.listener(
+      { type: 'reconcile-clipboard', pageCopy, text: 'current', embedded: true, types: ['text/plain'], epoch: EPOCH },
+      contentSender,
+      response,
+    );
+    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
+  }
+  expect(worker.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'offscreen-reconcile' }));
+  for (const [type, sender] of [
+    ['copy-clipboard', popupSender],
+    ['restore-clipboard', contentSender],
+  ] as const) {
+    const response = vi.fn();
+    worker.listener({ type, text: 'explicit' }, sender, response);
+    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
+  }
+  expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-copy', text: 'explicit' });
+  expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'offscreen-restore', text: 'explicit' });
+});
+
+it('preserves a rapid focus-loss boundary while an automatic operation holds the queue', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+  );
+  worker.sendMessage.mockClear();
+  let release!: () => void;
+  worker.getContexts.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve([{}]);
+      }),
+  );
+  const response = vi.fn();
+  worker.listener(
+    {
+      type: 'reconcile-clipboard',
+      pageCopy: true,
+      text: 'current',
+      embedded: true,
+      types: ['text/plain'],
+      epoch: EPOCH,
+    },
+    contentSender,
+    response,
+  );
+  await vi.waitFor(() => expect(release).toBeDefined());
+  worker.changeFocus(false);
+  worker.changeFocus(true);
+  release();
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+  );
+  expect(worker.sendMessage.mock.calls.map(([message]): unknown => message)).toEqual([
+    { type: 'watch-config', config: null },
+    { type: 'watch-config', config: { mode: 'decoy' } },
+  ]);
+  expect(response).toHaveBeenCalledWith({ ok: true });
+});
+
+it('rejects a stale focused-window lookup after focus loss', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  let release!: () => void;
+  worker.getLastFocused.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve({ id: 1, focused: true });
+      }),
+  );
+  worker.changeSettings({ enabled: true, mode: 'strip' });
+  await vi.waitFor(() => expect(release).toBeDefined());
+  worker.changeFocus(false);
+  release();
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
+  expect(worker.sendMessage).toHaveBeenCalledOnce();
+});
+
+it('publishes focus loss found by inspection even when Chrome omitted its focus event', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  worker.getLastFocused.mockResolvedValue({ id: 1, focused: false });
+  const response = vi.fn();
+  worker.listener({ type: 'inspect-clipboard' }, offscreenSender, response);
+  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: false }));
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
+  worker.changeFocus(true);
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+  );
+  expect(worker.tabsQuery).not.toHaveBeenCalled();
+});
+
+it('does not suspend a resumed watcher when an older focus lookup returns false', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  let release!: () => void;
+  worker.getLastFocused.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve({ id: 1, focused: false });
+      }),
+  );
+  const response = vi.fn();
+  worker.listener({ type: 'inspect-clipboard' }, offscreenSender, response);
+  await vi.waitFor(() => expect(release).toBeDefined());
+  worker.changeFocus(false);
+  worker.changeFocus(true);
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'decoy' } }),
+  );
+  worker.sendMessage.mockClear();
+  release();
+  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: false }));
+  expect(worker.sendMessage).not.toHaveBeenCalled();
+  expect(worker.tabsQuery).not.toHaveBeenCalled();
 });
 
 it('starts watcher synchronization despite rejected cosmetic menu updates', async () => {
@@ -248,13 +389,14 @@ it('forwards page reconciliation with fresh settings and the originating frame U
     {
       ...contentSender,
       url: 'https://www.youtube.com/frame',
-      tab: { id: 7, url: 'https://example.com/' } as chrome.tabs.Tab,
+      tab: { id: 7, windowId: 1, url: 'https://example.com/' } as chrome.tabs.Tab,
     },
     response,
   );
   await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
   expect(worker.sendMessage).toHaveBeenCalledWith({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: 'current',
     embedded: true,
     types: ['text/plain'],
@@ -424,7 +566,7 @@ it('requests native clipboard inspection from the active page without blocking n
             types: ['text/plain'],
             epoch: EPOCH,
           },
-          { ...contentSender, tab: { id: 9 } as chrome.tabs.Tab },
+          { ...contentSender, tab: { id: 9, windowId: 1 } as chrome.tabs.Tab },
           resolve,
         );
       }),
@@ -432,10 +574,11 @@ it('requests native clipboard inspection from the active page without blocking n
   const response = vi.fn();
   expect(worker.listener({ type: 'inspect-clipboard' }, offscreenSender, response)).toBe(true);
   await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
-  expect(worker.tabsQuery).toHaveBeenCalledWith({ active: true, lastFocusedWindow: true });
+  expect(worker.tabsQuery).toHaveBeenCalledWith({ active: true, windowId: 1 });
   expect(worker.tabsSendMessage).toHaveBeenCalledWith(9, { type: 'inspect-clipboard' }, { frameId: 0 });
   expect(worker.sendMessage).toHaveBeenCalledWith({
     type: 'offscreen-reconcile',
+    pageCopy: false,
     text: 'current',
     embedded: false,
     types: ['text/plain'],

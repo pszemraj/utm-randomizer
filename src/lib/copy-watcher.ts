@@ -50,8 +50,6 @@ export interface WatcherDeps {
   onRewrite: (event: RewriteEvent, write?: ClipboardWrite) => void | Promise<void>;
   /** False once the extension was reloaded or removed; the watcher then shuts itself down. */
   isContextValid?: () => boolean;
-  /** Monotonic clock in milliseconds; defaults to `performance.now()`. */
-  now?: () => number;
 }
 
 /** Handle returned by {@link startCopyWatcher}. */
@@ -73,9 +71,7 @@ interface ClipboardSnapshot {
   types: readonly string[];
 }
 
-/** A clipboard change this soon after the user interacted with the page is attributed to the page. */
-const INTENT_WINDOW_MS = 10_000;
-// Clipboard checks (ms after the gesture) for browsers without the `clipboardchange` event (Chrome < 144).
+// Clipboard checks (ms after an actual copy or a control with a pre-gesture baseline).
 const SWEEP_AFTER_COPY = [40, 150, 400];
 const SWEEP_AFTER_CLICK = [120, 350, 800, 1600, 2800];
 const SWEEP_AFTER_CONTEXT_MENU = [400, 1000, 2000, 3500, 5500, 8000];
@@ -148,17 +144,15 @@ function looksLikeCopyControl(target: EventTarget | null): boolean {
  *
  * - `copy`/`cut` events are rewritten synchronously through `clipboardData` (covers Ctrl+C,
  *   `execCommand('copy')` buttons, and pages that set clipboard data themselves).
- * - `clipboardchange` (Chrome 144+) catches everything else written while the page is in use:
- *   `navigator.clipboard.writeText` buttons and the browser's "Copy link address".
- * - Without `clipboardchange`, the clipboard is polled briefly after copy-like gestures.
+ * - Copy controls and context menus compare against the clipboard before the gesture.
+ * - `clipboardchange` (Chrome 144+) supplies observations to the focused background watcher;
+ *   the event alone does not prove that a fresh copy occurred on this page.
  */
 export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   const { clipboard, getSettings, onRewrite } = deps;
   const isContextValid = deps.isContextValid ?? (() => true);
-  const now = deps.now ?? (() => performance.now());
   const supportsChangeEvent = clipboard !== null && 'onclipboardchange' in clipboard;
 
-  let lastIntent = Number.NEGATIVE_INFINITY;
   /** A synchronous output awaiting registration with the shared coordinator. */
   let lastWritten: ClipboardSnapshot | null = null;
   let generation = 0;
@@ -176,26 +170,10 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     return getSettings().enabled;
   }
 
-  /** Records a user interaction with this page (click, key, context menu, copy). */
+  /** New page interactions cancel older reads without authorizing clipboard writes. */
   function markIntent(event: Event): void {
     if (!event.isTrusted) return;
     invalidate();
-    lastIntent = now();
-    if (!active()) return;
-    if (
-      event instanceof KeyboardEvent &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey &&
-      !['Enter', ' ', 'ContextMenu'].includes(event.key) &&
-      !(event.key === 'F10' && event.shiftKey)
-    ) {
-      // Custom unmodified copy hotkeys advance the shared epoch if they actually change the clipboard.
-      pendingIntent = null;
-      return;
-    }
-    pendingIntent = deps.invalidateReads();
-    void pendingIntent.catch(() => undefined);
   }
 
   /**
@@ -282,13 +260,13 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   async function readClipboard(source: WatchedClipboard, job = generation): Promise<ClipboardSnapshot | null> {
     const written = lastWritten;
     const items = await source.read();
+    // An empty clipboard is a complete baseline, unlike an unreadable or unsupported payload.
+    if (items.length === 0) {
+      if (generation === job && lastWritten === written) lastWritten = null;
+      return { text: '', html: null, types: [] };
+    }
     const item = items[0];
-    if (
-      items.length !== 1 ||
-      !item ||
-      item.types.length === 0 ||
-      item.types.some((type) => type !== 'text/plain' && type !== 'text/html')
-    ) {
+    if (items.length !== 1 || !item || item.types.some((type) => type !== 'text/plain' && type !== 'text/html')) {
       return null;
     }
     const types = item.types;
@@ -307,7 +285,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
    * @param embedded Also rewrite links inside longer plain-only text; HTML is handled by the coordinator.
    * @param baseline Clipboard flavors before a polling gesture; unchanged contents are left alone.
    * @param job Local generation that cancels stale reads after newer intent or configuration.
-   * @param pageCopy Whether page intent supplies a base URL for relative links.
+   * @param pageCopy Whether a copy event or changed pre-gesture snapshot authorized this read.
    */
   async function rewriteClipboard(
     embedded: boolean,
@@ -321,14 +299,13 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     let snapshot: ClipboardSnapshot | null;
     let epoch: string;
     try {
-      // A custom unmodified hotkey needs its own epoch, rather than adopting another frame's intent.
       epoch = await (pageCopy ? (pendingIntent ??= deps.invalidateReads()) : deps.beginRead());
       if (generation !== job || listeners.signal.aborted || !active()) return false;
       snapshot = await readClipboard(clipboard, job);
     } catch {
       return false;
     }
-    if (generation !== job || !active()) {
+    if (generation !== job || !document.hasFocus() || !active()) {
       return false;
     }
     // Keep the background candidate: removing a web-custom flavor is invisible to synthetic paste.
@@ -353,10 +330,13 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
     const job = ++generation;
     const controller = new AbortController();
     sweep = controller;
+    pendingIntent ??= deps.invalidateReads();
+    void pendingIntent.catch(() => undefined);
     void (async () => {
       let previous: ClipboardSnapshot | null | undefined;
       try {
         previous = await baseline?.();
+        if (baseline && previous === null) return;
       } catch (error) {
         // Chromium invalidates lazy format reads when a new copy replaces their snapshot.
         // That proves the clipboard changed, so keep the scheduled polls without the old baseline.
@@ -376,25 +356,38 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
         }
         await rewriteClipboard(false, previous, job);
       }
-    })();
+    })().finally(() => {
+      if (sweep === controller) {
+        sweep = null;
+        pendingIntent = null;
+      }
+    });
   }
 
   const options = { capture: true, signal: listeners.signal };
   for (const type of ['pointerdown', 'keydown', 'contextmenu'] as const) {
     window.addEventListener(type, markIntent, options);
   }
+  window.addEventListener(
+    'blur',
+    (event) => {
+      if (event.isTrusted) invalidate();
+    },
+    { signal: listeners.signal },
+  );
 
   for (const type of ['copy', 'cut'] as const) {
     window.addEventListener(
       type,
       (event) => {
-        if (!event.isTrusted) return;
+        if (!event.isTrusted || !active()) return;
         markIntent(event);
-        let reachedBubble = false;
+        pendingIntent = deps.invalidateReads();
+        void pendingIntent.catch(() => undefined);
+        const job = generation;
         // Runs after previously registered page handlers. Handlers added during dispatch may run later.
         const late = (lateEvent: ClipboardEvent) => {
           if (lateEvent === event) {
-            reachedBubble = true;
             onCopy(event);
           }
         };
@@ -402,13 +395,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
         // Check stopped events and fallback copies after every page handler and the default action finish.
         setTimeout(() => {
           window.removeEventListener(type, late);
-          if (
-            (!reachedBubble || !supportsChangeEvent) &&
-            clipboard &&
-            !restoring &&
-            !listeners.signal.aborted &&
-            active()
-          ) {
+          if (generation === job && clipboard && !restoring && !listeners.signal.aborted && active()) {
             runSweep(SWEEP_AFTER_COPY);
           }
         }, 0);
@@ -422,7 +409,7 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
       'clipboardchange',
       (event) => {
         const types = (event as ClipboardChangeLike).types;
-        if (!event.isTrusted || restoring || !active() || now() - lastIntent > INTENT_WINDOW_MS) {
+        if (!event.isTrusted || restoring || !active()) {
           return;
         }
         if (types?.some((type) => type !== 'text/plain' && type !== 'text/html')) {
@@ -430,12 +417,15 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
           lastWritten = null;
           return;
         }
+        // An authorized sweep already owns this copy; observers must not cancel its baseline read.
+        if (pendingIntent || sweep || !getSettings().watchClipboard) return;
         // The coordinator preserves HTML and cleans both representations; plain-only prose needs this flag.
-        void rewriteClipboard(Boolean(types && !types.includes('text/html')));
+        void rewriteClipboard(Boolean(types && !types.includes('text/html')), undefined, undefined, false);
       },
       { signal: listeners.signal },
     );
-  } else if (clipboard) {
+  }
+  if (clipboard) {
     window.addEventListener(
       'click',
       (event) => {
@@ -467,6 +457,8 @@ export function startCopyWatcher(deps: WatcherDeps): CopyWatcher {
   function invalidate(): void {
     generation += 1;
     sweep?.abort();
+    sweep = null;
+    pendingIntent = null;
   }
 
   /** Writes `text` to the clipboard and marks it as ours so it is not rewritten again. */

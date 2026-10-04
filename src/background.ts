@@ -67,8 +67,8 @@ function countRewrites(urls: number): Promise<void> {
 // open while automatic cleaning is on and is created on demand otherwise. Every
 // operation on it is serialized, because only one offscreen document may exist at a time.
 let offscreenQueue: Promise<unknown> = Promise.resolve();
-/** Cancels automatic work waiting in the worker when settings change. */
-let settingsRevision = 0;
+/** Cancels automatic work waiting in the worker when settings or Chrome-window focus change. */
+let automaticRevision = 0;
 
 /** Runs `task` after every earlier offscreen operation has finished. */
 function withOffscreen<T>(task: () => Promise<T>): Promise<T> {
@@ -103,17 +103,22 @@ async function tellOffscreen(message: ExtensionMessage): Promise<void> {
 }
 
 /** The background watcher's configuration for the given settings, or null when it should be off. */
-function watchConfigFor(settings: Settings): WatchConfig | null {
-  return settings.enabled && settings.watchClipboard ? { mode: settings.mode } : null;
+function watchConfigFor(settings: Settings, focused: boolean): WatchConfig | null {
+  return settings.enabled && settings.watchClipboard && focused ? { mode: settings.mode } : null;
 }
 
 /** Starts, reconfigures, or stops the background clipboard watcher to match the current settings. */
-function syncWatcher(): Promise<void> {
+function syncWatcher(suspend = false): Promise<void> {
+  const revision = automaticRevision;
   return withOffscreen(async () => {
     const settings = await loadSettings();
-    const config = watchConfigFor(settings);
+    const focused = !suspend && (await chrome.windows.getLastFocused()).focused;
+    // A focus-loss boundary must reach the coordinator even if Chrome regained focus while queued.
+    if (!suspend && revision !== automaticRevision) return;
+    const config = watchConfigFor(settings, focused);
     if (settings.enabled) {
       await ensureOffscreen();
+      if (!suspend && revision !== automaticRevision) return;
       await tellOffscreen({ type: 'watch-config', config });
     } else if (await hasOffscreen()) {
       await chrome.offscreen.closeDocument();
@@ -121,6 +126,17 @@ function syncWatcher(): Promise<void> {
   }).catch((error: unknown) => {
     console.debug('UTM Randomizer: could not update the clipboard watcher', error);
   });
+}
+
+/** Reads actual browser focus and publishes a missed loss before any later automatic operation. */
+async function focusedWindow(): Promise<chrome.windows.Window> {
+  const revision = automaticRevision;
+  const window = await chrome.windows.getLastFocused();
+  if (!window.focused && revision === automaticRevision) {
+    automaticRevision += 1;
+    void syncWatcher(true);
+  }
+  return window;
 }
 
 /** Sends an explicit clipboard operation through the offscreen coordinator. */
@@ -150,24 +166,28 @@ function reconcileClipboard(
   types: string[],
   epoch: string,
   tabId: number | undefined,
+  windowId: number | undefined,
+  pageCopy: boolean,
   baseline?: string,
   baseUrl?: string,
   observeOnly?: boolean,
 ): Promise<void> {
-  const revision = settingsRevision;
+  const revision = automaticRevision;
   return withOffscreen(async () => {
     const settings = await loadSettings();
-    if (!settings.enabled) {
+    if (!settings.enabled || (!pageCopy && !settings.watchClipboard)) {
       return;
     }
     await ensureOffscreen();
-    if (revision !== settingsRevision) return;
+    const focused = await focusedWindow();
+    if (!focused.focused || focused.id !== windowId || revision !== automaticRevision) return;
     await tellOffscreen({
       type: 'offscreen-reconcile',
       text,
       embedded,
       types,
       epoch,
+      pageCopy,
       baseline,
       baseUrl,
       observeOnly,
@@ -178,10 +198,14 @@ function reconcileClipboard(
 }
 
 /** Captures the coordinator generation, advancing it for newer automatic page intent. */
-function clipboardEpoch(intent = false): Promise<string> {
+function clipboardEpoch(intent: boolean, windowId: number | undefined): Promise<string> {
+  const revision = automaticRevision;
   return withOffscreen(async () => {
     if (intent && !(await loadSettings()).enabled) throw new Error('Automatic cleaning is paused');
     await ensureOffscreen();
+    const focused = await focusedWindow();
+    if (!focused.focused || focused.id !== windowId || revision !== automaticRevision)
+      throw new Error('Chrome clipboard focus changed');
     const message: ExtensionMessage = { type: intent ? 'offscreen-intent' : 'offscreen-epoch' };
     const response: unknown = await chrome.runtime.sendMessage(message);
     if (
@@ -200,11 +224,16 @@ function clipboardEpoch(intent = false): Promise<string> {
 
 /** Asks the active page to inspect formats before the offscreen watcher may reconcile them. */
 async function inspectClipboard(): Promise<void> {
+  const revision = automaticRevision;
   const settings = await loadSettings();
   if (!settings.enabled || !settings.watchClipboard) {
     throw new Error('Whole-clipboard watching is disabled');
   }
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const focused = await focusedWindow();
+  if (!focused.focused || focused.id === undefined || revision !== automaticRevision)
+    throw new Error('Chrome is not focused');
+  const [tab] = await chrome.tabs.query({ active: true, windowId: focused.id });
+  if (revision !== automaticRevision) throw new Error('Chrome clipboard focus changed');
   if (tab?.id === undefined) {
     throw new Error('No active clipboard reader');
   }
@@ -322,7 +351,12 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Invalidate before the asynchronous settings reload or queued watcher update can finish.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) settingsRevision += 1;
+  if (area === 'local' && Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) automaticRevision += 1;
+});
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  automaticRevision += 1;
+  void syncWatcher(windowId === chrome.windows.WINDOW_ID_NONE);
 });
 
 watchSettings((settings) => {
@@ -425,6 +459,8 @@ chrome.runtime.onMessage.addListener(
             message.types,
             message.epoch,
             sender.tab?.id,
+            sender.tab?.windowId,
+            message.pageCopy,
             message.baseline,
             message.pageCopy ? sender.url : undefined,
             message.observeOnly,
@@ -438,7 +474,7 @@ chrome.runtime.onMessage.addListener(
           sendResponse({ ok: false });
           return false;
         }
-        clipboardEpoch(message.type === 'clipboard-intent').then(
+        clipboardEpoch(message.type === 'clipboard-intent', sender.tab?.windowId).then(
           (epoch) => {
             sendResponse({ ok: true, epoch });
           },

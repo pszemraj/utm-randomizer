@@ -6,7 +6,7 @@ export interface Settings {
   enabled: boolean;
   /** Believable decoys, obvious nonsense, or removal. */
   mode: Mode;
-  /** Watch the whole clipboard, catching links copied anywhere (address bar, other apps). */
+  /** Watch new clipboard entries only while a Chrome window is focused. */
   watchClipboard: boolean;
   /** Show an on-page notification after a rewrite. */
   notify: boolean;

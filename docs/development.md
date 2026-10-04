@@ -32,7 +32,7 @@ The suite runs with native `clipboardchange` events and with that capability rem
 
 ## Manual testing
 
-The playground has one control for each copy path, a tracked address-bar link, a link to copy from another app, right-click test links, functional links that must paste unchanged, an iframe, and a box to inspect pasted text. Open it in the browser where `dist/` is loaded.
+The playground has one control for each copy path, a tracked address-bar link, a link for testing focus boundaries, right-click test links, functional links that must paste unchanged, an iframe, and a box to inspect pasted text. Open it in the browser where `dist/` is loaded.
 
 ## Packaging and CI
 

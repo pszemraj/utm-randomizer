@@ -9,6 +9,117 @@ const CLEAN = 'https://example.com/page';
 const CONFIG = { mode: 'strip' as const };
 const WORKER = { id: 'extension-id' };
 
+it('leaves the focus-gain baseline untouched when an observer reports it', async () => {
+  const { clipboard, message, readEpoch, writes } = await start();
+  message({ type: 'watch-config', config: null });
+  clipboard.text = TRACKED;
+  message({ type: 'watch-config', config: CONFIG });
+  message({
+    type: 'offscreen-reconcile',
+    pageCopy: false,
+    text: TRACKED,
+    embedded: true,
+    types: clipboard.types,
+    epoch: readEpoch(),
+    config: CONFIG,
+  });
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it('retains a staged candidate across a same-focus worker refresh', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(750);
+  message({ type: 'watch-config', config: CONFIG });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
+it('discards a staged candidate on focus loss and baselines the next focused interval', async () => {
+  const { clipboard, message, readEpoch, writes } = await start();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(750);
+  message({ type: 'watch-config', config: null });
+  clipboard.html = `<a href="${TRACKED}">External rich copy</a>`;
+  clipboard.types = ['text/plain', 'text/html'];
+  const reconcile = () =>
+    message({
+      type: 'offscreen-reconcile',
+      pageCopy: false,
+      text: clipboard.text,
+      embedded: true,
+      types: clipboard.types,
+      epoch: readEpoch(),
+      config: CONFIG,
+    });
+  reconcile();
+  message({ type: 'watch-config', config: CONFIG });
+  reconcile();
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(writes).not.toHaveBeenCalled();
+  // An HTML-only change after the baseline is still a fresh clipboard entry.
+  clipboard.html = `<a href="${TRACKED}">Fresh rich copy</a>`;
+  reconcile();
+  expect(writes).toHaveBeenCalledOnce();
+  expect(clipboard.text).toBe(CLEAN);
+  expect(clipboard.html).toBe(`<a href="${CLEAN}">Fresh rich copy</a>`);
+});
+
+it.each([false, true])(
+  'does not let a raced page baseline consume a fresh background entry (staged %s)',
+  async (staged) => {
+    const { clipboard, message, readEpoch, writes } = await start();
+    clipboard.text = 'ordinary previous contents';
+    await vi.advanceTimersByTimeAsync(750);
+    clipboard.text = TRACKED;
+    if (staged) await vi.advanceTimersByTimeAsync(750);
+    message({
+      type: 'offscreen-reconcile',
+      pageCopy: true,
+      text: TRACKED,
+      baseline: TRACKED,
+      embedded: false,
+      types: clipboard.types,
+      epoch: readEpoch(),
+      config: CONFIG,
+      observeOnly: true,
+    });
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(clipboard.text).toBe(CLEAN);
+    expect(writes).toHaveBeenCalledOnce();
+  },
+);
+
+it('advances observation after unrelated text so a repeated output can become a fresh entry', async () => {
+  const { clipboard, message, readEpoch, writes } = await start();
+  message({ type: 'offscreen-copy', text: TRACKED });
+  clipboard.text = 'unrelated contents';
+  message({
+    type: 'offscreen-reconcile',
+    pageCopy: false,
+    text: clipboard.text,
+    embedded: true,
+    types: clipboard.types,
+    epoch: readEpoch(),
+    config: CONFIG,
+    observeOnly: true,
+  });
+  clipboard.text = TRACKED;
+  message({
+    type: 'offscreen-reconcile',
+    pageCopy: false,
+    text: TRACKED,
+    embedded: true,
+    types: clipboard.types,
+    epoch: readEpoch(),
+    config: CONFIG,
+  });
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledTimes(2);
+});
+
 it.each([false, true])(
   'retains its exact successful output across intent and configuration (HTML %s)',
   async (rich) => {
@@ -22,6 +133,7 @@ it.each([false, true])(
     const reconcile = () =>
       message({
         type: 'offscreen-reconcile',
+        pageCopy: true,
         text: clipboard.text,
         embedded: true,
         types: clipboard.types,
@@ -58,6 +170,7 @@ it('records a completed synchronous output after newer intent invalidates pendin
   expect(message(registration)).toHaveBeenCalledWith({ ok: true });
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: after.text,
     types: after.types,
     epoch: readEpoch(),
@@ -89,6 +202,7 @@ it('expires completed output after a nonrewritable observation with polling disa
   clipboard.text = 'ordinary prose';
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: clipboard.text,
     embedded: true,
     types: clipboard.types,
@@ -100,6 +214,7 @@ it('expires completed output after a nonrewritable observation with polling disa
   clipboard.text = output;
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: output,
     embedded: true,
     types: clipboard.types,
@@ -117,6 +232,7 @@ it('keeps a restored current payload when a completed-write report arrives late'
   message({ type: 'rewritten', urls: 1, clipboard: { before: snapshot, after: snapshot } });
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: TRACKED,
     embedded: true,
     types: clipboard.types,
@@ -171,7 +287,15 @@ async function start() {
     });
     let response = { ok: false };
     onMessage?.(
-      { type: 'offscreen-reconcile', text: clipboard.text, embedded: true, config: CONFIG, types, epoch },
+      {
+        type: 'offscreen-reconcile',
+        pageCopy: false,
+        text: clipboard.text,
+        embedded: true,
+        config: CONFIG,
+        types,
+        epoch,
+      },
       WORKER,
       (value) => {
         response = value;
@@ -257,6 +381,7 @@ it.each([undefined, 'https://example.com/page', 'https://www.youtube.com/feed'])
     clipboard.types = ['text/plain', 'text/html'];
     message({
       type: 'offscreen-reconcile',
+      pageCopy: true,
       epoch: readEpoch(),
       types: clipboard.types,
       text: original,
@@ -281,6 +406,7 @@ it('atomically restores and suppresses Undo across reconfiguration, then expires
   failedCopy.mockRestore();
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: TRACKED,
@@ -300,6 +426,7 @@ it('atomically restores and suppresses Undo across reconfiguration, then expires
   message({ type: 'watch-config', config: CONFIG });
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: TRACKED,
@@ -350,6 +477,7 @@ it('retries an invalidated background inspection without waiting for the clipboa
     message({ type: 'offscreen-intent' });
     const response: unknown = message({
       type: 'offscreen-reconcile',
+      pageCopy: true,
       epoch: staleEpoch,
       types: clipboard.types,
       text: clipboard.text,
@@ -394,6 +522,7 @@ it('preserves native web-custom formats and retries after only the custom flavor
   expect(writes).not.toHaveBeenCalled();
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     text: TRACKED,
     embedded: true,
@@ -431,6 +560,7 @@ it.each(['image/png', 'Files', 'application/custom'])(
     await vi.advanceTimersByTimeAsync(250);
     message({
       type: 'offscreen-reconcile',
+      pageCopy: true,
       epoch: readEpoch(),
       types: clipboard.types,
       text: TRACKED,
@@ -448,6 +578,7 @@ it('rejects stale reconciliation without overwriting the newer clipboard content
   clipboard.text = 'a newer copy';
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: TRACKED,
@@ -467,6 +598,7 @@ it('rejects an older page read and accepts a fresh read of identical tracked tex
   expect(readEpoch()).not.toBe(oldEpoch);
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text,
     embedded: false,
     types: clipboard.types,
@@ -478,6 +610,7 @@ it('rejects an older page read and accepts a fresh read of identical tracked tex
   expect(writes).not.toHaveBeenCalled();
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text,
     embedded: false,
     types: clipboard.types,
@@ -495,6 +628,7 @@ it('expires Undo suppression only when a fresh copy has a different observed bas
   message({ type: 'watch-config', config: null });
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: TRACKED,
@@ -504,6 +638,7 @@ it('expires Undo suppression only when a fresh copy has a different observed bas
   expect(clipboard.text).toBe(TRACKED);
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: CLEAN,
@@ -514,6 +649,7 @@ it('expires Undo suppression only when a fresh copy has a different observed bas
   expect(clipboard.text).toBe(TRACKED);
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: TRACKED,
@@ -523,6 +659,7 @@ it('expires Undo suppression only when a fresh copy has a different observed bas
   expect(clipboard.text).toBe(TRACKED);
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: TRACKED,
@@ -540,6 +677,7 @@ it('rejects another frame’s pre-Undo read before its baseline can clear suppre
   writes.mockClear();
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: TRACKED,
     embedded: true,
     config: CONFIG,
@@ -551,6 +689,7 @@ it('rejects another frame’s pre-Undo read before its baseline can clear suppre
   expect(writes).not.toHaveBeenCalled();
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: TRACKED,
     embedded: true,
     config: CONFIG,
@@ -571,6 +710,7 @@ it('invalidates pending reads on worker reconfiguration while retaining Undo sup
   writes.mockClear();
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: TRACKED,
     embedded: true,
     config: CONFIG,
@@ -580,6 +720,7 @@ it('invalidates pending reads on worker reconfiguration while retaining Undo sup
   });
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: TRACKED,
     embedded: true,
     config: CONFIG,
@@ -597,6 +738,7 @@ it('invalidates pending automatic reads when an explicit copy is committed', asy
   writes.mockClear();
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text: TRACKED,
     embedded: true,
     config: CONFIG,
@@ -617,6 +759,7 @@ it.each([
   clipboard.types = types;
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text,
@@ -642,6 +785,7 @@ it.each([false, true])('counts rewritten HTML anchors once with visible URLs %s'
   clipboard.types = ['text/plain', 'text/html'];
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: clipboard.text,
@@ -660,6 +804,7 @@ it('counts rewritten HTML prose and URL labels with unchanged destinations', asy
   clipboard.types = ['text/html'];
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: '',
@@ -689,6 +834,7 @@ it('preserves HTML and plain text when both representations need rewriting', asy
   clipboard.types = ['text/plain', 'text/html'];
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: TRACKED,
@@ -709,6 +855,7 @@ it.each([true, false])('cleans both representations of rich prose with embedded 
   clipboard.types = ['text/plain', 'text/html'];
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: original,
@@ -726,6 +873,7 @@ it('leaves plain-only prose unchanged when embedded rewriting is disabled', asyn
   clipboard.text = original;
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: original,
@@ -751,6 +899,7 @@ it('checks formats again immediately before committing an automatic write', asyn
   });
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: TRACKED,
@@ -769,6 +918,7 @@ it('leaves oversized HTML alone before parsing it', async () => {
   clipboard.types = ['text/plain', 'text/html'];
   message({
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: readEpoch(),
     types: clipboard.types,
     text: 'baseline',
@@ -785,6 +935,7 @@ it.each([
   { type: 'watch-config', config: { mode: 'invalid' } },
   {
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: EPOCH,
     types: ['text/plain'],
     text: TRACKED,
@@ -793,12 +944,13 @@ it.each([
   },
   {
     type: 'offscreen-reconcile',
+    pageCopy: true,
     epoch: EPOCH,
     text: TRACKED,
     embedded: true,
     config: CONFIG,
   },
-  { type: 'offscreen-reconcile', types: ['text/plain'], text: TRACKED, embedded: true, config: CONFIG },
+  { type: 'offscreen-reconcile', pageCopy: true, types: ['text/plain'], text: TRACKED, embedded: true, config: CONFIG },
 ])('rejects malformed control messages without touching the clipboard ($type)', async (payload) => {
   const { clipboard, writes, message } = await start();
   expect(message(payload)).toHaveBeenCalledWith({ ok: false });
@@ -825,6 +977,7 @@ it('rejects a delayed page reconciliation after the coordinator is recreated', a
   older.message({ type: 'offscreen-intent' });
   const delayed = {
     type: 'offscreen-reconcile',
+    pageCopy: true,
     text,
     embedded: false,
     types: ['text/plain'],

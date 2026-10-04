@@ -120,6 +120,7 @@ function reconcile(
   options: RewriteOptions,
   types: string[],
   readEpoch: string,
+  pageCopy: boolean,
   tabId?: number,
   baseline?: string,
   observeOnly = false,
@@ -130,7 +131,24 @@ function reconcile(
   if (!snapshot) return false;
   if (snapshot.text !== text || JSON.stringify([...types].sort()) !== JSON.stringify(snapshot.types)) return true;
   observe(snapshot);
-  if (observeOnly) return true;
+  const currentIdentity = identity(snapshot);
+  if (observeOnly) {
+    // A gesture's baseline may already contain the new copy; it cannot consume a background candidate.
+    if (!hasRewritableClipboard(snapshot.text, snapshot.html, true, options.baseUrl)) {
+      lastSeen = currentIdentity;
+      candidate = null;
+    }
+    return true;
+  }
+  if (!pageCopy) {
+    if (!config) return true;
+    const staged = candidate !== null && identity(candidate) === currentIdentity;
+    if (lastSeen === null || (currentIdentity === lastSeen && !staged)) {
+      lastSeen = currentIdentity;
+      return true;
+    }
+  }
+  lastSeen = currentIdentity;
   if (isIgnored(snapshot) && snapshot.text === text && baseline !== undefined && baseline !== lastWrite?.after.text)
     lastWrite = null;
   if (
@@ -212,16 +230,18 @@ function check(): void {
 
 /** Starts or stops polling while retaining Undo suppression across worker reconfiguration. */
 function configure(next: WatchConfig | null): void {
+  const continuing = config !== null && next !== null;
   epoch = crypto.randomUUID();
   config = next;
   window.clearInterval(timer);
   window.clearTimeout(graceTimer);
-  candidate = null;
+  if (!continuing) {
+    candidate = null;
+    lastSeen = null;
+  }
   if (next) {
     timer = window.setInterval(check, POLL_MS);
     check();
-  } else {
-    lastSeen = null;
   }
 }
 
@@ -292,6 +312,7 @@ chrome.runtime.onMessage.addListener(
             { ...message.config, baseUrl: message.baseUrl },
             message.types,
             message.epoch,
+            message.pageCopy,
             message.tabId,
             message.baseline,
             message.observeOnly,

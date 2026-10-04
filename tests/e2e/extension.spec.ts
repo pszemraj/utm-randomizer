@@ -894,13 +894,14 @@ test.describe('copying on web pages', () => {
     expect(new URL(copied).searchParams.get('fbclid')).not.toBe('AbCdEf123456');
   });
 
-  test('keeps ordinary typing local and rewrites keyboard copies', async ({
+  test('ignores typing and paste as copy intent, and rewrites keyboard copies', async ({
     playground,
     readClipboard,
     serviceWorker,
     setSettings,
     waitForWatcher,
     clipboardChange,
+    writeClipboardExternally,
   }) => {
     await setSettings({ watchClipboard: false });
     await waitForWatcher(false);
@@ -927,6 +928,11 @@ test.describe('copying on web pages', () => {
       ),
     ).toBe(0);
 
+    const pasted = 'https://example.com/paste?utm_source=linkedin';
+    await writeClipboardExternally(pasted);
+    await field.press('ControlOrMeta+V');
+    expect(await expectStable(readClipboard, 1000)).toBe(pasted);
+
     if (clipboardChange) {
       const original = 'https://example.com/custom?id=5&utm_source=keyboard';
       await field.evaluate((element, text) => {
@@ -937,12 +943,8 @@ test.describe('copying on web pages', () => {
         });
       }, original);
       await field.press('y');
-      const copied = await waitForClipboard(
-        readClipboard,
-        (text) => text.startsWith('https://example.com/custom?') && text !== original,
-      );
-      expectReplaced(copied, original);
-      expect(new URL(copied).searchParams.get('id')).toBe('5');
+      await expect.poll(readClipboard).toBe(original);
+      expect(await expectStable(readClipboard, 1000)).toBe(original);
     }
 
     const code = playground.getByTestId('select-code');
@@ -1249,16 +1251,17 @@ test.describe('copying on web pages', () => {
     expect(await readClipboard()).toBe(ARTICLE);
   });
 
-  test('Pause cancels reconciliation already waiting in the worker', async ({
-    playground,
-    readClipboard,
-    serviceWorker,
-    setSettings,
-    waitForWatcher,
-  }) => {
-    await setSettings({ mode: 'strip', watchClipboard: false });
-    await waitForWatcher(false);
-    await serviceWorker.evaluate(`(() => {
+  for (const change of ['Pause', 'Chrome focus loss'] as const) {
+    test(`${change} cancels reconciliation already waiting in the worker`, async ({
+      playground,
+      readClipboard,
+      serviceWorker,
+      setSettings,
+      waitForWatcher,
+    }) => {
+      await setSettings({ mode: 'strip', watchClipboard: false });
+      await waitForWatcher(false);
+      await serviceWorker.evaluate(`(() => {
       const original = chrome.runtime.getContexts.bind(chrome.runtime);
       const gate = globalThis.pauseGate = { armed: false, held: false, paused: false };
       chrome.runtime.getContexts = async (...args) => {
@@ -1278,15 +1281,33 @@ test.describe('copying on web pages', () => {
         if (area === 'local' && changes.enabled?.newValue === false) gate.paused = true;
       });
     })()`);
-    await playground.getByTestId('copy-writetext').click();
-    await expect.poll(() => serviceWorker.evaluate('globalThis.pauseGate.held')).toBe(true);
-    expect(await readClipboard()).toBe(ARTICLE);
-    await setSettings({ enabled: false });
-    await expect.poll(() => serviceWorker.evaluate('globalThis.pauseGate.paused')).toBe(true);
-    await serviceWorker.evaluate('globalThis.pauseGate.release()');
-    await waitForWatcher(false);
-    expect(await readClipboard()).toBe(ARTICLE);
-  });
+      await playground.getByTestId('copy-writetext').click();
+      await expect.poll(() => serviceWorker.evaluate('globalThis.pauseGate.held')).toBe(true);
+      expect(await readClipboard()).toBe(ARTICLE);
+      if (change === 'Pause') {
+        await setSettings({ enabled: false });
+        await expect.poll(() => serviceWorker.evaluate('globalThis.pauseGate.paused')).toBe(true);
+      } else {
+        await serviceWorker.evaluate(async () => {
+          const window = await chrome.windows.getLastFocused();
+          if (window.id === undefined) throw new Error('Missing browser window');
+          await chrome.windows.update(window.id, { state: 'minimized' });
+        });
+        await expect
+          .poll(() => serviceWorker.evaluate(async () => (await chrome.windows.getLastFocused()).focused))
+          .toBe(false);
+        // Regaining focus cannot resurrect the read accepted before the loss of focus.
+        await serviceWorker.evaluate(async () => {
+          const window = await chrome.windows.getLastFocused();
+          if (window.id === undefined) throw new Error('Missing browser window');
+          await chrome.windows.update(window.id, { state: 'normal', focused: true });
+        });
+      }
+      await serviceWorker.evaluate('globalThis.pauseGate.release()');
+      await waitForWatcher(false);
+      expect(await readClipboard()).toBe(ARTICLE);
+    });
+  }
 
   test('Undo restores the original link, and it stays restored', async ({ playground, readClipboard }) => {
     await playground.getByTestId('copy-writetext').click();
@@ -1330,9 +1351,52 @@ test.describe('copying on web pages', () => {
   });
 });
 
-test.describe('copying anywhere else (whole-clipboard watcher)', () => {
+test.describe('browser clipboard watching', () => {
   const OUTSIDE =
     'https://example.com/story?id=11&utm_source=twitter&utm_medium=social&gclid=Cj0KCQjw9-KzBhDVARIsAF_BwE';
+
+  test('leaves outside copies unchanged across Chrome focus, paste, and page load', async ({
+    playground,
+    serviceWorker,
+    readClipboard,
+    writeClipboardExternally,
+    waitForWatcher,
+    server,
+  }) => {
+    await waitForWatcher(true);
+    await serviceWorker.evaluate(async () => {
+      const window = await chrome.windows.getLastFocused();
+      if (window.id === undefined) throw new Error('Missing browser window');
+      await chrome.windows.update(window.id, { state: 'minimized' });
+    });
+    await expect
+      .poll(() => serviceWorker.evaluate(async () => (await chrome.windows.getLastFocused()).focused))
+      .toBe(false);
+    await writeClipboardExternally(OUTSIDE);
+    expect(await expectStable(readClipboard, 1500)).toBe(OUTSIDE);
+    await serviceWorker.evaluate(async () => {
+      const window = await chrome.windows.getLastFocused();
+      if (window.id === undefined) throw new Error('Missing browser window');
+      await chrome.windows.update(window.id, { state: 'normal', focused: true });
+    });
+    await playground.bringToFront();
+    const field = playground.getByTestId('paste');
+    await field.focus();
+    await field.press('ControlOrMeta+V');
+    await expect(field).toHaveValue(OUTSIDE);
+    expect(await expectStable(readClipboard, 1500)).toBe(OUTSIDE);
+    const address = `${server.origin}/?utm_source=linkedin`;
+    await playground.goto(address);
+    expect(await expectStable(readClipboard, 1500)).toBe(OUTSIDE);
+    expect(playground.url()).toBe(address);
+    await expect(playground.locator('utm-randomizer-toast')).toHaveCount(0);
+
+    // A fresh Chrome copy remains eligible after the focus baseline was established.
+    await playground.getByTestId('copy-writetext').click();
+    const cleaned = await waitForClipboard(readClipboard, (text) => text !== OUTSIDE && text !== ARTICLE);
+    expectReplaced(cleaned, ARTICLE);
+    expect(playground.url()).toBe(address);
+  });
 
   test('preserves hidden custom formats and cleans identical text after they are removed', async ({
     playground,
@@ -1419,7 +1483,7 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
     expect(inspection).toEqual({ attempts: 2, firstResponse: { ok: false } });
   });
 
-  test('rewrites links copied outside any page, such as from the address bar or another app', async ({
+  test('rewrites new entries copied outside a page while Chrome is focused', async ({
     playground,
     readClipboard,
     writeClipboardExternally,
@@ -1437,9 +1501,11 @@ test.describe('copying anywhere else (whole-clipboard watcher)', () => {
     await expect(playground.locator('utm-randomizer-toast')).toContainText('Tracking swapped for decoys');
     expect(await expectStable(readClipboard, 2000)).toBe(copied);
 
-    // Copying the same tracked link again a moment later gets it cleaned again, the same way.
+    // A new copy draws fresh values rather than reusing the prior mapping.
     await writeClipboardExternally(OUTSIDE);
-    await expect.poll(readClipboard).toBe(copied);
+    const second = await waitForClipboard(readClipboard, (text) => text !== OUTSIDE && text !== copied);
+    expectReplaced(second, OUTSIDE);
+    expect(await expectStable(readClipboard, 1000)).toBe(second);
   });
 
   test('leaves ordinary text, functional links, and unattributed relative links alone', async ({
@@ -1574,13 +1640,13 @@ test.describe('extension pages', () => {
     await expect(popup.getByRole('heading', { name: 'UTM Randomizer' })).toBeVisible();
     await expect(popup.getByRole('switch', { name: /Clean links automatically/ })).toBeChecked();
     await expect(popup.getByRole('switch', { name: /Clean the address bar/ })).toHaveCount(0);
-    await expect(popup.getByRole('switch', { name: /Watch the whole clipboard/ })).toBeChecked();
+    await expect(popup.getByRole('switch', { name: /Watch browser copies/ })).toBeChecked();
     await expect(popup.getByRole('radio', { name: 'Decoy' })).toBeChecked();
     await expect(popup.getByRole('radio', { name: 'Hybrid' })).not.toBeChecked();
 
     await popup.getByText('Remove', { exact: true }).click();
     await popup.getByRole('switch', { name: /Show notifications/ }).uncheck();
-    await popup.getByRole('switch', { name: /Watch the whole clipboard/ }).uncheck();
+    await popup.getByRole('switch', { name: /Watch browser copies/ }).uncheck();
     await expect
       .poll(() => serviceWorker.evaluate(() => chrome.storage.local.get(['mode', 'notify', 'watchClipboard'])))
       .toEqual({ mode: 'strip', notify: false, watchClipboard: false });
@@ -1656,7 +1722,8 @@ test.describe('extension pages', () => {
         type: 'offscreen-reconcile',
         text,
         embedded: false,
-        config: { mode: 'strip', key: 'test' },
+        pageCopy: true,
+        config: { mode: 'strip' },
         types: ['text/plain'],
         epoch: response.epoch,
       });

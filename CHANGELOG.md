@@ -6,6 +6,7 @@
 
 - Page addresses remain unchanged on load, navigation, and settings changes; tracking is cleaned only in copied links.
 - Each copy draws fresh replacement values while matching text and HTML agree. Completed clipboard state prevents repeated processing; no per-install replacement key is stored.
+- Clipboard observation runs only while Chrome is focused. Returning to Chrome establishes an untouched baseline; paste and ordinary typing do not authorize cleaning.
 
 ## [2.0.0] - 2026-09-29
 

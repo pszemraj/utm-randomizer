@@ -64,7 +64,6 @@ class FakeClipboard extends EventTarget implements WatchedClipboard {
 let watcher: CopyWatcher | undefined;
 let settings: Settings;
 let rewrites: RewriteEvent[];
-let now: number;
 let reconcile: ReturnType<typeof vi.fn<WatcherDeps['reconcile']>>;
 let restore: ReturnType<typeof vi.fn<WatcherDeps['restore']>>;
 let invalidateReads: ReturnType<typeof vi.fn<WatcherDeps['invalidateReads']>>;
@@ -75,7 +74,6 @@ let acknowledgeWrite: Promise<void> | undefined;
 function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {}, isContextValid = () => true) {
   settings = { ...DEFAULT_SETTINGS, mode: 'strip', ...overrides };
   rewrites = [];
-  now = 100_000;
   acknowledgeWrite = undefined;
   reconcile = vi.fn<WatcherDeps['reconcile']>().mockResolvedValue(undefined);
   restore = vi.fn<WatcherDeps['restore']>().mockResolvedValue(undefined);
@@ -93,7 +91,6 @@ function start(clipboard: FakeClipboard | null, overrides: Partial<Settings> = {
       return acknowledgeWrite;
     },
     isContextValid,
-    now: () => now,
   });
   return watcher;
 }
@@ -372,7 +369,70 @@ function pendingRead() {
 }
 
 describe('clipboard reconciliation', () => {
-  it('keeps ordinary typing local and advances intent only when its custom hotkey changes the clipboard', async () => {
+  it('does not authorize a clipboard change after ordinary gestures or Paste', async () => {
+    const clipboard = new FakeClipboard(true);
+    start(clipboard, { watchClipboard: false });
+    interact();
+    document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true })));
+    clipboard.change(TRACKED);
+    await flush();
+    expect(invalidateReads).not.toHaveBeenCalled();
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('requires a changed full copy-control baseline (clipboardchange %s)', async (modern) => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(modern);
+    clipboard.text = 'A product';
+    clipboard.html = `<a href="${TRACKED}">Original</a>`;
+    clipboard.types = ['text/plain', 'text/html'];
+    start(clipboard, { watchClipboard: false });
+    document.body.innerHTML = '<button>Copy link</button>';
+    const button = document.querySelector('button');
+    button?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(reconcile.mock.calls.every((call) => call[6] === true)).toBe(true);
+    reconcile.mockClear();
+    clipboard.html = `<a href="${TRACKED}">Changed</a>`;
+    clipboard.change('A product', ['text/plain', 'text/html']);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(reconcile).toHaveBeenCalledWith('A product', false, 'A product', ['text/plain', 'text/html'], EPOCH, true);
+  });
+
+  it('cancels a copy-control baseline when the page loses focus', async () => {
+    vi.useFakeTimers();
+    const clipboard = new FakeClipboard(true);
+    start(clipboard, { watchClipboard: false });
+    const baseline = pendingRead();
+    vi.spyOn(clipboard, 'readText').mockReturnValueOnce(baseline.promise);
+    document.body.innerHTML = '<button>Copy link</button>';
+    document.querySelector('button')?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
+    window.dispatchEvent(trusted(new Event('blur')));
+    baseline.resolve('before');
+    clipboard.change(TRACKED);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false].flatMap((modern) => ['no items', 'empty item'].map((shape) => ({ modern, shape }))))(
+    'recognizes an empty clipboard baseline ($shape, clipboardchange $modern)',
+    async ({ modern, shape }) => {
+      vi.useFakeTimers();
+      const clipboard = new FakeClipboard(modern);
+      start(clipboard, { watchClipboard: false });
+      vi.spyOn(clipboard, 'read').mockResolvedValueOnce(
+        shape === 'no items'
+          ? []
+          : [{ types: [], getType: () => Promise.reject(new Error('An empty item has no flavors')) }],
+      );
+      document.body.innerHTML = '<button>Copy link</button>';
+      document.querySelector('button')?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
+      clipboard.change(TRACKED);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(reconcile).toHaveBeenCalledWith(TRACKED, false, '', ['text/plain'], EPOCH, true);
+    },
+  );
+  it('treats a clipboard change after ordinary typing as background observation', async () => {
     const clipboard = new FakeClipboard(true);
     start(clipboard);
     for (const key of ['h', 'e', 'l', 'l', 'o', 'ArrowLeft', 'Shift', 'Tab']) {
@@ -380,19 +440,19 @@ describe('clipboard reconciliation', () => {
     }
     expect(invalidateReads).not.toHaveBeenCalled();
     expect(beginRead).not.toHaveBeenCalled();
-    invalidateReads.mockResolvedValue('00000000-0000-4000-8000-000000000002');
+    beginRead.mockResolvedValue('00000000-0000-4000-8000-000000000002');
     clipboard.change(TRACKED);
     await flush();
-    expect(invalidateReads).toHaveBeenCalledOnce();
+    expect(invalidateReads).not.toHaveBeenCalled();
     expect(reconcile).toHaveBeenCalledWith(
       TRACKED,
       true,
       undefined,
       ['text/plain'],
       '00000000-0000-4000-8000-000000000002',
-      true,
+      false,
     );
-    expect(beginRead).not.toHaveBeenCalled();
+    expect(beginRead).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -403,15 +463,16 @@ describe('clipboard reconciliation', () => {
     { key: ' ' },
     { key: 'ContextMenu' },
     { key: 'F10', shiftKey: true },
-  ])('advances each copy-capable key gesture even while an older intent awaits acknowledgement: $key', (init) => {
+  ])('does not authorize copying from a keydown alone: $key', (init) => {
     start(new FakeClipboard(true));
     invalidateReads.mockReturnValue(new Promise(() => undefined));
     document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { ...init, bubbles: true })));
     document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { ...init, bubbles: true })));
-    expect(invalidateReads).toHaveBeenCalledTimes(2);
+    expect(invalidateReads).not.toHaveBeenCalled();
   });
 
   it('binds page reads to their acknowledged intent instead of adopting a newer shared generation', async () => {
+    vi.useFakeTimers();
     const clipboard = new FakeClipboard(true);
     start(clipboard, { watchClipboard: false });
     let acknowledge!: (epoch: string) => void;
@@ -421,9 +482,9 @@ describe('clipboard reconciliation', () => {
           acknowledge = resolve;
         }),
     );
-    interact();
+    document.body.dispatchEvent(copyEvent());
     clipboard.change(TRACKED);
-    await flush();
+    await vi.advanceTimersByTimeAsync(50);
     expect(invalidateReads).toHaveBeenCalledOnce();
     expect(beginRead).not.toHaveBeenCalled();
     beginRead.mockResolvedValue('00000000-0000-4000-8000-000000000005');
@@ -431,7 +492,7 @@ describe('clipboard reconciliation', () => {
     await flush();
     expect(reconcile).toHaveBeenCalledWith(
       TRACKED,
-      true,
+      false,
       undefined,
       ['text/plain'],
       '00000000-0000-4000-8000-000000000004',
@@ -489,7 +550,7 @@ describe('clipboard reconciliation', () => {
     clipboard.change(text, html ? ['text/plain', 'text/html'] : ['text/plain']);
     await flush();
     const types = html ? ['text/plain', 'text/html'] : ['text/plain'];
-    expect(reconcile).toHaveBeenCalledWith(text, !html, undefined, types, EPOCH, true, true);
+    expect(reconcile).toHaveBeenCalledWith(text, !html, undefined, types, EPOCH, false, true);
     expect(await current.inspect()).toBe(true);
     expect(reconcile).toHaveBeenLastCalledWith(text, true, undefined, types, EPOCH, false, true);
   });
@@ -500,7 +561,7 @@ describe('clipboard reconciliation', () => {
     interact();
     clipboard.change(TRACKED);
     await flush();
-    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], EPOCH, true);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], EPOCH, false);
     expect(clipboard.writes).toEqual([]);
     expect(rewrites).toEqual([]);
   });
@@ -511,23 +572,25 @@ describe('clipboard reconciliation', () => {
     interact();
     clipboard.change(TRACKED);
     await flush();
-    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], EPOCH, true);
+    expect(reconcile).toHaveBeenCalledWith(TRACKED, true, undefined, ['text/plain'], EPOCH, false);
     const decoy = rewriteUrl(TRACKED, { mode: 'decoy', key: 'test-key' })?.url;
     if (!decoy) throw new Error('Missing decoy link');
     clipboard.change(decoy);
     await flush();
-    expect(reconcile).toHaveBeenLastCalledWith(decoy, true, undefined, ['text/plain'], EPOCH, true);
+    expect(reconcile).toHaveBeenLastCalledWith(decoy, true, undefined, ['text/plain'], EPOCH, false);
   });
 
-  it('retains page context for relative candidates without attributing background relative links', async () => {
+  it('retains page context for proven relative copies without attributing background relative links', async () => {
+    vi.useFakeTimers();
     const clipboard = new FakeClipboard(true);
     const current = start(clipboard);
     vi.stubGlobal('location', { href: 'https://example.com/page' });
     try {
-      interact();
+      document.body.innerHTML = '<button>Copy link</button>';
+      document.querySelector('button')?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
       clipboard.change('/item?utm_source=email');
-      await flush();
-      expect(reconcile).toHaveBeenCalledWith('/item?utm_source=email', true, undefined, ['text/plain'], EPOCH, true);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(reconcile).toHaveBeenCalledWith('/item?utm_source=email', false, '', ['text/plain'], EPOCH, true);
       reconcile.mockClear();
       expect(await current.inspect()).toBe(true);
       expect(reconcile).toHaveBeenCalledWith(
@@ -563,10 +626,11 @@ describe('clipboard reconciliation', () => {
     clipboard.html = `<a href="${TRACKED}">A product</a>`;
     clipboard.change('A product', ['text/plain', 'text/html']);
     await flush();
-    expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain', 'text/html'], EPOCH, true);
+    expect(reconcile).toHaveBeenCalledWith('A product', false, undefined, ['text/plain', 'text/html'], EPOCH, false);
   });
 
   it('reconciles changed HTML even when plain text matches a synchronous rewrite', async () => {
+    vi.useFakeTimers();
     const clipboard = new FakeClipboard(true);
     const current = start(clipboard);
     const event = copyEvent();
@@ -578,7 +642,7 @@ describe('clipboard reconciliation', () => {
 
     clipboard.html = '<a href="https://example.com/other?utm_source=email">New target</a>';
     clipboard.change(CLEAN, ['text/plain', 'text/html']);
-    await flush();
+    await vi.advanceTimersByTimeAsync(50);
     expect(reconcile).toHaveBeenCalledWith(CLEAN, false, undefined, ['text/plain', 'text/html'], EPOCH, true);
     reconcile.mockClear();
     await current.inspect();
@@ -603,6 +667,7 @@ describe('clipboard reconciliation', () => {
     await flush();
     expect(reconcile).not.toHaveBeenCalled();
     // New intent cancels older reads, but cannot forget a write still awaiting registration.
+    window.dispatchEvent(trusted(new Event('blur')));
     interact();
     document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { key: 'a', bubbles: true })));
     clipboard.change(text, ['text/plain', 'text/html']);
@@ -618,7 +683,7 @@ describe('clipboard reconciliation', () => {
 
   it('rejects synthetic copy, gesture and clipboard-change events', async () => {
     const clipboard = new FakeClipboard(true);
-    start(clipboard);
+    start(clipboard, { watchClipboard: false });
     const data = new DataTransfer();
     data.setData('text/plain', TRACKED);
     const copy = new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true });
@@ -652,10 +717,10 @@ describe('clipboard reconciliation', () => {
     await flush();
     old.resolve(TRACKED);
     await flush();
-    expect(reconcile.mock.calls).toEqual([[newer, true, undefined, ['text/plain'], EPOCH, true]]);
+    expect(reconcile.mock.calls).toEqual([[newer, true, undefined, ['text/plain'], EPOCH, false]]);
   });
 
-  it.each(['Undo', 'stop', 'settings', 'new intent', 'ordinary typing'])(
+  it.each(['Undo', 'stop', 'settings', 'new intent', 'ordinary typing', 'blur'])(
     'invalidates a pending read on %s',
     async (action) => {
       const clipboard = new FakeClipboard(true);
@@ -668,9 +733,10 @@ describe('clipboard reconciliation', () => {
       if (action === 'Undo') await current.restore(TRACKED);
       else if (action === 'stop') current.stop();
       else if (action === 'settings') current.invalidate();
+      else if (action === 'blur') window.dispatchEvent(trusted(new Event('blur')));
       else if (action === 'ordinary typing') {
         document.body.dispatchEvent(trusted(new KeyboardEvent('keydown', { key: 'a', bubbles: true })));
-        expect(invalidateReads).toHaveBeenCalledOnce();
+        expect(invalidateReads).not.toHaveBeenCalled();
       } else interact();
       read.resolve(TRACKED);
       await flush();
@@ -687,15 +753,10 @@ describe('clipboard reconciliation', () => {
     expect(clipboard.writes).toEqual([]);
   });
 
-  it('ignores expired intent and stops after context removal', async () => {
+  it('stops after context removal', async () => {
     const clipboard = new FakeClipboard(true);
     let valid = true;
     start(clipboard, {}, () => valid);
-    interact();
-    now += 60_000;
-    clipboard.change(TRACKED);
-    await flush();
-    expect(reconcile).not.toHaveBeenCalled();
     interact();
     valid = false;
     clipboard.change(TRACKED);

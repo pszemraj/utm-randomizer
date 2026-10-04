@@ -46,6 +46,7 @@ describe('runtime message payloads', () => {
     },
     {
       type: 'offscreen-reconcile',
+      pageCopy: true,
       text: 'copy',
       embedded: false,
       types: ['text/plain'],
@@ -55,6 +56,7 @@ describe('runtime message payloads', () => {
     },
     {
       type: 'offscreen-reconcile',
+      pageCopy: true,
       text: 'copy',
       embedded: false,
       types: ['text/plain'],
@@ -136,6 +138,7 @@ describe('runtime message payloads', () => {
     },
     {
       type: 'offscreen-reconcile',
+      pageCopy: true,
       text: 'x'.repeat(100_001),
       embedded: false,
       types: ['text/plain'],
@@ -165,6 +168,7 @@ describe('runtime message payloads', () => {
     },
     {
       type: 'offscreen-reconcile',
+      pageCopy: true,
       text: 'copy',
       embedded: false,
       types: ['text/plain'],
@@ -172,6 +176,7 @@ describe('runtime message payloads', () => {
     },
     {
       type: 'offscreen-reconcile',
+      pageCopy: true,
       text: 'copy',
       embedded: false,
       types: ['text/plain'],
@@ -229,7 +234,15 @@ describe('runtime message payloads', () => {
       types: ['text/plain'],
       epoch: Number.MAX_SAFE_INTEGER + 1,
     },
-    { type: 'offscreen-reconcile', text: 'copy', embedded: true, types: ['text/plain'], config, epoch: '0' },
+    {
+      type: 'offscreen-reconcile',
+      pageCopy: true,
+      text: 'copy',
+      embedded: true,
+      types: ['text/plain'],
+      config,
+      epoch: '0',
+    },
     {
       type: 'reconcile-clipboard',
       text: 'copy',
@@ -247,6 +260,7 @@ describe('runtime message payloads', () => {
     },
     {
       type: 'offscreen-reconcile',
+      pageCopy: true,
       text: 'copy',
       embedded: false,
       types: ['text/plain'],
@@ -256,6 +270,7 @@ describe('runtime message payloads', () => {
     },
     {
       type: 'offscreen-reconcile',
+      pageCopy: true,
       text: 'copy',
       embedded: false,
       types: ['text/plain'],
@@ -300,6 +315,7 @@ it.each([0, '', '0', EPOCH.slice(1), EPOCH.replace('4', 'g')])(
     expect(
       isExtensionMessage({
         type: 'offscreen-reconcile',
+        pageCopy: true,
         text: 'copy',
         embedded: false,
         types: ['text/plain'],
