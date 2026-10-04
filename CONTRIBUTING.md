@@ -8,7 +8,7 @@ Use the [source build](README.md#build-from-source) to load the extension and th
 
 Run focused regression tests for changed behavior and the applicable [lint, formatting, type, and build checks](docs/development.md). For documentation-only changes, check formatting, relative links, and examples against the current code. `npm run format` fixes formatting.
 
-Unit mocks cannot establish native clipboard access, format handling, browser focus, or worker termination behavior. Changes to those paths require a real loaded-extension browser run. Exercise real clipboard data and browser focus; inject delays or failures when testing races. Cover newer copies, Undo, unsupported formats, and stale writes where relevant. Keep native browser-control workflows that automation cannot reach in the [manual checks](docs/development.md#manual-testing).
+Unit mocks cannot establish native clipboard access, format handling, browser focus, or worker termination behavior. Changes to those paths require a real loaded-extension browser run. Exercise real clipboard data and browser focus; inject delays or failures when testing races. Cover newer copies, unsupported formats, and stale writes where relevant. Keep native browser-control workflows that automation cannot reach in the [manual checks](docs/development.md#manual-testing).
 
 ## Code style
 
@@ -51,12 +51,12 @@ Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve th
 
 ## Submitting changes
 
-1. Create a branch named with a Conventional Commits type, for example `feat/clipboard-undo` or `fix/relative-links`.
-2. Write commit messages in the same style: `feat: add clipboard Undo`, `fix(rewrite): preserve relative link bytes`.
+1. Create a branch named with a Conventional Commits type, for example `feat/replacement-values` or `fix/relative-links`.
+2. Write commit messages in the same style: `feat: add replacement values`, `fix(rewrite): preserve relative link bytes`.
 3. Complete the [checks](#checks).
-4. If behavior changes, update `README.md` and add an entry to `CHANGELOG.md`.
+4. If behavior changes, update the relevant usage and behavior documentation.
 5. Open a pull request describing what changed and how you tested it.
 
 ## Reporting issues
 
-Include your Chrome version, the extension version (shown in the popup), steps to reproduce, the link before and after (remove anything personal), and what you expected instead. For a link that broke after being rewritten, the site's domain and the parameter name are usually enough.
+Include your Chrome version, the extension version (shown in `chrome://extensions`), steps to reproduce, the link before and after (remove anything personal), and what you expected instead. For a link that broke after being rewritten, the site's domain and the parameter name are usually enough.

@@ -26,13 +26,13 @@ npm run icons
 
 ## Browser tests
 
-The end-to-end tests load `dist/` into Playwright's Chromium and exercise single-URL clipboard changes, unchanged page addresses, non-URL and non-text controls, and Undo. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser.
+The end-to-end tests load `dist/` into Playwright's Chromium and exercise single-URL clipboard changes, unchanged page addresses, settings, and non-URL and non-text controls. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser.
 
 Focus tests require `HEADED=1`. Headless runs skip them because minimizing a headless window does not dispatch the native focus events those tests exercise.
 
 See the [validation requirements](../CONTRIBUTING.md#checks) when choosing local checks.
 
-Popup controls run in extension tabs; Copy button tests supply the tab URL. Background-watcher tests write through an extension tab, including cleaning without a webpage reader; focus tests minimize and restore the browser window. These tests do not exercise native address-bar copying, browser menu selection, shortcut invocation, toolbar popup opening, or copying from another application.
+Settings tests run the options page in an extension tab. Background-watcher tests write through an extension tab, including cleaning without a webpage reader; focus tests minimize and restore the browser window. These tests do not exercise native address-bar copying, browser menu selection, the embedded options view, or copying from another application.
 
 ## Manual testing
 
@@ -41,8 +41,8 @@ The playground provides copy controls, tracked and functional links, and a box t
 Use Chrome's actual controls for the workflows outside the automated suite:
 
 - Copy the tracked address with Ctrl+L / Cmd+L followed by Ctrl+C / Cmd+C. Check the clipboard both while the address bar remains focused and after returning to the page; separately try switching directly to another app to exercise the final tick. The page address must stay unchanged. See the [current focus limits](behavior.md#background-watching).
-- Select **Copy link address** and the extension's copy actions from real context menus. Invoke **Alt+Shift+U**, and open the toolbar popup to test its Copy button and settings.
-- Check the toolbar indicator and the popup's **Undo last rewrite** button, including while automatic cleaning is paused.
+- Select **Copy link address** from a real context menu. Check Chrome's focus events while the menu or address-bar dropdown is open; neither should report Chrome as unfocused.
+- Open `chrome://extensions` -> **UTM Randomizer** -> **Details** -> **Extension options**. Check on/off and each replacement mode.
 - With Chrome unfocused and the watcher stopped, copy a tracked link in another app, then focus Chrome and paste. That existing clipboard entry must remain unchanged. Separately write a new URL to the clipboard while Chrome stays focused: it should be processed regardless of the writing application.
 
 ## Packaging and CI
@@ -54,9 +54,9 @@ CI runs only lint, formatting, and type checks. Run tests and packaging locally 
 ## Source map
 
 - `src/manifest.json`: extension manifest; the build fills in `version` from `package.json`.
-- `src/background.ts`: service worker: focus checks, context menu, shortcut, toolbar feedback, statistics, and clipboard watcher lifecycle.
+- `src/background.ts`: service worker: focus checks, settings updates, and clipboard watcher lifecycle.
 - `src/offscreen.ts`: background clipboard watcher and clipboard writer.
-- `src/popup.*`: toolbar popup.
+- `src/options.*`: on/off and mode settings, opened through Chrome's extension management page.
 - `src/lib/params.ts`: exact global tracking-parameter allowlist.
 - `src/lib/rewrite.ts`: in-place rewriting of a whole URL.
 - `src/lib/values.ts`, `prng.ts`: Decoy, Silly, and Hybrid replacement values, seeded per copy.

@@ -4,13 +4,7 @@
 
 A new clipboard entry containing a single URL is processed while Chrome is focused, regardless of which application or page wrote it. The extension replaces supported tracking values using the selected mode, or deletes them in Remove mode. It changes only clipboard contents: page links, addresses, history, and navigation stay unchanged.
 
-Automatic rewrites show a Chrome toolbar indicator when feedback is enabled. The extension does not send system notifications. Use **Undo last rewrite** in the popup to restore the original URL text until different clipboard contents are observed. Undo does not restore accompanying HTML or other formats.
-
-Explicit actions copy a cleaned link on demand: right-click a link -> **Copy link with decoy tracking**; right-click a page -> **Copy page link with decoy tracking**; and **Alt+Shift+U** or the popup's **Copy this page's link** button for the current page. These actions use the selected mode and still work while automatic cleaning is paused. The shortcut can be changed at `chrome://extensions/shortcuts`.
-
-Explicit Copy and Undo require Chrome to be focused. On focus loss, automatic cleaning takes one final clipboard reading and then stops. Returning to Chrome establishes a new untouched baseline.
-
-Pausing cleaning stops automatic clipboard checks; explicit copy actions remain available. Counters track rewritten URLs in total and in the current browser session.
+The only settings are on/off and replacement mode, available through [Chrome's extension options](../README.md#usage). Turning cleaning off stops clipboard checks. On focus loss, automatic cleaning takes one final clipboard reading and then stops. Returning to Chrome establishes a new untouched baseline. The extension has no toolbar popup, keyboard shortcut, custom copy actions, Undo, counters, or notifications.
 
 ## Replacement values
 
@@ -37,11 +31,11 @@ All other parameters stay untouched. Coverage is deliberately limited: YouTube a
 
 Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less links such as `www.example.com/page?utm_source=x` are supported. Relative URLs stay unchanged because clipboard text does not identify the page they came from. Trailing punctuation remains part of a standalone URL.
 
-Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. A larger previous clipboard value does not prevent cleaning a smaller new copy. Explicit Copy still copies longer links unchanged and accepts replacements that grow beyond that input bound.
+Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. A larger previous clipboard value does not prevent cleaning a smaller new copy.
 
 ### Clipboard formats
 
-A rewritten URL is written as plain text. If its copy also included HTML, a URI list, or hidden web-added data, those accompanying formats are discarded. Undo restores only the original URL text. Detectable images, files, and custom non-text formats leave the entire copy unchanged.
+A rewritten URL is written as plain text. If its copy also included HTML, a URI list, or hidden web-added data, those accompanying formats are discarded. Detectable images, files, and custom non-text formats leave the entire copy unchanged.
 
 These rules apply only when the copied text itself is an eligible URL. Copying a document, image, or ordinary text does not authorize rewriting URLs inside it or changing its formats.
 
@@ -53,9 +47,9 @@ The extension does not inject scripts into web pages or intercept copy/cut event
 
 ### Clipboard coordination
 
-The offscreen document reads, checks, and writes each eligible clipboard entry synchronously in one tick. Pausing stops polling while keeping the current write record available for Undo. Explicit copies create the document when needed. The service worker starts and stops polling from Chrome-window focus changes. Losing focus triggers a final tick before polling stops. Clipboard operations are not atomic with arbitrary external apps.
+The offscreen document reads, checks, and writes each eligible clipboard entry synchronously in one tick. The service worker starts and stops polling from settings and Chrome-window focus changes. Losing focus triggers a final tick before polling stops. Clipboard operations are not atomic with arbitrary external apps.
 
-The coordinator retains the current successful write and its original URL in memory. It reads back its own output and leaves repeated observations of that output alone. The original URL is not a suppression rule: copying it again draws fresh replacements. Different observed contents replace the current record, even when they contain no URL. Undo writes and records the original text so that the restored entry stays untouched. Closing the coordinator releases the record; its first read after restarting establishes a baseline. There is no clipboard history or timer that reprocesses unchanged contents.
+The coordinator retains the current entry's before-and-after identities in memory. It reads back its own output and leaves repeated observations of that output alone. The original URL is not a suppression rule: copying it again draws fresh replacements. Different observed contents replace the current record, even when they contain no URL. Closing the coordinator releases the record; its first read after restarting establishes a baseline. There is no clipboard history or timer that reprocesses unchanged contents.
 
 ### Background watching
 

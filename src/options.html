@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>UTM Randomizer settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>UTM Randomizer</h1>
+      <label class="enabled">
+        <input type="checkbox" id="enabled" disabled />
+        Clean copied links
+      </label>
+      <label class="mode" for="mode">Mode</label>
+      <select id="mode" disabled>
+        <option value="decoy">Decoy — plausible tracking values</option>
+        <option value="silly">Silly — nonsense tracking values</option>
+        <option value="hybrid">Hybrid — a mix of decoys and nonsense</option>
+        <option value="strip">Remove — delete tracking parameters</option>
+      </select>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

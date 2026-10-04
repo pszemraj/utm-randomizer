@@ -1,20 +1,17 @@
 import type { Mode } from './rewrite';
 
-/** User settings, stored in `chrome.storage.local` and edited from the popup. */
+/** User settings, stored in `chrome.storage.local` and edited from Extension options. */
 export interface Settings {
-  /** Master switch for everything automatic; explicit copies (menu, shortcut, popup) always work. */
+  /** Enable automatic clipboard URL rewriting. */
   enabled: boolean;
   /** Believable decoys, obvious nonsense, or removal. */
   mode: Mode;
-  /** Show a browser-toolbar indication after a rewrite. */
-  notify: boolean;
 }
 
 /** Settings used until the user changes them, and for any stored value that is missing or invalid. */
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   mode: 'decoy',
-  notify: true,
 };
 
 const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
@@ -22,14 +19,9 @@ const MODES: readonly Mode[] = ['decoy', 'silly', 'hybrid', 'strip'];
 
 /** Fills in defaults for missing or malformed stored values. */
 function normalize(stored: Record<string, unknown>): Settings {
-  const flag = (key: 'enabled' | 'notify') => {
-    const value = stored[key];
-    return typeof value === 'boolean' ? value : DEFAULT_SETTINGS[key];
-  };
   return {
-    enabled: flag('enabled'),
+    enabled: typeof stored.enabled === 'boolean' ? stored.enabled : DEFAULT_SETTINGS.enabled,
     mode: MODES.find((mode) => mode === stored.mode) ?? DEFAULT_SETTINGS.mode,
-    notify: flag('notify'),
   };
 }
 
@@ -61,38 +53,4 @@ export function watchSettings(listener: (settings: Settings) => void): () => voi
       void loadSettings().then(listener);
     }
   });
-}
-
-/** Wording for popup status and menus in the given mode. */
-export function describeMode(mode: Mode): { emoji: string; done: string; copyLink: string; copyPage: string } {
-  switch (mode) {
-    case 'decoy':
-      return {
-        emoji: '🎭',
-        done: 'swapped for decoys',
-        copyLink: 'Copy link with decoy tracking',
-        copyPage: 'Copy page link with decoy tracking',
-      };
-    case 'silly':
-      return {
-        emoji: '🎲',
-        done: 'randomized',
-        copyLink: 'Copy link with tracking randomized',
-        copyPage: 'Copy page link with tracking randomized',
-      };
-    case 'hybrid':
-      return {
-        emoji: '🃏',
-        done: 'swapped for decoys and nonsense',
-        copyLink: 'Copy link with hybrid tracking',
-        copyPage: 'Copy page link with hybrid tracking',
-      };
-    case 'strip':
-      return {
-        emoji: '🧹',
-        done: 'removed',
-        copyLink: 'Copy link without tracking',
-        copyPage: 'Copy page link without tracking',
-      };
-  }
 }

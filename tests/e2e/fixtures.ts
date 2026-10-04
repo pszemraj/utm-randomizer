@@ -44,7 +44,7 @@ const EXTENSION_PATH = path.resolve('dist');
 /** Opens an extension page with a textarea for reading and writing the clipboard in tests. */
 async function extensionPage(context: BrowserContext, extensionId: string): Promise<Page> {
   const page = await context.newPage();
-  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await page.goto(`chrome-extension://${extensionId}/options.html`);
   await page.evaluate(() => {
     const field = document.createElement('textarea');
     field.id = 'test-clipboard';

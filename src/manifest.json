@@ -4,27 +4,13 @@
   "version": "0.0.0",
   "description": "Replaces known tracking parameters in copied links with decoys or nonsense, or removes them.",
   "minimum_chrome_version": "123",
-  "permissions": ["activeTab", "clipboardRead", "clipboardWrite", "contextMenus", "offscreen", "storage"],
+  "permissions": ["clipboardRead", "clipboardWrite", "offscreen", "storage"],
   "background": {
     "service_worker": "background.js"
   },
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "UTM Randomizer",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "32": "icons/icon32.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
-  },
-  "commands": {
-    "copy-clean-page-url": {
-      "suggested_key": {
-        "default": "Alt+Shift+U"
-      },
-      "description": "Copy the current page's link with tracking cleaned"
-    }
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
   },
   "icons": {
     "16": "icons/icon16.png",

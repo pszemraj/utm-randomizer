@@ -1,0 +1,43 @@
+:root {
+  color-scheme: light dark;
+  font:
+    14px/1.5 system-ui,
+    sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 20px;
+}
+
+main {
+  max-width: 420px;
+}
+
+h1 {
+  margin: 0 0 20px;
+  font-size: 20px;
+}
+
+.enabled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.mode {
+  display: block;
+  margin-bottom: 6px;
+}
+
+select {
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}

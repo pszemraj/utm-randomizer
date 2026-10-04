@@ -113,7 +113,7 @@ test.describe('native clipboard processing', () => {
   }) => {
     await setSettings({ mode: 'strip' });
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
     await page.bringToFront();
     await waitForWatcher(true);
     await writeClipboardExternally(ARTICLE);
@@ -193,22 +193,6 @@ test.describe('native clipboard processing', () => {
     const second = await waitForClipboard(readClipboard, (text) => text !== first && text !== 'unrelated contents');
     expect(new URL(second).searchParams.get('id')).toBe('42');
     expect(await expectStable(readClipboard)).toBe(second);
-  });
-
-  test('counts each rewritten clipboard URL once', async ({
-    playground,
-    readClipboard,
-    serviceWorker,
-    waitForWatcher,
-  }) => {
-    await waitForWatcher(true);
-    await playground.getByTestId('copy-writetext').click();
-    await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
-    await expectStable(readClipboard);
-    expect(await serviceWorker.evaluate(async () => (await chrome.storage.local.get('totalCount')).totalCount)).toBe(1);
-    expect(
-      await serviceWorker.evaluate(async () => (await chrome.storage.session.get('sessionCount')).sessionCount),
-    ).toBe(1);
   });
 
   test('preserves percent-encoded identifier and functional bytes', async ({
@@ -415,6 +399,7 @@ test.describe('focus and navigation', () => {
   test('retains completed processing while the service worker restarts', async ({
     context,
     extensionId,
+    serviceWorker,
     playground,
     readClipboard,
     waitForWatcher,
@@ -422,15 +407,38 @@ test.describe('focus and navigation', () => {
     await waitForWatcher(true);
     await playground.getByTestId('copy-writetext').click();
     const before = await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(options.locator('#mode')).toBeEnabled();
     const session = await context.newCDPSession(playground);
-    await session.send('ServiceWorker.enable');
-    await session.send('ServiceWorker.stopAllWorkers');
-    // Opening the real popup wakes its worker through the popup's count request.
-    const popup = await context.newPage();
-    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(popup.getByRole('heading', { name: 'UTM Randomizer' })).toBeVisible();
+    const workerUrl = `chrome-extension://${extensionId}/background.js`;
+    const { targetInfos } = await session.send('Target.getTargets');
+    const original = targetInfos.find((target) => target.type === 'service_worker' && target.url === workerUrl);
+    if (!original) throw new Error('Missing extension service worker target');
+    await serviceWorker.evaluate(() => {
+      (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe = true;
+    });
+    await session.send('Target.closeTarget', { targetId: original.targetId });
+    await expect
+      .poll(async () =>
+        (await session.send('Target.getTargets')).targetInfos.some((target) => target.targetId === original.targetId),
+      )
+      .toBe(false);
+    // A settings change wakes the worker through storage.onChanged.
+    await options.locator('#mode').selectOption('hybrid');
+    await expect
+      .poll(async () =>
+        (await session.send('Target.getTargets')).targetInfos.some(
+          (target) => target.type === 'service_worker' && target.url === workerUrl,
+        ),
+      )
+      .toBe(true);
+    // Chrome reuses the target ID; reset worker globals prove that execution really restarted.
+    expect(
+      await serviceWorker.evaluate(() => (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe),
+    ).toBeUndefined();
     expect(await expectStable(readClipboard, 1200)).toBe(before);
-    await popup.close();
+    await options.close();
     await session.detach();
   });
 
@@ -453,158 +461,22 @@ test.describe('focus and navigation', () => {
   });
 });
 
-test.describe('extension controls', () => {
-  test('explicit copies support generated and unchanged URLs beyond the automatic bound', async ({
-    context,
-    extensionId,
-    readClipboard,
-    setSettings,
-  }) => {
-    await setSettings({ enabled: false, mode: 'decoy' });
-    const input = `https://example.com/?${Array<string>(6000).fill('utm_source=x').join('&')}`;
-    const oversized = `https://example.com/?data=${'x'.repeat(100_001)}`;
-    for (const url of [input, oversized]) {
-      const popup = await context.newPage();
-      // A tab-hosted popup has no toolbar invocation grant; supply only that active-tab input.
-      await popup.addInitScript((pageUrl) => {
-        Object.defineProperty(chrome.tabs, 'query', { value: () => Promise.resolve([{ url: pageUrl }]) });
-      }, url);
-      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-      await popup.locator('#copyPage').click();
-      await expect(popup.locator('#copyStatus')).toContainText('Copied');
-      const copied = await readClipboard();
-      if (url === oversized) expect(copied).toBe(oversized);
-      else {
-        expect(copied.length).toBeGreaterThan(100_000);
-        expect(new URL(copied).searchParams.getAll('utm_source')).toHaveLength(6000);
-      }
-      await popup.close();
-    }
-  });
-
-  test('popup saves settings without obsolete cleaning-layer controls', async ({
-    context,
-    extensionId,
-    serviceWorker,
-  }) => {
-    const popup = await context.newPage();
-    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(popup.getByRole('heading', { name: 'UTM Randomizer' })).toBeVisible();
-    await expect(popup.getByRole('switch', { name: /Clean links automatically/ })).toBeChecked();
-    await expect(popup.getByRole('switch', { name: /Watch browser copies|Clean the address bar/ })).toHaveCount(0);
-    await popup.getByText('Remove', { exact: true }).click();
-    await popup.locator('#notify').uncheck();
+test.describe('extension options', () => {
+  test('saves only automatic cleaning and mode settings', async ({ context, extensionId, serviceWorker }) => {
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(options.getByRole('heading', { name: 'UTM Randomizer' })).toBeVisible();
+    await expect(options.locator('#enabled')).toBeChecked();
+    await options.locator('#mode').selectOption('strip');
+    await options.locator('#enabled').uncheck();
     await expect
-      .poll(() => serviceWorker.evaluate(() => chrome.storage.local.get(['mode', 'notify'])))
-      .toEqual({ mode: 'strip', notify: false });
-    expect(await serviceWorker.evaluate(() => chrome.runtime.getManifest().permissions)).not.toContain('notifications');
-  });
-
-  test('focus loss cancels an explicit copy already queued even after focus returns', async ({
-    context,
-    extensionId,
-    serviceWorker,
-    readClipboard,
-    setSettings,
-    waitForWatcher,
-  }) => {
-    test.skip(
-      !process.env.HEADED,
-      'Headless Chromium changes window state without dispatching native focus events; run HEADED=1 for this control.',
-    );
-    await setSettings({ enabled: false });
-    await waitForWatcher(false);
-    const popup = await context.newPage();
-    await popup.addInitScript((url) => {
-      Object.defineProperty(chrome.tabs, 'query', { value: () => Promise.resolve([{ url }]) });
-    }, ARTICLE);
-    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await serviceWorker.evaluate(`(() => {
-      const original = chrome.runtime.getContexts.bind(chrome.runtime);
-      const gate = globalThis.explicitGate = { held: false };
-      chrome.runtime.getContexts = async (...args) => {
-        const contexts = await original(...args);
-        if (!gate.held) {
-          gate.held = true;
-          await new Promise(resolve => { gate.release = resolve; });
-        }
-        return contexts;
-      };
-    })()`);
-    await popup.locator('#copyPage').click();
-    await expect.poll(() => serviceWorker.evaluate('globalThis.explicitGate.held')).toBe(true);
-    await serviceWorker.evaluate(async () => {
-      const current = await chrome.windows.getLastFocused();
-      if (current.id === undefined) throw new Error('Missing window');
-      await chrome.windows.update(current.id, { state: 'minimized' });
-    });
-    await expect
-      .poll(() => serviceWorker.evaluate(async () => (await chrome.windows.getLastFocused()).focused))
-      .toBe(false);
-    await serviceWorker.evaluate(async () => {
-      const current = await chrome.windows.getLastFocused();
-      if (current.id === undefined) throw new Error('Missing window');
-      await chrome.windows.update(current.id, { state: 'normal', focused: true });
-    });
-    await serviceWorker.evaluate('globalThis.explicitGate.release()');
-    await expect(popup.locator('#copyStatus')).toHaveText('Could not write to the clipboard');
-    expect(await readClipboard()).toBe(BASELINE);
-    await popup.close();
-  });
-
-  test('explicit popup copy works while automatic cleaning is paused', async ({
-    context,
-    extensionId,
-    readClipboard,
-    setSettings,
-  }) => {
-    await setSettings({ enabled: false, mode: 'strip' });
-    const popup = await context.newPage();
-    await popup.addInitScript((url) => {
-      Object.defineProperty(chrome.tabs, 'query', { value: () => Promise.resolve([{ url }]) });
-    }, ARTICLE);
-    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await popup.locator('#copyPage').click();
-    await expect(popup.locator('#copyStatus')).toContainText('Copied');
-    expect(await readClipboard()).toBe(CLEAN);
-    await popup.close();
-  });
-
-  test('popup Undo restores only the current rewritten URL', async ({
-    context,
-    extensionId,
-    playground,
-    readClipboard,
-    waitForWatcher,
-  }) => {
-    await waitForWatcher(true);
-    await playground.getByTestId('copy-writetext').click();
-    await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
-    const popup = await context.newPage();
-    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await popup.locator('#undoClipboard').click();
-    await expect.poll(readClipboard).toBe(ARTICLE);
-    expect(await expectStable(readClipboard)).toBe(ARTICLE);
-    await popup.close();
-  });
-
-  test('registers menu entries and the shortcut without claiming native invocation', async ({ serviceWorker }) => {
-    expect((await serviceWorker.evaluate(() => chrome.commands.getAll())).map((command) => command.name)).toContain(
-      'copy-clean-page-url',
-    );
-    for (const id of ['copy-clean-link', 'copy-clean-page']) {
-      await expect
-        .poll(() =>
-          serviceWorker.evaluate(
-            (menuId) =>
-              chrome.contextMenus.update(menuId, {}).then(
-                () => true,
-                () => false,
-              ),
-            id,
-          ),
-        )
-        .toBe(true);
-    }
+      .poll(() => serviceWorker.evaluate(() => chrome.storage.local.get(['mode', 'enabled'])))
+      .toEqual({ mode: 'strip', enabled: false });
+    const manifest = await serviceWorker.evaluate(() => chrome.runtime.getManifest());
+    expect(manifest.options_ui).toEqual({ page: 'options.html', open_in_tab: false });
+    expect(manifest.permissions).toEqual(['clipboardRead', 'clipboardWrite', 'offscreen', 'storage']);
+    expect(manifest.action).toBeUndefined();
+    expect(manifest.commands).toBeUndefined();
+    await options.close();
   });
 });

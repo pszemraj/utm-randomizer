@@ -97,18 +97,6 @@ function isSignedUrl(url: URL): boolean {
   );
 }
 
-/** Why a standalone link is intentionally left untouched, for explicit copy actions to explain. */
-export function getRewriteSkipReason(
-  input: string,
-  options: Pick<RewriteOptions, 'baseUrl'> = {},
-): 'signed' | 'too-long' | null {
-  if (input.length > MAX_TEXT_LENGTH) {
-    return 'too-long';
-  }
-  const url = parseLink(input, options.baseUrl);
-  return url && isSignedUrl(url) ? 'signed' : null;
-}
-
 /**
  * Rewrites the tracking parameters of a single link, editing the query string in place so
  * everything else (encoding, parameter order, duplicate keys, valueless flags, fragment, and

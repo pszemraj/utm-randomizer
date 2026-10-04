@@ -6,7 +6,7 @@
 
 - Only copied text containing one whole URL is rewritten; documents, prose, multiple URLs, Markdown wrappers, and HTML link destinations stay untouched. Rewritten URLs are plain text, including copies with HTML, URI-list, or hidden web-added accompaniment; detectable images, files, and custom non-text formats are skipped.
 - Clipboard reads and writes happen inside the extension without requiring a webpage reader. Browser-copy watching can clean copies while browser controls, the address bar, or an HTTP page retain focus. Starting or regaining Chrome focus still leaves existing contents untouched.
-- One background watcher handles new clipboard entries from any source while Chrome is focused, without content scripts, page event handlers, or a separate watching toggle. It checks every 200 ms and takes a final tick on focus loss; Chrome toolbar feedback and a popup Undo button provide in-browser feedback without system notifications.
+- One background watcher handles new clipboard entries from any source while Chrome is focused, without content scripts, page event handlers, or a separate watching toggle. It checks every 200 ms and takes a final tick on focus loss.
 
 ## [2.0.2] - 2026-10-04
 

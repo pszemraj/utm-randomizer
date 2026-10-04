@@ -1,7 +1,5 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from 'vitest';
-import type { ExtensionMessage } from '../../src/lib/messages';
-import { rewriteUrl } from '../../src/lib/rewrite';
 
 const TRACKED = 'https://example.com/page?utm_source=linkedin';
 const CLEAN = 'https://example.com/page';
@@ -36,12 +34,10 @@ async function start() {
   let onMessage:
     | ((message: unknown, sender: chrome.runtime.MessageSender, respond: (response: { ok: boolean }) => void) => void)
     | undefined;
-  const sendMessage = vi.fn<(message: ExtensionMessage) => Promise<unknown>>(() => Promise.resolve(undefined));
   vi.stubGlobal('chrome', {
     runtime: {
       id: WORKER.id,
       getURL: (path: string) => `chrome-extension://${WORKER.id}/${path}`,
-      sendMessage,
       onMessage: {
         addListener(listener: NonNullable<typeof onMessage>) {
           onMessage = listener;
@@ -81,7 +77,7 @@ async function start() {
     return response;
   };
   message({ type: 'watch-config', config: CONFIG });
-  return { clipboard, sendMessage, message, writes };
+  return { clipboard, message, writes };
 }
 
 it('leaves startup and focus-gain baselines untouched', async () => {
@@ -142,12 +138,11 @@ it('pauses without flushing an entry copied since the last poll', async () => {
 });
 
 it('rewrites a fresh URL without a website reader and leaves its output stable', async () => {
-  const { clipboard, sendMessage, writes } = await start();
+  const { clipboard, writes } = await start();
   clipboard.text = TRACKED;
   await vi.advanceTimersByTimeAsync(200);
   expect(clipboard.text).toBe(CLEAN);
   expect(writes).toHaveBeenCalledOnce();
-  expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'rewritten', urls: 1 }));
   await vi.advanceTimersByTimeAsync(50 * 200);
   expect(clipboard.text).toBe(CLEAN);
   expect(writes).toHaveBeenCalledOnce();
@@ -206,8 +201,9 @@ it.each([false, true])('retains completed output across configuration (HTML %s)'
 });
 
 it('expires completed output after observing unrelated text', async () => {
-  const { clipboard, message, writes } = await start();
-  message({ type: 'offscreen-copy', text: TRACKED });
+  const { clipboard, writes } = await start();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
   clipboard.text = 'unrelated contents';
   await vi.advanceTimersByTimeAsync(200);
   clipboard.text = TRACKED;
@@ -216,8 +212,8 @@ it('expires completed output after observing unrelated text', async () => {
   expect(writes).toHaveBeenCalledTimes(2);
 });
 
-it('normalizes a rewritten single URL to plain text and restores its original text on Undo', async () => {
-  const { clipboard, message } = await start();
+it('normalizes a rewritten single URL to plain text', async () => {
+  const { clipboard } = await start();
   const original = ` \t${TRACKED}\r\n`;
   clipboard.text = original;
   clipboard.html = `<a href="${TRACKED}">A link</a>`;
@@ -226,11 +222,6 @@ it('normalizes a rewritten single URL to plain text and restores its original te
   expect(clipboard.text).toBe(CLEAN);
   expect(clipboard.html).toBeNull();
   expect(clipboard.types).toEqual(['text/plain']);
-  expect(message({ type: 'offscreen-restore' })).toHaveBeenCalledWith({ ok: true });
-  expect(clipboard.text).toBe(original);
-  expect(clipboard.html).toBeNull();
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(clipboard.text).toBe(original);
 });
 
 it('retries an unchanged fresh URL after an automatic write fails', async () => {
@@ -255,60 +246,14 @@ it('retries an unchanged fresh URL after an automatic write fails', async () => 
   expect(writes).toHaveBeenCalledOnce();
 });
 
-it('retains the completed record when an Undo write fails', async () => {
-  const { clipboard, message } = await start();
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(200);
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises synchronous copy failure
-  const command = document.execCommand.bind(document);
-  const failedWrite = vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- let reads continue while only the write fails
-    return name === 'copy' ? false : command(name);
-  });
-  expect(message({ type: 'offscreen-restore' })).toHaveBeenCalledWith({ ok: false });
-  expect(clipboard.text).toBe(CLEAN);
-  failedWrite.mockRestore();
-  expect(message({ type: 'offscreen-restore' })).toHaveBeenCalledWith({ ok: true });
-  expect(clipboard.text).toBe(TRACKED);
-});
-
-it('cannot Undo when a different clipboard entry replaced its output', async () => {
-  const { clipboard, message, writes } = await start();
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(200);
-  clipboard.text = 'another copy';
-  writes.mockClear();
-  expect(message({ type: 'offscreen-restore' })).toHaveBeenCalledWith({ ok: false });
-  expect(clipboard.text).toBe('another copy');
-  expect(writes).not.toHaveBeenCalled();
-});
-
-it('retains Undo suppression across focus changes and expires it after another observed copy', async () => {
-  const { clipboard, message, writes } = await start();
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(200);
-  message({ type: 'offscreen-restore' });
-  message({ type: 'watch-config', config: null });
-  message({ type: 'watch-config', config: CONFIG });
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(clipboard.text).toBe(TRACKED);
-  expect(writes).toHaveBeenCalledTimes(2);
-  clipboard.text = 'another copy';
-  await vi.advanceTimersByTimeAsync(200);
-  clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(200);
-  expect(clipboard.text).toBe(CLEAN);
-});
-
 it.each(['image/png', 'Files', 'application/custom'])('preserves detectable non-text format %s', async (type) => {
-  const { clipboard, writes, sendMessage } = await start();
+  const { clipboard, writes } = await start();
   clipboard.text = TRACKED;
   clipboard.types.push(type);
   const original = { ...clipboard, types: [...clipboard.types] };
   await vi.advanceTimersByTimeAsync(1000);
   expect(clipboard).toEqual(original);
   expect(writes).not.toHaveBeenCalled();
-  expect(sendMessage).not.toHaveBeenCalled();
 });
 
 it('writes an eligible URL as plain text even when the legacy reader hides web-added data', async () => {
@@ -333,7 +278,7 @@ it.each([
   '',
   '/relative?utm_source=email',
 ])('leaves non-URL document copies untouched: %s', async (text) => {
-  const { clipboard, writes, sendMessage } = await start();
+  const { clipboard, writes } = await start();
   clipboard.text = text;
   clipboard.html = `<a href="${TRACKED}">${text}</a>`;
   clipboard.types = ['text/plain', 'text/html'];
@@ -342,7 +287,6 @@ it.each([
   await vi.advanceTimersByTimeAsync(1000);
   expect(clipboard).toEqual(original);
   expect(writes).not.toHaveBeenCalled();
-  expect(sendMessage).not.toHaveBeenCalled();
 });
 
 it('checks formats again immediately before committing an automatic write', async () => {
@@ -363,20 +307,7 @@ it('checks formats again immediately before committing an automatic write', asyn
   expect(writes).not.toHaveBeenCalled();
 });
 
-it('writes explicit generated and unchanged links beyond the rewrite input limit', async () => {
-  const { clipboard, message } = await start();
-  const input = `https://example.com/?${Array<string>(6000).fill('utm_source=x').join('&')}`;
-  const rewritten = rewriteUrl(input, { mode: 'decoy', key: 'test-key' })?.url;
-  expect(input.length).toBeLessThan(100_000);
-  expect(rewritten?.length).toBeGreaterThan(100_000);
-  if (!rewritten) throw new Error('Missing rewritten link');
-  for (const text of [rewritten, `https://example.com/?data=${'x'.repeat(100_001)}`]) {
-    expect(message({ type: 'offscreen-copy', text })).toHaveBeenCalledWith({ ok: true });
-    expect(clipboard.text).toBe(text);
-  }
-});
-
-it.each([{ type: 'offscreen-copy' }, { type: 'watch-config', config: { mode: 'invalid' } }])(
+it.each([{ type: 'watch-config' }, { type: 'watch-config', config: { mode: 'invalid' } }])(
   'rejects malformed control messages without touching the clipboard ($type)',
   async (payload) => {
     const { clipboard, writes, message } = await start();
@@ -389,7 +320,7 @@ it.each([{ type: 'offscreen-copy' }, { type: 'watch-config', config: { mode: 'in
 it('rejects tab-origin control messages', async () => {
   const { clipboard, writes, message } = await start();
   expect(
-    message({ type: 'offscreen-copy', text: TRACKED }, { ...WORKER, tab: { id: 1 } as chrome.tabs.Tab }),
+    message({ type: 'watch-config', config: null }, { ...WORKER, tab: { id: 1 } as chrome.tabs.Tab }),
   ).toHaveBeenCalledWith({ ok: false });
   expect(clipboard.text).toBe('baseline');
   expect(writes).not.toHaveBeenCalled();

@@ -1,11 +1,5 @@
 // The offscreen document owns every automatic clipboard read, decision, and write.
-import {
-  isExtensionMessage,
-  isWorkerSender,
-  sendNotification,
-  type ClipboardSnapshot,
-  type WatchConfig,
-} from './lib/messages';
+import { isExtensionMessage, isWorkerSender, type ClipboardSnapshot, type WatchConfig } from './lib/messages';
 import { rewriteText } from './lib/rewrite';
 import { createSeed } from './lib/prng';
 
@@ -13,9 +7,8 @@ import { createSeed } from './lib/prng';
 const POLL_MS = 200;
 let config: WatchConfig | null = null;
 let timer = 0;
-let lastSeen: string | null = null;
-/** One current before/after record; observing a different entry discards it. */
-let record: { before: ClipboardSnapshot | null; after: ClipboardSnapshot } | null = null;
+/** One current entry; different observed contents replace both identities. */
+let entry: { before: string; after?: string } | null = null;
 
 /** Finds the extension-owned clipboard sink. */
 function field(): HTMLTextAreaElement {
@@ -66,7 +59,7 @@ function plainText(text: string): ClipboardSnapshot {
 }
 
 /** Writes a URL and records Chrome's actual read-back, so its own output stays untouched. */
-function writeClipboard(snapshot: ClipboardSnapshot, before: ClipboardSnapshot | null = null): boolean {
+function writeClipboard(snapshot: ClipboardSnapshot, before: string): boolean {
   const textarea = field();
   const onCopy = (event: ClipboardEvent) => {
     event.preventDefault();
@@ -81,15 +74,9 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: ClipboardSnapshot |
   textarea.value = '';
   if (ok) {
     const landed = readClipboard() ?? snapshot;
-    lastSeen = identity(landed);
-    record = { before, after: landed };
+    entry = { before, after: identity(landed) };
   }
   return ok;
-}
-
-/** Releases completed state after observing different clipboard contents. */
-function observe(snapshot: ClipboardSnapshot): void {
-  if (record && identity(snapshot) !== identity(record.after)) record = null;
 }
 
 /** Performs one synchronous read, whole-URL decision, write, and read-back. */
@@ -97,20 +84,18 @@ function tick(baseline = false): void {
   const snapshot = readClipboard();
   if (!snapshot) return;
   const current = identity(snapshot);
-  observe(snapshot);
-  if (current === lastSeen) return;
-  const previous = lastSeen;
-  lastSeen = current;
+  if (current === (entry?.after ?? entry?.before)) return;
+  const previous = entry;
+  entry = { before: current };
   if (baseline || previous === null || !config || !supported(snapshot)) return;
   const result = rewriteText(snapshot.text, { ...config, key: createSeed() });
   if (!result) return;
   const latest = readClipboard();
   if (!latest || identity(latest) !== current) return;
-  if (!writeClipboard(plainText(result.text), snapshot)) {
-    lastSeen = previous;
+  if (!writeClipboard(plainText(result.text), current)) {
+    entry = previous;
     return;
   }
-  sendNotification({ type: 'rewritten', urls: 1 });
 }
 
 /** Starts or stops automatic processing; only a new focused interval takes a baseline. */
@@ -128,21 +113,12 @@ function blur(): void {
   configure(null);
 }
 
-/** Restores only the current rewritten URL; later entries cannot be overwritten by stale Undo. */
-function restore(): boolean {
-  const snapshot = readClipboard();
-  if (!snapshot) return false;
-  observe(snapshot);
-  if (!record?.before) return false;
-  return writeClipboard(plainText(record.before.text));
-}
-
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (response: { ok: boolean }) => void) => {
   if (!(
     typeof message === 'object' &&
     message !== null &&
     'type' in message &&
-    ['offscreen-copy', 'offscreen-restore', 'offscreen-blur', 'watch-config'].includes(String(message.type))
+    ['offscreen-blur', 'watch-config'].includes(String(message.type))
   ))
     return false;
   if (!isExtensionMessage(message) || !isWorkerSender(sender)) {
@@ -150,12 +126,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r
     return false;
   }
   switch (message.type) {
-    case 'offscreen-copy':
-      sendResponse({ ok: writeClipboard(plainText(message.text)) });
-      break;
-    case 'offscreen-restore':
-      sendResponse({ ok: restore() });
-      break;
     case 'offscreen-blur':
       blur();
       sendResponse({ ok: true });
@@ -163,8 +133,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r
     case 'watch-config':
       configure(message.config);
       sendResponse({ ok: true });
-      break;
-    default:
       break;
   }
   return false;

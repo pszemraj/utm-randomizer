@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getRewriteSkipReason, hasTrackingParams, rewriteText, rewriteUrl } from '../../src/lib/rewrite';
+import { hasTrackingParams, rewriteText, rewriteUrl } from '../../src/lib/rewrite';
 
 const decoy = { mode: 'decoy', key: 'test-key' } as const;
 const silly = { mode: 'silly', key: 'test-key' } as const;
@@ -284,17 +284,16 @@ describe('signed URLs', () => {
     }
   });
 
-  it('reports signed exclusions while allowing ordinary signature-named query parameters', () => {
+  it('preserves signed exclusions while allowing ordinary signature-named query parameters', () => {
     for (const link of SIGNED_LINKS) {
-      expect(getRewriteSkipReason(link)).toBe('signed');
       expect(hasTrackingParams(link)).toBe(false);
     }
     expect(
-      getRewriteSkipReason('/report?utm_source=email&Signature=abc&Key-Pair-Id=K&Expires=1', {
+      rewriteUrl('/report?utm_source=email&Signature=abc&Key-Pair-Id=K&Expires=1', {
+        ...strip,
         baseUrl: 'https://cdn.example/',
       }),
-    ).toBe('signed');
-    expect(getRewriteSkipReason('https://example.com/?utm_source=email&Signature=abc')).toBeNull();
+    ).toBeNull();
     expect(rewriteUrl('https://example.com/?utm_source=email&Signature=abc', strip)?.url).toBe(
       'https://example.com/?Signature=abc',
     );
@@ -302,11 +301,10 @@ describe('signed URLs', () => {
 });
 
 describe('core URL work limits', () => {
-  it('bounds direct URL calls, including calls made for HTML anchors', () => {
+  it('bounds direct URL calls', () => {
     const link = `https://example.com/?utm_source=${'x'.repeat(100_000)}`;
     expect(rewriteUrl(link, decoy)).toBeNull();
     expect(rewriteUrl(link, strip)).toBeNull();
-    expect(getRewriteSkipReason(link)).toBe('too-long');
   });
 
   it('processes many tracking parameters within a practical synchronous budget', () => {

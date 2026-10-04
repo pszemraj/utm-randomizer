@@ -4,7 +4,7 @@ import { cp, mkdir, readFile, rm, watch, writeFile } from 'node:fs/promises';
 import * as esbuild from 'esbuild';
 
 const OUT_DIR = 'dist';
-const STATIC_FILES = ['popup.html', 'popup.css', 'offscreen.html'];
+const STATIC_FILES = ['options.html', 'options.css', 'offscreen.html'];
 const isWatch = process.argv.includes('--watch');
 
 /** @type {import('esbuild').BuildOptions} */
@@ -12,7 +12,7 @@ const options = {
   entryPoints: {
     background: 'src/background.ts',
     offscreen: 'src/offscreen.ts',
-    popup: 'src/popup.ts',
+    options: 'src/options.ts',
   },
   outdir: OUT_DIR,
   bundle: true,
