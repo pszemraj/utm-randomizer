@@ -16,7 +16,17 @@ export interface WatchConfig {
 
 /** Extension runtime operations and their direction-specific payloads. */
 export type ExtensionMessage =
-  { type: 'watch-config'; config: WatchConfig | null } | { type: 'watch-focus' } | { type: 'rewrite-complete' };
+  | {
+      type: 'watch-config';
+      config: WatchConfig | null;
+      /** Establishes an untouched entry even when a delayed blur never reached the coordinator. */
+      baseline?: boolean;
+      /** The focus event already requested its final clipboard tick. */
+      skipFinalTick?: boolean;
+    }
+  | { type: 'watch-flush' }
+  | { type: 'watch-focus' }
+  | { type: 'rewrite-complete' };
 
 /** Whether a value has named payload fields. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -38,7 +48,12 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
   if (!isRecord(value)) return false;
   switch (value.type) {
     case 'watch-config':
-      return value.config === null || isWatchConfig(value.config);
+      return (
+        (value.config === null || isWatchConfig(value.config)) &&
+        (value.baseline === undefined || typeof value.baseline === 'boolean') &&
+        (value.skipFinalTick === undefined || typeof value.skipFinalTick === 'boolean')
+      );
+    case 'watch-flush':
     case 'watch-focus':
     case 'rewrite-complete':
       return true;

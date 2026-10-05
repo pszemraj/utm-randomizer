@@ -9,7 +9,10 @@ describe('runtime message payloads', () => {
   it.each([
     { type: 'watch-focus' },
     { type: 'rewrite-complete' },
+    { type: 'watch-flush' },
     { type: 'watch-config', config },
+    { type: 'watch-config', config, baseline: true },
+    { type: 'watch-config', config: { ...config, focused: false }, skipFinalTick: true },
     { type: 'watch-config', config: null },
   ])('accepts a valid $type payload', (message) => {
     expect(isExtensionMessage(message)).toBe(true);
@@ -24,6 +27,8 @@ describe('runtime message payloads', () => {
     { type: 'watch-config', config: { mode: 'strip' } },
     { type: 'watch-config', config: { mode: 'strip', focused: 'true' } },
     { type: 'watch-config', config: { mode: 'invalid' } },
+    { type: 'watch-config', config, baseline: 'true' },
+    { type: 'watch-config', config, skipFinalTick: 1 },
     { type: 'copy-clipboard', text: 'obsolete action' },
   ])('rejects malformed messages %#', (message) => {
     expect(isExtensionMessage(message)).toBe(false);

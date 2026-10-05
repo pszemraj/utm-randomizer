@@ -113,12 +113,12 @@ function checkFocus(): void {
 }
 
 /** Applies queried focus: flush on blur, baseline on regain, and process ordinary focused ticks. */
-function configure(next: WatchConfig | null): void {
+function configure(next: WatchConfig | null, baseline = false, skipFinalTick = false): void {
   const wasFocused = config?.focused === true;
   const focused = next?.focused === true;
-  if (wasFocused && next !== null && !focused) tick();
+  if (wasFocused && next !== null && !focused && !skipFinalTick) tick();
   config = next;
-  if (focused) tick(!wasFocused);
+  if (focused) tick(baseline || !wasFocused);
   if (next && !timer) timer = window.setInterval(checkFocus, POLL_MS);
   if (!next) {
     window.clearInterval(timer);
@@ -131,7 +131,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r
     typeof message === 'object' &&
     message !== null &&
     'type' in message &&
-    String(message.type) === 'watch-config'
+    ['watch-config', 'watch-flush'].includes(String(message.type))
   ))
     return false;
   if (!isExtensionMessage(message) || !isWorkerSender(sender)) {
@@ -140,7 +140,11 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r
   }
   switch (message.type) {
     case 'watch-config':
-      configure(message.config);
+      configure(message.config, message.baseline, message.skipFinalTick);
+      sendResponse({ ok: true });
+      break;
+    case 'watch-flush':
+      if (config?.focused) tick();
       sendResponse({ ok: true });
       break;
   }

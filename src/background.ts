@@ -8,10 +8,16 @@ const CONFIRMATION_MS = 1800;
 let offscreenQueue: Promise<unknown> = Promise.resolve();
 let confirmationTimer: ReturnType<typeof setTimeout> | undefined;
 let confirmationRevision = 0;
-let confirmationVisible = false;
+/** Chrome-owned badge state can outlive this worker, so startup must conservatively clear it. */
+let confirmationVisible = true;
 let confirmationQueue: Promise<unknown> = Promise.resolve();
-/** Invalidates queued watcher configuration on settings or window-focus changes. */
-let automaticRevision = 0;
+/** Invalidates queued watcher configuration when persisted settings change. */
+let settingsRevision = 0;
+/** Orders real focus events and prevents a delayed blur from erasing a later regain baseline. */
+let focusRevision = 0;
+let focusDelivery: Promise<unknown> = Promise.resolve();
+let baselineRequired = false;
+let potentialBlur: { revision: number; flushed: Promise<boolean> } | null = null;
 /** Replaced on settings changes; ordinary focus checks do not read storage. */
 let settingsReady: Promise<Settings>;
 
@@ -80,11 +86,13 @@ async function clearConfirmation(): Promise<void> {
 
 /** Shows a brief success indicator only when a Chrome window is still focused. */
 async function showConfirmation(): Promise<void> {
-  const focusRevision = automaticRevision;
+  const expectedSettingsRevision = settingsRevision;
+  const expectedFocusRevision = focusRevision;
   const settings = await settingsReady;
-  if (!settings.enabled || focusRevision !== automaticRevision) return;
+  if (!settings.enabled || expectedSettingsRevision !== settingsRevision || expectedFocusRevision !== focusRevision)
+    return;
   const focused = await browserFocused();
-  if (!focused || focusRevision !== automaticRevision) return;
+  if (!focused || expectedSettingsRevision !== settingsRevision || expectedFocusRevision !== focusRevision) return;
   const revision = ++confirmationRevision;
   clearTimeout(confirmationTimer);
   confirmationVisible = true;
@@ -101,43 +109,85 @@ async function browserFocused(): Promise<boolean> {
   return windows.some((window) => window.focused);
 }
 
-/** Queries real focus without waiting for clipboard-document lifecycle work. */
-async function refreshFocus(): Promise<void> {
-  const revision = automaticRevision;
+/** Requests the blur event's final clipboard tick before an asynchronous focus query can lag behind it. */
+async function flushPotentialBlur(): Promise<boolean> {
+  const revision = settingsRevision;
   const settings = await settingsReady;
-  if (!settings.enabled || revision !== automaticRevision) return;
-  const focused = await browserFocused();
-  if (revision !== automaticRevision) return;
-  if (!focused) void clearConfirmation().catch(() => undefined);
-  await tellOffscreen({ type: 'watch-config', config: { mode: settings.mode, focused } });
+  if (!settings.enabled || revision !== settingsRevision) return false;
+  try {
+    await tellOffscreen({ type: 'watch-flush' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Queries real focus and applies query results in request order. */
+function refreshFocus(): Promise<void> {
+  const expectedSettingsRevision = settingsRevision;
+  const expectedFocusRevision = focusRevision;
+  const flush = potentialBlur?.revision === expectedFocusRevision ? potentialBlur.flushed : Promise.resolve(false);
+  const query = browserFocused().then(
+    (focused) => ({ ok: true as const, focused }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+  const result = focusDelivery.then(async () => {
+    const outcome = await query;
+    const flushed = await flush;
+    if (!outcome.ok) throw outcome.error;
+    if (expectedFocusRevision !== focusRevision) {
+      if (!outcome.focused) baselineRequired = true;
+      return;
+    }
+    const settings = await settingsReady;
+    if (!settings.enabled || expectedSettingsRevision !== settingsRevision) return;
+    if (!outcome.focused) {
+      baselineRequired = true;
+      void clearConfirmation().catch(() => undefined);
+    }
+    const baseline = outcome.focused && baselineRequired;
+    await tellOffscreen({
+      type: 'watch-config',
+      config: { mode: settings.mode, focused: outcome.focused },
+      ...(baseline ? { baseline: true } : {}),
+      ...(!outcome.focused && flushed ? { skipFinalTick: true } : {}),
+    });
+    if (potentialBlur?.revision === expectedFocusRevision) potentialBlur = null;
+    if (baseline) baselineRequired = false;
+  });
+  focusDelivery = result.catch(() => undefined);
+  return result;
 }
 
 /** Applies on/off and mode changes and creates the clipboard document when enabled. */
 function syncWatcher(): Promise<void> {
-  const revision = automaticRevision;
+  const revision = settingsRevision;
   return withOffscreen(async () => {
     const settings = await settingsReady;
-    if (revision !== automaticRevision) return;
+    if (revision !== settingsRevision) return;
     if (settings.enabled) {
       await ensureOffscreen();
-      if (revision !== automaticRevision) return;
+      if (revision !== settingsRevision) return;
       await refreshFocus();
     } else {
       await clearConfirmation();
-      if (revision !== automaticRevision) return;
+      if (revision !== settingsRevision) return;
       const exists = await hasOffscreen();
-      if (revision !== automaticRevision || !exists) return;
+      if (revision !== settingsRevision || !exists) return;
       await tellOffscreen({ type: 'watch-config', config: null });
     }
   }).catch((error: unknown) => console.debug('UTM Randomizer: could not update the clipboard watcher', error));
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) automaticRevision += 1;
+  if (area === 'local' && Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) settingsRevision += 1;
 });
 chrome.windows.onFocusChanged.addListener(
-  () => {
-    automaticRevision += 1;
+  (windowId) => {
+    focusRevision += 1;
+    if (windowId === chrome.windows.WINDOW_ID_NONE) {
+      potentialBlur = { revision: focusRevision, flushed: flushPotentialBlur() };
+    }
     void refreshFocus().catch((error: unknown) =>
       console.debug('UTM Randomizer: could not check browser focus', error),
     );
@@ -163,6 +213,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r
         console.debug('UTM Randomizer: could not show rewrite confirmation', error),
       );
       return false;
+    case 'watch-flush':
     case 'watch-config':
       sendResponse({ ok: false });
       return false;
@@ -173,4 +224,5 @@ watchSettings((settings) => {
   void syncWatcher();
 });
 settingsReady = loadSettings();
+void clearConfirmation().catch(() => undefined);
 void syncWatcher();

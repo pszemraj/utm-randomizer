@@ -147,6 +147,7 @@ it('starts suspended while Chrome is unfocused and configures polling on focus r
     expect(worker.sendMessage).toHaveBeenCalledWith({
       type: 'watch-config',
       config: { mode: 'hybrid', focused: true },
+      baseline: true,
     }),
   );
   expect(worker.createDocument).toHaveBeenCalledOnce();
@@ -161,6 +162,7 @@ it('flushes on focus loss and resumes without an artificial suspension', async (
     expect(worker.sendMessage).toHaveBeenCalledWith({
       type: 'watch-config',
       config: { mode: 'hybrid', focused: false },
+      skipFinalTick: true,
     }),
   );
   worker.sendMessage.mockClear();
@@ -169,6 +171,7 @@ it('flushes on focus loss and resumes without an artificial suspension', async (
     expect(worker.sendMessage).toHaveBeenCalledWith({
       type: 'watch-config',
       config: { mode: 'hybrid', focused: true },
+      baseline: true,
     }),
   );
   expect(worker.sendMessage).not.toHaveBeenCalledWith({ type: 'watch-config', config: null });
@@ -195,6 +198,7 @@ it('queries actual focus on each request without rereading settings or blocking 
     expect(worker.sendMessage).toHaveBeenCalledWith({
       type: 'watch-config',
       config: { mode: 'strip', focused: false },
+      skipFinalTick: true,
     }),
   );
   const response = worker.requestFocus();
@@ -223,6 +227,31 @@ it('keeps polling through a menu NONE event when the window remains focused', as
     config: { mode: 'hybrid', focused: false },
   });
   expect(vi.mocked(loadSettings)).toHaveBeenCalledOnce();
+});
+
+it('forces an untouched baseline when focus returns before a blur query resolves', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  let releaseBlur!: () => void;
+  worker.getAll.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        releaseBlur = () => resolve([{ id: 1, focused: false }]);
+      }),
+  );
+  worker.changeFocus(false);
+  await vi.waitFor(() => expect(releaseBlur).toBeDefined());
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-flush' }));
+  worker.changeFocus(true);
+  releaseBlur();
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: true },
+      baseline: true,
+    }),
+  );
 });
 
 it('treats any currently focused Chrome window as active', async () => {
@@ -263,6 +292,12 @@ it('shows an exact Chrome-only success confirmation while focused', async () => 
   await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenCalledWith({ text: '✓' }));
   expect(worker.setBadgeBackgroundColor).toHaveBeenCalledWith({ color: '#2e7d32' });
   expect(worker.setTitle).toHaveBeenCalledWith({ title: 'Your link was randomized.' });
+});
+
+it('resets Chrome-owned confirmation state whenever the worker starts', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenCalledWith({ text: '' }));
+  expect(worker.setTitle).toHaveBeenCalledWith({ title: 'UTM Randomizer' });
 });
 
 it('does not show rewrite confirmation when Chrome is unfocused', async () => {
@@ -323,7 +358,13 @@ it.each([true, false])('ignores a late startup query after a focus event reports
   release();
   worker.changeSettings({ mode: 'strip' });
   const config = { mode: 'strip', focused };
-  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config }));
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config,
+      ...(focused ? { baseline: true } : {}),
+    }),
+  );
   expect(worker.sendMessage).not.toHaveBeenCalledWith({
     type: 'watch-config',
     config: { mode: 'strip', focused: !focused },
@@ -352,7 +393,7 @@ it('discards an old mode configuration when settings change during offscreen loo
   expect(worker.sendMessage).toHaveBeenCalledOnce();
 });
 
-it('rejects a stale configuration after focus changes during offscreen lookup', async () => {
+it('keeps focus transitions ordered while settings sync is delayed', async () => {
   const worker = await startBackground({ enabled: true });
   await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
   worker.sendMessage.mockClear();
@@ -370,15 +411,22 @@ it('rejects a stale configuration after focus changes during offscreen lookup', 
     expect(worker.sendMessage).toHaveBeenCalledWith({
       type: 'watch-config',
       config: { mode: 'strip', focused: false },
+      skipFinalTick: true,
     }),
   );
   worker.changeFocus(true);
   release();
   await vi.waitFor(() =>
-    expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: { mode: 'strip', focused: true } }),
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'strip', focused: true },
+      baseline: true,
+    }),
   );
   expect(worker.sendMessage.mock.calls.map(([message]) => message)).toEqual([
-    { type: 'watch-config', config: { mode: 'strip', focused: false } },
+    { type: 'watch-flush' },
+    { type: 'watch-config', config: { mode: 'strip', focused: false }, skipFinalTick: true },
+    { type: 'watch-config', config: { mode: 'strip', focused: true }, baseline: true },
     { type: 'watch-config', config: { mode: 'strip', focused: true } },
   ]);
 });

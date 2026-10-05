@@ -113,6 +113,23 @@ it('observes a fresh entry across a same-focus worker refresh', async () => {
   expect(writes).toHaveBeenCalledOnce();
 });
 
+it('takes an untouched baseline when the worker marks a same-focus regain', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  message({ type: 'watch-config', config: CONFIG, baseline: true });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it('takes an immediate final tick when a potential blur event is reported', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  expect(message({ type: 'watch-flush' })).toHaveBeenCalledWith({ ok: true });
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
 it('checks focus without reading the clipboard while unfocused, then baselines the next interval', async () => {
   const { clipboard, message, writes, reads, requestFocus } = await start();
   message({ type: 'watch-config', config: { ...CONFIG, focused: false } });
