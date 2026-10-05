@@ -1,11 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { ExtensionMessage } from '../../src/lib/messages';
-import { DEFAULT_SETTINGS, loadSettings, watchSettings, type Settings } from '../../src/lib/settings';
+import { DEFAULT_SETTINGS, loadSettings, type Settings } from '../../src/lib/settings';
 
 vi.mock('../../src/lib/settings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/settings')>()),
   loadSettings: vi.fn(),
-  watchSettings: vi.fn(),
 }));
 
 /** Installs the worker's clipboard lifecycle, settings, and focus dependencies. */
@@ -59,10 +58,9 @@ async function startBackground(
   else vi.mocked(loadSettings).mockResolvedValue(currentSettings);
   await import('../../src/background');
   if (!initialSettings) await vi.waitFor(() => expect(initialFocus ? getAll : getContexts).toHaveBeenCalled());
-  const settingsListener = vi.mocked(watchSettings).mock.calls[0]?.[0];
   const storageListener = onStorageChanged.mock.calls[0]?.[0];
   const focusListener = onFocusChanged.mock.calls[0]?.[0];
-  if (!settingsListener || !storageListener || !focusListener) throw new Error('listeners were not registered');
+  if (!storageListener || !focusListener) throw new Error('listeners were not registered');
   return {
     getContexts,
     createDocument,
@@ -92,11 +90,16 @@ async function startBackground(
       getAll.mockResolvedValue([{ id: windowId, focused: queriedFocus }]);
       focusListener(nextFocused ? windowId : -1);
     },
-    changeSettings(next: Partial<Settings>) {
-      storageListener(Object.fromEntries(Object.entries(next).map(([key, newValue]) => [key, { newValue }])), 'local');
+    /** Emits a storage change with an optionally delayed settings reload. */
+    changeSettings(next: Partial<Settings>, pending?: Promise<Settings>) {
       currentSettings = { ...currentSettings, ...next };
-      vi.mocked(loadSettings).mockResolvedValue(currentSettings);
-      settingsListener(currentSettings);
+      vi.mocked(loadSettings).mockReturnValue(pending ?? Promise.resolve(currentSettings));
+      storageListener(Object.fromEntries(Object.entries(next).map(([key, newValue]) => [key, { newValue }])), 'local');
+    },
+    /** Simulates the clipboard document disappearing before the next worker delivery. */
+    removeOffscreen() {
+      exists = false;
+      sendMessage.mockRejectedValueOnce(new Error('Receiving end does not exist'));
     },
   };
 }
@@ -133,6 +136,92 @@ it('does not create a clipboard document while disabled', async () => {
   const worker = await startBackground();
   expect(worker.createDocument).not.toHaveBeenCalled();
   expect(worker.sendMessage).not.toHaveBeenCalled();
+});
+
+it('recreates a lost offscreen document on the next focus event and restores the current mode', async () => {
+  const worker = await startBackground({ enabled: true, mode: 'strip' });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  worker.removeOffscreen();
+  worker.changeFocus(true);
+  await vi.waitFor(() => expect(worker.createDocument).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenLastCalledWith({
+      type: 'watch-config',
+      config: { mode: 'strip', focused: true },
+    }),
+  );
+  expect(worker.sendMessage).toHaveBeenCalledTimes(2);
+});
+
+it('bounds recovery to one attempt when an existing offscreen document rejects configuration', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  worker.sendMessage.mockResolvedValue({ ok: false });
+  const response = worker.requestFocus();
+  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: false }));
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledTimes(2));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(worker.sendMessage).toHaveBeenCalledTimes(2);
+  expect(worker.createDocument).toHaveBeenCalledOnce();
+});
+
+it.each([{ mode: 'strip' as const }, { enabled: false }])(
+  'waits for changed settings before answering a focus poll: %j',
+  async (changes) => {
+    const worker = await startBackground({ enabled: true });
+    await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+    worker.sendMessage.mockClear();
+    let release!: () => void;
+    const pending = new Promise<Settings>((resolve) => {
+      release = () => resolve({ ...DEFAULT_SETTINGS, ...changes });
+    });
+    worker.changeSettings(changes, pending);
+    const response = worker.requestFocus();
+    await vi.waitFor(() => expect(worker.getAll).toHaveBeenCalledTimes(2));
+    expect(worker.sendMessage).not.toHaveBeenCalled();
+    expect(response).not.toHaveBeenCalled();
+    release();
+    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
+    await vi.waitFor(() =>
+      expect(worker.sendMessage).toHaveBeenCalledWith({
+        type: 'watch-config',
+        config: 'mode' in changes ? { mode: 'strip', focused: true } : null,
+      }),
+    );
+    expect(worker.sendMessage).not.toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: true },
+    });
+  },
+);
+
+it('discards focus results overtaken while changed settings are pending', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  let release!: () => void;
+  const pending = new Promise<Settings>((resolve) => {
+    release = () => resolve({ ...DEFAULT_SETTINGS, mode: 'strip' });
+  });
+  worker.changeSettings({ mode: 'strip' }, pending);
+  worker.getAll.mockResolvedValueOnce([{ id: 1, focused: false }]);
+  worker.requestFocus();
+  await vi.waitFor(() => expect(worker.getAll).toHaveBeenCalledTimes(2));
+  worker.changeFocus(true);
+  release();
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'strip', focused: true },
+      baseline: true,
+    }),
+  );
+  expect(worker.sendMessage).not.toHaveBeenCalledWith({
+    type: 'watch-config',
+    config: { mode: 'strip', focused: false },
+  });
 });
 
 it('starts suspended while Chrome is unfocused and configures polling on focus regain', async () => {
@@ -205,7 +294,7 @@ it('queries actual focus on each request without rereading settings or blocking 
   );
   const response = worker.requestFocus();
   await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
-  expect(vi.mocked(loadSettings)).toHaveBeenCalledOnce();
+  expect(vi.mocked(loadSettings)).toHaveBeenCalledTimes(2);
   release();
 });
 

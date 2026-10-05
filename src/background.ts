@@ -1,5 +1,5 @@
 import { isExtensionMessage, isOffscreenSender, type ExtensionMessage } from './lib/messages';
-import { DEFAULT_SETTINGS, loadSettings, watchSettings, type Settings } from './lib/settings';
+import { DEFAULT_SETTINGS, loadSettings, type Settings } from './lib/settings';
 
 const WINDOW_TYPES: `${chrome.windows.WindowType}`[] = ['normal', 'popup', 'devtools'];
 const DEFAULT_ACTION_TITLE = 'UTM Randomizer';
@@ -123,8 +123,8 @@ async function flushPotentialBlur(expectedFocusRevision: number): Promise<boolea
   }
 }
 
-/** Queries real focus and applies query results in request order. */
-function refreshFocus(): Promise<void> {
+/** Queries real focus in request order and permits one watcher recovery after a failed delivery. */
+function refreshFocus(recover = true): Promise<void> {
   const expectedSettingsRevision = settingsRevision;
   const expectedFocusRevision = focusRevision;
   const flush = potentialBlur?.revision === expectedFocusRevision ? potentialBlur.flushed : Promise.resolve(false);
@@ -136,23 +136,29 @@ function refreshFocus(): Promise<void> {
     const outcome = await query;
     const flushed = await flush;
     if (!outcome.ok) throw outcome.error;
+    const settings = await settingsReady;
     if (expectedFocusRevision !== focusRevision) {
       if (!outcome.focused) baselineRequired = true;
       return;
     }
-    const settings = await settingsReady;
     if (!settings.enabled || expectedSettingsRevision !== settingsRevision) return;
     if (!outcome.focused) {
       baselineRequired = true;
       void clearConfirmation().catch(() => undefined);
     }
     const baseline = outcome.focused && baselineRequired;
-    await tellOffscreen({
-      type: 'watch-config',
-      config: { mode: settings.mode, focused: outcome.focused },
-      ...(baseline ? { baseline: true } : {}),
-      ...(!outcome.focused && flushed ? { skipFinalTick: true } : {}),
-    });
+    try {
+      await tellOffscreen({
+        type: 'watch-config',
+        config: { mode: settings.mode, focused: outcome.focused },
+        ...(baseline ? { baseline: true } : {}),
+        ...(!outcome.focused && flushed ? { skipFinalTick: true } : {}),
+      });
+    } catch (error) {
+      // Queue recovery after this delivery settles; awaiting it here can deadlock lifecycle synchronization.
+      if (recover) void syncWatcher();
+      throw error;
+    }
     if (potentialBlur?.revision === expectedFocusRevision) potentialBlur = null;
     if (baseline) baselineRequired = false;
   });
@@ -169,7 +175,7 @@ function syncWatcher(): Promise<void> {
     if (settings.enabled) {
       await ensureOffscreen();
       if (revision !== settingsRevision) return;
-      await refreshFocus();
+      await refreshFocus(false);
     } else {
       await clearConfirmation();
       if (revision !== settingsRevision) return;
@@ -181,7 +187,11 @@ function syncWatcher(): Promise<void> {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) settingsRevision += 1;
+  if (area !== 'local' || !Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) return;
+  settingsRevision += 1;
+  // Publish the pending read immediately so a poll cannot pair the new revision with old settings.
+  settingsReady = loadSettings();
+  void syncWatcher();
 });
 chrome.windows.onFocusChanged.addListener(
   (windowId) => {
@@ -219,10 +229,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r
       sendResponse({ ok: false });
       return false;
   }
-});
-watchSettings((settings) => {
-  settingsReady = Promise.resolve(settings);
-  void syncWatcher();
 });
 settingsReady = loadSettings();
 void clearConfirmation().catch(() => undefined);
