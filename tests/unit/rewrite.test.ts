@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasTrackingParams, rewriteText, rewriteUrl } from '../../src/lib/rewrite';
+import { rewriteText, rewriteUrl } from '../../src/lib/rewrite';
 
 const decoy = { mode: 'decoy', key: 'test-key' } as const;
 const silly = { mode: 'silly', key: 'test-key' } as const;
@@ -121,13 +121,10 @@ describe('rewriteUrl (decoy)', () => {
     expect(result?.url).toMatch(/^https:\/\/example\.com\/\?utm%5Fsource=[^&]+&UTM_MEDIUM=[^&]+$/);
   });
 
-  it('handles scheme-less, protocol-relative, and relative links without reshaping them', () => {
+  it('handles scheme-less and protocol-relative links without reshaping them', () => {
     expect(rewriteUrl('www.example.com/p?utm_source=xx', decoy)?.url).toMatch(/^www\.example\.com\/p\?utm_source=/);
     expect(rewriteUrl('example.com?utm_source=xx', decoy)?.url).toMatch(/^example\.com\?utm_source=/);
     expect(rewriteUrl('//example.com/p?utm_source=xx', decoy)?.url).toMatch(/^\/\/example\.com\/p\?utm_source=/);
-    expect(rewriteUrl('/watch?v=1&gclid=abcdefgh', { ...decoy, baseUrl: 'https://www.youtube.com/feed' })?.url).toMatch(
-      /^\/watch\?v=1&gclid=[a-z]{8}$/,
-    );
     expect(rewriteUrl('/p?utm_source=xx', decoy)).toBeNull();
   });
 
@@ -144,27 +141,14 @@ describe('rewriteUrl (decoy)', () => {
     }
   });
 
-  it('resolves named relative paths only with an originating page', () => {
-    const baseUrl = 'https://www.youtube.com/feed';
-    for (const path of ['watch', 'folder/watch', 'folder/watch:detail']) {
+  it('leaves relative paths unchanged because clipboard text has no originating page', () => {
+    for (const path of ['/watch', './watch', '../watch', 'watch', 'folder/watch', 'folder/watch:detail']) {
       const link = `${path}?v=abc&si=secret&gclid=abc123&keep=a%2Fb#part`;
-      expect(rewriteUrl(link, { ...strip, baseUrl })?.url).toBe(`${path}?v=abc&si=secret&keep=a%2Fb#part`);
       expect(rewriteUrl(link, strip)).toBeNull();
-      expect(rewriteUrl(link, { ...strip, baseUrl: 'https://example.com/' })?.url).toBe(
-        `${path}?v=abc&si=secret&keep=a%2Fb#part`,
-      );
+      expect(rewriteText(link, strip)).toBeNull();
     }
-    expect(rewriteUrl('article?utm_source=email&next=https://example.com', { ...strip, baseUrl })?.url).toBe(
-      'article?next=https://example.com',
-    );
-    for (const link of [
-      'mailto:a@example.com?utm_source=x',
-      'javascript:alert(1)?utm_source=x',
-      'ftp://example.com/?utm_source=x',
-    ]) {
-      expect(rewriteUrl(link, { ...strip, baseUrl })).toBeNull();
-    }
-    expect(rewriteText('read more?utm_source=email', { ...strip, baseUrl })).toBeNull();
+    expect(rewriteUrl('article?utm_source=email&next=https://example.com', strip)).toBeNull();
+    expect(rewriteText('read more?utm_source=email', strip)).toBeNull();
   });
 });
 
@@ -297,11 +281,10 @@ describe('campaign namespaces', () => {
       const suffix = '&keep=a+b&flag&empty=#part?utm_source=untouched';
       const link = prefix + keys.map((key) => `${key}=${key === 'utm_penis' ? 'chode' : '12345'}`).join('&') + suffix;
       const result = rewriteUrl(link, { mode, key: 'campaign-test' });
-      expect(hasTrackingParams(link)).toBe(true);
       expect(result?.params).toBe(keys.length);
       if (mode === 'strip') {
         expect(result?.url).toBe(prefix.slice(0, -1) + suffix);
-        expect(hasTrackingParams(result?.url ?? '')).toBe(false);
+        expect(rewriteUrl(result?.url ?? '', strip)).toBeNull();
       } else {
         expect(result?.url.startsWith(prefix)).toBe(true);
         expect(result?.url.endsWith(suffix)).toBe(true);
@@ -347,15 +330,6 @@ describe('signed URLs', () => {
   });
 
   it('preserves signed exclusions while allowing ordinary signature-named query parameters', () => {
-    for (const link of SIGNED_LINKS) {
-      expect(hasTrackingParams(link)).toBe(false);
-    }
-    expect(
-      rewriteUrl('/report?utm_source=email&Signature=abc&Key-Pair-Id=K&Expires=1', {
-        ...strip,
-        baseUrl: 'https://cdn.example/',
-      }),
-    ).toBeNull();
     expect(rewriteUrl('https://example.com/?utm_source=email&Signature=abc', strip)?.url).toBe(
       'https://example.com/?Signature=abc',
     );
@@ -417,7 +391,6 @@ describe('omitted global and former site parameters', () => {
     'https://shop.example/p?srsltid=AfmBOoq&gad_source=1&gad_campaignid=123&id=9',
     'https://example.com/?__hssc=1.1.1&__hstc=abc&__hsfp=9&keep=1',
   ])('preserves %s while cleaning retained parameters', (url) => {
-    expect(hasTrackingParams(url)).toBe(false);
     const mixed = url.replace(/(#.*)?$/, '&utm_source=retired_rule_control&fbclid=AbCdEf123$1');
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
       const options = { mode, key: 'review-key' };
@@ -442,7 +415,6 @@ describe('functional links stay intact', () => {
       for (const timestamp of ['0', '1']) {
         const player = `https://www.tiktok.com/player/v1/6718335390845095173?timestamp=${timestamp}&controls=1`;
         expect(rewriteUrl(player, options)).toBeNull();
-        expect(hasTrackingParams(player)).toBe(false);
         const rewritten = rewriteUrl(`${player}&ttclid=Ab12`, options)?.url;
         expect(rewritten).toBeDefined();
         expect(rewritten).toContain(`timestamp=${timestamp}&controls=1`);
@@ -462,7 +434,6 @@ describe('functional links stay intact', () => {
       ]) {
         const map = `https://www.bing.com${path}?cp=47.67~-122.12&lvl=12&sp=${collection}`;
         expect(rewriteUrl(map, options)).toBeNull();
-        expect(hasTrackingParams(map)).toBe(false);
         const rewritten = rewriteUrl(`${map}&utm_source=map_share`, options)?.url;
         expect(rewritten).toBeDefined();
         expect(rewritten).toContain(`cp=47.67~-122.12&lvl=12&sp=${collection}`);
@@ -476,7 +447,6 @@ describe('functional links stay intact', () => {
     for (const path of ['/s', '/gp/search']) {
       const store = `https://www.amazon.com${path}?i=appliances&srs=21217039011`;
       expect(rewriteUrl(store, options)).toBeNull();
-      expect(hasTrackingParams(store)).toBe(false);
       const rewritten = rewriteUrl(`${store}&utm_source=email`, options)?.url;
       expect(rewritten).toBeDefined();
       expect(rewritten).toContain('i=appliances&srs=21217039011');
@@ -516,7 +486,6 @@ describe('functional links stay intact', () => {
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
       expect(rewriteUrl(url, { mode, key: 'test-key' })).toBeNull();
     }
-    expect(hasTrackingParams(url)).toBe(false);
   });
 });
 
@@ -539,11 +508,9 @@ describe('rewriteText', () => {
       'https://en.wikipedia.org/wiki/Foo_(bar)?utm_source=x',
       'www.example.com/p?utm_source=x',
       '//example.com/p?utm_source=x',
-      '/article?utm_source=x',
-      'article?utm_source=x',
     ]) {
       for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
-        const options = { mode, key: 'test-key', baseUrl: 'https://example.com/page' };
+        const options = { mode, key: 'test-key' };
         expect(rewriteText(link, options)?.text).toBe(rewriteUrl(link, options)?.url);
         const once = rewriteUrl(link, options)?.url ?? link;
         if (mode === 'strip') expect(rewriteText(once, options)).toBeNull();
@@ -570,6 +537,32 @@ describe('rewriteText', () => {
     expect(rewriteUrl(text, strip)).toBeNull();
   });
 
+  it.each([
+    '新製品はこちらhttps://example.com/?utm_source=twitterをチェック',
+    '请看https://example.com/?utm_source=x这个链接',
+    'Read https://example.com/?utm_source=x—then reply',
+    'Read https://example.com/新製品?utm_source=x',
+    'Read https://例子.example/?utm_source=x',
+  ])('preserves ambiguous embedded Unicode spans while cleaning other links (%s)', (text) => {
+    const other = 'https://example.com/other?utm_source=email';
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      const options = { mode, key: 'test-key' };
+      expect(rewriteText(text, options)).toBeNull();
+      const rewritten = rewriteUrl(other, options);
+      expect(rewriteText(`${text} ${other}`, options)).toEqual({
+        text: `${text} ${rewritten?.url ?? ''}`,
+        urls: 1,
+        params: 1,
+      });
+    }
+  });
+
+  it('counts ambiguous embedded Unicode spans as prose at the compact-share boundary', () => {
+    const ambiguous = `https://example.com/?utm_source=x${'文'.repeat(281)}`;
+    const eligible = 'https://example.com/other?utm_source=email';
+    expect(rewriteText(`${ambiguous} ${eligible}`, strip)).toBeNull();
+  });
+
   it('rewrites every eligible link in a compact multi-link share', () => {
     const text =
       'Check this out: https://example.com/a?utm_source=twitter&x=1 and https://open.spotify.com/track/4?si=keep&utm_source=share';
@@ -577,6 +570,11 @@ describe('rewriteText', () => {
       text: 'Check this out: https://example.com/a?x=1 and https://open.spotify.com/track/4?si=keep',
       urls: 2,
       params: 2,
+    });
+    expect(rewriteText('Read https://example.com/%E6%96%B0?utm_source=%E6%96%B0%E9%97%BB&keep=%2F', strip)).toEqual({
+      text: 'Read https://example.com/%E6%96%B0?keep=%2F',
+      urls: 1,
+      params: 1,
     });
   });
 
@@ -669,7 +667,7 @@ describe('rewriteText', () => {
     '# Report\n\nRead https://example.com/?utm_source=x\n' + 'A paragraph of document text. '.repeat(100),
   ])('leaves ineligible clipboard text untouched (%s)', (text) => {
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
-      expect(rewriteText(text, { mode, key: 'test-key', baseUrl: 'https://example.com/page' })).toBeNull();
+      expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
     }
   });
 

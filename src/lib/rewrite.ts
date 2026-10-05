@@ -8,7 +8,7 @@ import { replacementValue } from './values';
  */
 export type Mode = 'decoy' | 'silly' | 'hybrid' | 'strip';
 
-/** How to rewrite, and how to interpret relative links. */
+/** How to rewrite tracking values for one clipboard entry. */
 export interface RewriteOptions {
   mode: Mode;
   /**
@@ -16,8 +16,6 @@ export interface RewriteOptions {
    * completed output separately; plausible tracking values are always eligible inputs.
    */
   key?: string;
-  /** Resolves relative links (`/path?utm_source=x`) for parsing and stable replacement seeds. */
-  baseUrl?: string;
 }
 
 /** A rewritten link. */
@@ -142,6 +140,11 @@ function absoluteUrlSpans(text: string): { start: number; end: number }[] | null
   return spans;
 }
 
+/** Whether an embedded candidate may contain raw Unicode prose past the actual URL boundary. */
+function isAmbiguousEmbeddedUrl(text: string, start: number, end: number): boolean {
+  return /[^\p{ASCII}]/u.test(text.slice(start, end));
+}
+
 /** Decodes a form-encoded query component, returning the input unchanged when it is malformed. */
 function safeDecode(value: string): string {
   try {
@@ -152,33 +155,27 @@ function safeDecode(value: string): string {
 }
 
 /** Parses a link the way a person would read it, to learn its host and path. */
-function parseLink(link: string, baseUrl?: string): URL | null {
+function parseLink(link: string): URL | null {
   if (!link || WHITESPACE.test(link) || /^[<("'`[{]/.test(link)) {
     return null;
   }
-  const attempts: (() => URL)[] = [];
+  let absolute: string;
   if (/^https?:\/\//i.test(link)) {
-    attempts.push(() => new URL(link));
+    absolute = link;
   } else if (link.startsWith('//')) {
-    attempts.push(() => new URL(`https:${link}`));
+    absolute = `https:${link}`;
   } else if (BARE_HOST.test(link)) {
-    attempts.push(() => new URL(`https://${link}`));
-  } else if (baseUrl && !/^(?:[^/?#]*:|!?\[)/.test(link)) {
-    // Named relative paths have no scheme.
-    attempts.push(() => new URL(link, baseUrl));
+    absolute = `https://${link}`;
+  } else {
+    return null;
   }
 
-  for (const attempt of attempts) {
-    try {
-      const url = attempt();
-      if (url.protocol === 'http:' || url.protocol === 'https:') {
-        return url;
-      }
-    } catch {
-      // Not a URL.
-    }
+  try {
+    const url = new URL(absolute);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /** Recognizable signatures that authenticate a URL's query bytes. */
@@ -199,7 +196,7 @@ function isSignedUrl(url: URL): boolean {
 /**
  * Rewrites the tracking parameters of a single link, editing the query string in place so
  * everything else (encoding, parameter order, duplicate keys, valueless flags, fragment, and
- * scheme-less or relative forms) stays byte-for-byte identical.
+ * scheme-less forms) stays byte-for-byte identical.
  *
  * @returns The rewritten link, or null when it is not a link or has nothing to rewrite.
  */
@@ -213,7 +210,7 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
     return null;
   }
 
-  const url = parseLink(link, options.baseUrl);
+  const url = parseLink(link);
   if (!url || isSignedUrl(url)) {
     return null;
   }
@@ -294,7 +291,7 @@ export function rewriteText(text: string, options: RewriteOptions): TextRewrite 
   const trimmed = text.slice(start, end);
   const rewritten = rewriteUrl(trimmed, options);
   if (rewritten) return { text: rewritten.url, urls: 1, params: rewritten.params };
-  if (parseLink(trimmed, options.baseUrl)) return null;
+  if (parseLink(trimmed)) return null;
 
   const spans = absoluteUrlSpans(text);
   if (!spans || spans.length === 0) return null;
@@ -303,7 +300,11 @@ export function rewriteText(text: string, options: RewriteOptions): TextRewrite 
   let cursor = 0;
   for (const span of spans) {
     proseCharacters += countNonWhitespace(text.slice(cursor, span.start));
-    urlCharacters += span.end - span.start;
+    if (isAmbiguousEmbeddedUrl(text, span.start, span.end)) {
+      proseCharacters += countNonWhitespace(text.slice(span.start, span.end));
+    } else {
+      urlCharacters += span.end - span.start;
+    }
     cursor = span.end;
   }
   proseCharacters += countNonWhitespace(text.slice(cursor));
@@ -316,7 +317,8 @@ export function rewriteText(text: string, options: RewriteOptions): TextRewrite 
   for (const span of spans) {
     output += text.slice(cursor, span.start);
     const link = text.slice(span.start, span.end);
-    const result = rewriteUrl(link, options);
+    // Raw Unicode may be adjoining caption text; its boundary cannot be inferred safely.
+    const result = isAmbiguousEmbeddedUrl(text, span.start, span.end) ? null : rewriteUrl(link, options);
     output += result?.url ?? link;
     if (result) {
       urls += 1;
@@ -326,9 +328,4 @@ export function rewriteText(text: string, options: RewriteOptions): TextRewrite 
   }
   output += text.slice(cursor);
   return urls > 0 ? { text: output, urls, params } : null;
-}
-
-/** Whether a link carries parameters this extension would rewrite. */
-export function hasTrackingParams(link: string, baseUrl?: string): boolean {
-  return rewriteUrl(link, { mode: 'strip', baseUrl }) !== null;
 }
