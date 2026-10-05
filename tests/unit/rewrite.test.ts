@@ -580,6 +580,64 @@ describe('rewriteText', () => {
     });
   });
 
+  it.each([
+    [
+      '[first](https://example.com/one?utm_source=email)[second](https://example.com/two?utm_source=social)',
+      '[first](https://example.com/one)[second](https://example.com/two)',
+    ],
+    [
+      'Read [first](https://example.com/one?utm_source=email),[second](https://example.com/two?utm_source=social)',
+      'Read [first](https://example.com/one),[second](https://example.com/two)',
+    ],
+    [
+      'Read (https://example.com/one?utm_source=email),https://example.com/two?utm_source=social',
+      'Read (https://example.com/one),https://example.com/two',
+    ],
+    [
+      '[first](https://example.com/Foo_(bar)?utm_source=email)[second](https://example.com/two?utm_source=social)',
+      '[first](https://example.com/Foo_(bar))[second](https://example.com/two)',
+    ],
+    [
+      'Read https://example.com/one?utm_source=email,https://example.com/two?utm_source=social',
+      'Read https://example.com/one,https://example.com/two',
+    ],
+    [
+      'Read https://example.com/one?utm_source=email;https://example.com/two?utm_source=social',
+      'Read https://example.com/one;https://example.com/two',
+    ],
+  ])('keeps adjacent compact-share links separate (%s)', (text, expected) => {
+    expect(rewriteText(text, strip)).toEqual({ text: expected, urls: 2, params: 2 });
+  });
+
+  it('retains comma and semicolon bytes that are internal to one embedded URL', () => {
+    expect(rewriteText('Read https://example.com/a,b;c?utm_source=email', strip)).toEqual({
+      text: 'Read https://example.com/a,b;c',
+      urls: 1,
+      params: 1,
+    });
+    expect(
+      rewriteText('https://example.com/?redirect=https://one.example,https://two.example&utm_source=email', strip),
+    ).toEqual({
+      text: 'https://example.com/?redirect=https://one.example,https://two.example',
+      urls: 1,
+      params: 1,
+    });
+  });
+
+  it('retains functional delimiter and nested-URL query bytes in compact prose', () => {
+    expect(rewriteText('Read https://example.com/?utm_source=email)rest&keep=1', strip)).toEqual({
+      text: 'Read https://example.com/?keep=1',
+      urls: 1,
+      params: 1,
+    });
+    expect(
+      rewriteText(
+        'Read https://example.com/?redirect=https://one.example,https://two.example/?utm_source=important',
+        strip,
+      ),
+    ).toBeNull();
+  });
+
   it('rewrites a long link-dense list but leaves prose-dominated documents untouched', () => {
     const links = Array.from(
       { length: 4 },

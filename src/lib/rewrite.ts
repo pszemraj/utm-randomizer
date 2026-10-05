@@ -73,25 +73,54 @@ function countNonWhitespace(text: string): number {
   return count;
 }
 
-/** Trims punctuation that closes surrounding prose, while retaining balanced URL delimiters. */
+/** Whether an absolute web URL starts at a known character boundary. */
+function startsAbsoluteUrl(text: string, start: number): boolean {
+  const prefix = text.slice(start, start + 8).toLowerCase();
+  return prefix.startsWith('http://') || prefix.startsWith('https://');
+}
+
+/** Bounds an embedded URL at its wrapper or next-link separator while retaining functional bytes. */
 function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
   let end = rawEnd;
   const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
-  const counts: Record<string, number> = { '(': 0, ')': 0, '[': 0, ']': 0, '{': 0, '}': 0 };
-  for (const char of text.slice(start, rawEnd)) {
-    if (char in counts) counts[char] = (counts[char] ?? 0) + 1;
+  const openers: Record<string, number> = { '(': 0, '[': 0, '{': 0 };
+  const unmatchedClosers = new Set<number>();
+  const outsideWrapper = text.charAt(start - 1);
+  let nestedAbsoluteUrl = false;
+  for (let index = start; index < rawEnd; index += 1) {
+    const char = text.charAt(index);
+    if (index > start && (char === 'h' || char === 'H') && startsAbsoluteUrl(text, index)) {
+      nestedAbsoluteUrl = true;
+    }
+    if (char === ',' || char === ';') {
+      if (!nestedAbsoluteUrl && startsAbsoluteUrl(text, index + 1)) {
+        end = index;
+        break;
+      }
+    }
+    if (char in openers) {
+      openers[char] = (openers[char] ?? 0) + 1;
+      continue;
+    }
+    const opener = pairs[char];
+    if (!opener) continue;
+    if ((openers[opener] ?? 0) > 0) {
+      openers[opener] = (openers[opener] ?? 0) - 1;
+      continue;
+    }
+    if (outsideWrapper === opener) {
+      end = index;
+      break;
+    }
+    unmatchedClosers.add(index);
   }
   while (end > start) {
     const last = text.charAt(end - 1);
-    if (TRAILING_PROSE_PUNCTUATION.has(last)) {
+    if (TRAILING_PROSE_PUNCTUATION.has(last) || unmatchedClosers.has(end - 1)) {
       end -= 1;
       continue;
     }
-    const opener = pairs[last];
-    if (!opener) break;
-    if ((counts[last] ?? 0) <= (counts[opener] ?? 0)) break;
-    counts[last] = (counts[last] ?? 0) - 1;
-    end -= 1;
+    break;
   }
   return end;
 }
@@ -100,9 +129,12 @@ function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
 function absoluteUrlSpans(text: string): { start: number; end: number }[] | null {
   const spans: { start: number; end: number }[] = [];
   ABSOLUTE_URL.lastIndex = 0;
-  for (const match of text.matchAll(ABSOLUTE_URL)) {
+  let match: RegExpExecArray | null;
+  while ((match = ABSOLUTE_URL.exec(text))) {
     const start = match.index;
-    const end = embeddedUrlEnd(text, start, start + match[0].length);
+    const rawEnd = start + match[0].length;
+    const end = embeddedUrlEnd(text, start, rawEnd);
+    if (end < rawEnd) ABSOLUTE_URL.lastIndex = Math.max(end, start + 1);
     if (end === start) continue;
     spans.push({ start, end });
     if (spans.length > MAX_SHARE_URLS) return null;
