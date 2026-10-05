@@ -553,28 +553,65 @@ describe('rewriteText', () => {
   });
 
   it.each([
-    '<https://example.com/?utm_source=x>',
-    '"https://example.com/?utm_source=x"',
-    "'https://example.com/?utm_source=x'",
-    '\x60https://example.com/?utm_source=x\x60',
-    '(https://example.com/?utm_source=x)',
-    '[link](https://example.com/?utm_source=x)',
-    '[docs/api](https://example.com/?utm_source=x)',
-    '![docs/api](https://example.com/?utm_source=x)',
-    'Read this: https://example.com/?utm_source=x',
-    'https://example.com/?utm_source=x thanks',
-    'https://example.com/?utm_source=x\nhttps://example.com/?utm_source=y',
-    'https://example.com/?utm_source=x https://example.com/?utm_source=y',
-    'https://example.com/?utm_source=x\tand more',
-    '请访问 https://example.com/?utm_source=x，然后继续',
-    '詳しくはhttps://example.com/?utm_source=x。次に進む',
-    'Read “https://example.com/?utm_source=x”next.',
+    ['<https://example.com/?utm_source=x>', '<https://example.com/>'],
+    ['"https://example.com/?utm_source=x"', '"https://example.com/"'],
+    ["'https://example.com/?utm_source=x'", "'https://example.com/'"],
+    ['\x60https://example.com/?utm_source=x\x60', '\x60https://example.com/\x60'],
+    ['(https://example.com/?utm_source=x)', '(https://example.com/)'],
+    ['[link](https://example.com/?utm_source=x)', '[link](https://example.com/)'],
+    ['Read this: https://example.com/?utm_source=x', 'Read this: https://example.com/'],
+    ['Really? https://example.com/?utm_source=x?', 'Really? https://example.com/?'],
+    ['https://example.com/?utm_source=x thanks', 'https://example.com/ thanks'],
+    ['请访问 https://example.com/?utm_source=x，然后继续', '请访问 https://example.com/，然后继续'],
+    ['詳しくはhttps://example.com/?utm_source=x。次に進む', '詳しくはhttps://example.com/。次に進む'],
+    ['Read “https://example.com/?utm_source=x”next.', 'Read “https://example.com/”next.'],
+  ])('rewrites links inside compact share text while preserving its wrapper (%s)', (text, expected) => {
+    expect(rewriteText(text, strip)).toEqual({ text: expected, urls: 1, params: 1 });
+    expect(rewriteUrl(text, strip)).toBeNull();
+  });
+
+  it('rewrites every eligible link in a compact multi-link share', () => {
+    const text =
+      'Check this out: https://example.com/a?utm_source=twitter&x=1 and https://open.spotify.com/track/4?si=keep&utm_source=share';
+    expect(rewriteText(text, strip)).toEqual({
+      text: 'Check this out: https://example.com/a?x=1 and https://open.spotify.com/track/4?si=keep',
+      urls: 2,
+      params: 2,
+    });
+  });
+
+  it('rewrites a long link-dense list but leaves prose-dominated documents untouched', () => {
+    const links = Array.from(
+      { length: 4 },
+      (_, index) => `https://example.com/${'link-path-'.repeat(12)}${String(index)}?utm_source=x`,
+    ).join('\n');
+    expect(rewriteText(`${'label '.repeat(60)}\n${links}`, strip)?.urls).toBe(4);
+
+    const document = `# Report\n\nRead https://example.com/?utm_source=x\n${'A paragraph of document text. '.repeat(100)}`;
+    expect(rewriteText(document, strip)).toBeNull();
+  });
+
+  it('uses the documented compact-prose boundary inclusively', () => {
+    const link = 'https://example.com/?utm_source=x';
+    expect(rewriteText(`${'a'.repeat(280)} ${link}`, strip)?.text).toBe(`${'a'.repeat(280)} https://example.com/`);
+    expect(rewriteText(`${'a'.repeat(281)} ${link}`, strip)).toBeNull();
+  });
+
+  it('leaves payloads with more than eight links untouched', () => {
+    const list = Array.from({ length: 9 }, (_, index) => `https://example.com/${String(index)}?utm_source=x`).join(
+      '\n',
+    );
+    expect(rewriteText(list, strip)).toBeNull();
+  });
+
+  it.each([
+    'ordinary document text',
+    '/article?utm_source=x in a sentence',
+    'www.example.com/?utm_source=x in a sentence',
     '# Report\n\nRead https://example.com/?utm_source=x\n' + 'A paragraph of document text. '.repeat(100),
-  ])('leaves non-URL clipboard text untouched (%s)', (text) => {
+  ])('leaves ineligible clipboard text untouched (%s)', (text) => {
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
-      const options = { mode, key: 'test-key', baseUrl: 'https://example.com/page' };
-      expect(rewriteText(text, options)).toBeNull();
-      expect(rewriteUrl(text, options)).toBeNull();
+      expect(rewriteText(text, { mode, key: 'test-key', baseUrl: 'https://example.com/page' })).toBeNull();
     }
   });
 

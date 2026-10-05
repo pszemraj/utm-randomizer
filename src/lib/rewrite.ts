@@ -30,7 +30,7 @@ export interface UrlRewrite {
 
 /** Rewritten clipboard text. */
 export interface TextRewrite {
-  /** The single URL without surrounding whitespace. */
+  /** Rewritten clipboard text, preserving any accepted share-text wrapper. */
   text: string;
   /** Number of links that changed. */
   urls: number;
@@ -41,7 +41,74 @@ export interface TextRewrite {
 const WHITESPACE = /[\s\u200B-\u200D\uFEFF]/;
 /** Bounds synchronous processing of both clipboard text and directly rewritten URLs. */
 const MAX_TEXT_LENGTH = 100_000;
+/** Bounds how many links one clipboard observation can make us inspect. */
+const MAX_SHARE_URLS = 8;
+/** Treats ordinary social captions and link labels as compact share text. */
+const MAX_COMPACT_PROSE = 280;
+const ABSOLUTE_URL =
+  /https?:\/\/[^\s\u200B-\u200D\uFEFF<>"'`\u2018\u2019\u201c\u201d\u3001\uff0c\u3002\uff01\uff1b\uff1a]+/giu;
+const TRAILING_PROSE_PUNCTUATION = new Set([
+  '.',
+  ',',
+  '!',
+  '?',
+  ';',
+  ':',
+  '\u3001',
+  '\uff0c',
+  '\u3002',
+  '\uff01',
+  '\uff1f',
+  '\uff1b',
+  '\uff1a',
+]);
 const BARE_HOST = /^[a-z0-9.-]+\.[a-z]{2,}(?:[/?#:]|$)/i;
+
+/** Counts visible non-URL prose without making whitespace padding affect classification. */
+function countNonWhitespace(text: string): number {
+  let count = 0;
+  for (const char of text) {
+    if (!WHITESPACE.test(char)) count += 1;
+  }
+  return count;
+}
+
+/** Trims punctuation that closes surrounding prose, while retaining balanced URL delimiters. */
+function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
+  let end = rawEnd;
+  const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+  const counts: Record<string, number> = { '(': 0, ')': 0, '[': 0, ']': 0, '{': 0, '}': 0 };
+  for (const char of text.slice(start, rawEnd)) {
+    if (char in counts) counts[char] = (counts[char] ?? 0) + 1;
+  }
+  while (end > start) {
+    const last = text.charAt(end - 1);
+    if (TRAILING_PROSE_PUNCTUATION.has(last)) {
+      end -= 1;
+      continue;
+    }
+    const opener = pairs[last];
+    if (!opener) break;
+    if ((counts[last] ?? 0) <= (counts[opener] ?? 0)) break;
+    counts[last] = (counts[last] ?? 0) - 1;
+    end -= 1;
+  }
+  return end;
+}
+
+/** Finds bounded absolute web links inside a potential compact share-text payload. */
+function absoluteUrlSpans(text: string): { start: number; end: number }[] | null {
+  const spans: { start: number; end: number }[] = [];
+  ABSOLUTE_URL.lastIndex = 0;
+  for (const match of text.matchAll(ABSOLUTE_URL)) {
+    const start = match.index;
+    const end = embeddedUrlEnd(text, start, start + match[0].length);
+    if (end === start) continue;
+    spans.push({ start, end });
+    if (spans.length > MAX_SHARE_URLS) return null;
+  }
+  return spans;
+}
 
 /** Decodes a form-encoded query component, returning the input unchanged when it is malformed. */
 function safeDecode(value: string): string {
@@ -174,8 +241,9 @@ export function rewriteUrl(link: string, options: RewriteOptions): UrlRewrite | 
 }
 
 /**
- * Rewrites clipboard text only when the entire trimmed text is one URL.
- * Surrounding whitespace is removed; prose, documents, and wrapped links are left untouched.
+ * Rewrites a whole URL or the absolute URLs in compact or link-dense share text. Surrounding
+ * whitespace is removed from a lone URL; accepted wrappers stay byte-for-byte identical. Long,
+ * prose-dominated documents and payloads with too many links are left untouched.
  *
  * @returns The rewritten text, or null when nothing changed.
  */
@@ -191,8 +259,41 @@ export function rewriteText(text: string, options: RewriteOptions): TextRewrite 
   while (end > start && WHITESPACE.test(text.charAt(end - 1))) {
     end -= 1;
   }
-  const rewritten = rewriteUrl(text.slice(start, end), options);
-  return rewritten ? { text: rewritten.url, urls: 1, params: rewritten.params } : null;
+  const trimmed = text.slice(start, end);
+  const rewritten = rewriteUrl(trimmed, options);
+  if (rewritten) return { text: rewritten.url, urls: 1, params: rewritten.params };
+  if (parseLink(trimmed, options.baseUrl)) return null;
+
+  const spans = absoluteUrlSpans(text);
+  if (!spans || spans.length === 0) return null;
+  let urlCharacters = 0;
+  let proseCharacters = 0;
+  let cursor = 0;
+  for (const span of spans) {
+    proseCharacters += countNonWhitespace(text.slice(cursor, span.start));
+    urlCharacters += span.end - span.start;
+    cursor = span.end;
+  }
+  proseCharacters += countNonWhitespace(text.slice(cursor));
+  if (proseCharacters > MAX_COMPACT_PROSE && urlCharacters < proseCharacters) return null;
+
+  let output = '';
+  let urls = 0;
+  let params = 0;
+  cursor = 0;
+  for (const span of spans) {
+    output += text.slice(cursor, span.start);
+    const link = text.slice(span.start, span.end);
+    const result = rewriteUrl(link, options);
+    output += result?.url ?? link;
+    if (result) {
+      urls += 1;
+      params += result.params;
+    }
+    cursor = span.end;
+  }
+  output += text.slice(cursor);
+  return urls > 0 ? { text: output, urls, params } : null;
 }
 
 /** Whether a link carries parameters this extension would rewrite. */
