@@ -2,9 +2,9 @@
 
 ## Usage
 
-A new clipboard entry containing a single URL is processed while Chrome is focused, regardless of which application or page wrote it. The extension replaces supported tracking values using the selected mode, or deletes them in Remove mode. It changes only clipboard contents: page links, addresses, history, and navigation stay unchanged.
+A new clipboard entry containing a URL or compact share text is processed while Chrome is focused, regardless of which application or page wrote it. The extension replaces supported tracking values using the selected mode, or deletes them in Remove mode. It changes only clipboard contents: page links, addresses, history, and navigation stay unchanged.
 
-The only settings are on/off and replacement mode, available through [Chrome's extension options](../README.md#usage). Turning cleaning off stops clipboard checks. On focus loss, automatic cleaning takes one final clipboard reading and then stops. Returning to Chrome establishes a new untouched baseline. The extension has no toolbar popup, keyboard shortcut, custom copy actions, Undo, counters, or notifications.
+The only settings are on/off and replacement mode, available through [Chrome's extension options](../README.md#usage). Turning cleaning off stops clipboard checks. On focus loss, automatic cleaning takes one final clipboard reading and then stops. Returning to Chrome establishes a new untouched baseline. After a successful rewrite, a green check briefly appears on the extension icon with the title **Your link was randomized.** It is shown only while Chrome is focused. The extension has no system notifications, toolbar popup, keyboard shortcut, custom copy actions, Undo, or counters.
 
 ## Replacement values
 
@@ -22,7 +22,11 @@ Unrecognized fields in supported campaign namespaces draw a word from the combin
 
 ## What gets rewritten
 
-The copied text must be one whole URL; surrounding whitespace is stripped when rewriting. Documents, sentences containing URLs, multiple URLs, Markdown links, and HTML link destinations are not processed. A copied hyperlink whose text is only a label stays unchanged; use **Copy link address** to copy its URL.
+A copied whole URL is eligible, and surrounding whitespace is stripped when it is rewritten. Compact share text is also eligible: the extension rewrites each supported absolute `http://` or `https://` URL while preserving captions, punctuation, Markdown wrappers, and other surrounding text byte-for-byte.
+
+The compact-share boundary is deliberately explicit. Up to eight URLs are inspected. Text is eligible when it has at most 280 non-whitespace characters outside its URLs, or when URL characters are at least as numerous as the remaining non-whitespace characters. This covers ordinary share captions and link-heavy lists. Longer prose-dominated copies—such as a README, article, or document where links are a minority—stay entirely untouched. If a payload exceeds the URL-count boundary, it also stays untouched rather than being partially rewritten.
+
+Only absolute web URLs are recognized inside a wrapper. Scheme-less links such as `www.example.com/page?utm_source=x`, protocol-relative links, and relative links are supported only when the entire trimmed clipboard text is that link. A copied hyperlink whose text contains no URL stays unchanged; use **Copy link address** to copy its destination.
 
 Recognition is case-insensitive and applies on every website:
 
@@ -32,7 +36,7 @@ Recognition is case-insensitive and applies on every website:
 
 Other parameters stay untouched, including YouTube and Spotify's `si`, X's `s` and `t`, Amazon's `ref` and `qid`, and email and affiliate markers such as `mc_eid` and `irclickid`. Supported campaign fields and click IDs are still rewritten on those sites. Unseen suffixes are recognized by this extension's policy; that does not mean vendors consume every possible field. There are no site-specific rules. Exact aliases, categories, and vendor references are in [`src/lib/params.ts`](../src/lib/params.ts).
 
-Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less links such as `www.example.com/page?utm_source=x` are supported. Relative URLs stay unchanged because clipboard text does not identify the page they came from. Trailing punctuation remains part of a standalone URL.
+Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less standalone links such as `www.example.com/page?utm_source=x` are supported. Relative URLs stay unchanged because clipboard text does not identify the page they came from. Trailing punctuation remains part of a standalone URL.
 
 Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. A larger previous clipboard value does not prevent cleaning a smaller new copy.
 
@@ -40,7 +44,7 @@ Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchan
 
 A rewritten URL is written as plain text. If its copy also included HTML, a URI list, or hidden web-added data, those accompanying formats are discarded. Detectable images, files, and custom non-text formats leave the entire copy unchanged.
 
-These rules apply only when the copied text itself is an eligible URL. Copying a document, image, or ordinary text does not authorize rewriting URLs inside it or changing its formats.
+These rules apply only when the copied text is an eligible URL or compact share payload. Copying a long prose-dominated document, image, or ordinary text does not authorize rewriting its URLs or changing its formats.
 
 ## How it works
 
@@ -58,7 +62,7 @@ The coordinator retains the current entry's before-and-after identities in memor
 
 The background watcher queries Chrome's window focus every 0.2 seconds and checks the clipboard while focused. It handles new clipboard entries from any source. Starting it or returning to Chrome records existing clipboard contents as an untouched baseline; focusing Chrome, pasting, or loading a page does not authorize rewriting that baseline.
 
-Subsequent changed clipboard entries containing one eligible URL are processed on the next check. Reads and writes happen inside the extension and do not require a focused web page: browser controls, an HTTP page, or the address bar can retain focus. Losing Chrome focus triggers a final tick and then stops clipboard reads; focus checks continue to detect its return. Native menus do not stop cleaning when Chrome's window remains focused. The address bar itself is never changed.
+Subsequent changed clipboard entries containing eligible URL text are processed on the next check. Reads and writes happen inside the extension and do not require a focused web page: browser controls, an HTTP page, or the address bar can retain focus. Losing Chrome focus triggers a final tick and then stops clipboard reads; focus checks continue to detect its return. Native menus do not stop cleaning when Chrome's window remains focused. The address bar itself is never changed.
 
 Polling observes contents, not native copy events. Recopying identical contents without an intervening clipboard change cannot be distinguished from leaving the clipboard unchanged, so it does not trigger another rewrite.
 

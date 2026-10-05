@@ -10,18 +10,16 @@ UTM and other supported campaign fields and ad click IDs are rewritten. Ambiguou
 
 Requires Chrome 123 or newer.
 
-1. Open the [latest release](https://github.com/pszemraj/utm-randomizer/releases/latest) and download the `utm-randomizer-<version>.zip` extension under **Assets**.
-2. Unzip it into a permanent folder, such as `Documents/ChromeExtensions/utm-randomizer/`. Keep that folder in place; Chrome loads the extension's files from it.
+1. Open the [latest release](https://github.com/pszemraj/utm-randomizer/releases/latest). If its **Assets** include `utm-randomizer-<version>.zip`, download that file. GitHub's automatically generated **Source code** archives are not built extensions; when the project ZIP is absent, use the [source build](#build-from-source) instead.
+2. Unzip the project ZIP into a permanent folder, such as `Documents/ChromeExtensions/utm-randomizer/`. Keep that folder in place; Chrome loads the extension's files from it.
 3. Open `chrome://extensions` and turn on **Developer mode** in the top-right corner.
 4. Click **Load unpacked** and select the extracted folder containing `manifest.json`.
 
-If the release only offers **Source code** archives, use the [source build](#build-from-source) below.
-
 ## Usage
 
-- Copy one URL while Chrome is focused: Ctrl+C / Cmd+C, a site's copy button, or **Copy link address**. Documents and other text stay unchanged.
+- Copy a URL or a compact share snippet while Chrome is focused: Ctrl+C / Cmd+C, a site's copy button, or **Copy link address**. Supported links inside short captions are cleaned; long prose-dominated documents stay unchanged.
 - To change the mode or turn cleaning off, open `chrome://extensions`, find **UTM Randomizer**, and select **Details** -> **Extension options**.
-- Cleaning and **Hybrid** mode are enabled by default. Rewritten URLs are plain text; there are no notifications, toolbar controls, or keyboard shortcuts.
+- Cleaning and **Hybrid** mode are enabled by default. Rewritten URLs are plain text. A successful rewrite briefly shows a green check on the extension icon with the title **Your link was randomized.** There are no system notifications, toolbar popup, or keyboard shortcuts.
 
 Try it: right-click [this test link](https://example.com/article?id=42&utm_source=newsletter&utm_medium=email), select **Copy link address**, and paste into a text field. The tracking values should change while `id=42` stays intact.
 

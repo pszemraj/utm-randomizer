@@ -41,7 +41,7 @@ The playground provides copy controls, tracked and functional links, and a box t
 Use Chrome's actual controls for the workflows outside the automated suite:
 
 - Copy the tracked address with Ctrl+L / Cmd+L followed by Ctrl+C / Cmd+C. Check the clipboard both while the address bar remains focused and after returning to the page; separately try switching directly to another app to exercise the final tick. The page address must stay unchanged. See the [current focus limits](behavior.md#background-watching).
-- Select **Copy link address** from a real context menu. Check `chrome.windows.getLastFocused().focused` while the menu or address-bar dropdown is open; Chrome's window must remain focused even if its focus event reports `WINDOW_ID_NONE`.
+- Select **Copy link address** from a real context menu. Check that `chrome.windows.getAll()` still reports a focused Chrome window while the menu or address-bar dropdown is open, even if its focus event reports `WINDOW_ID_NONE`.
 - Open `chrome://extensions` -> **UTM Randomizer** -> **Details** -> **Extension options**. Check on/off and each replacement mode.
 - With Chrome unfocused and the watcher stopped, copy a tracked link in another app, then focus Chrome and paste. That existing clipboard entry must remain unchanged. Separately write a new URL to the clipboard while Chrome stays focused: it should be processed regardless of the writing application.
 
@@ -54,11 +54,11 @@ CI runs only lint, formatting, and type checks. Run tests and packaging locally 
 ## Source map
 
 - `src/manifest.json`: extension manifest; the build fills in `version` from `package.json`.
-- `src/background.ts`: service worker: focus checks, settings updates, and clipboard watcher lifecycle.
+- `src/background.ts`: service worker: focus checks, settings updates, clipboard watcher lifecycle, and Chrome-only rewrite confirmation.
 - `src/offscreen.ts`: background clipboard watcher and clipboard writer.
 - `src/options.*`: on/off and mode settings, opened through Chrome's extension management page.
 - `src/lib/params.ts`: campaign namespaces, exact tracking names, and replacement categories.
-- `src/lib/rewrite.ts`: in-place rewriting of a whole URL.
+- `src/lib/rewrite.ts`: in-place URL rewriting and compact-share classification.
 - `src/lib/values.ts`, `prng.ts`: Decoy, Silly, and Hybrid replacement values, seeded per copy.
 - `src/lib/messages.ts`: runtime message contracts and sender checks.
 - `src/lib/settings.ts`: settings defaults and storage subscriptions.

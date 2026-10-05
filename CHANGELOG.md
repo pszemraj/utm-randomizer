@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Compact share text can contain captions and up to eight absolute web links; supported tracking parameters are rewritten while wrappers stay intact. Long prose-dominated documents remain untouched.
+
+### Fixed
+
+- Successful rewrites again show a brief Chrome-only confirmation while the browser is focused, without system notifications or page injection.
+- Browser-focus polling checks all normal, popup, and DevTools windows so native Chrome menus remain eligible while genuine app blur suspends clipboard reads.
+- Installation instructions distinguish a built release asset from GitHub's unbuilt source archives.
+
 ## [2.0.3] - 2026-10-04
 
 ### Changed
