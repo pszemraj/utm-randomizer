@@ -110,10 +110,11 @@ async function browserFocused(): Promise<boolean> {
 }
 
 /** Requests the blur event's final clipboard tick before an asynchronous focus query can lag behind it. */
-async function flushPotentialBlur(): Promise<boolean> {
-  const revision = settingsRevision;
+async function flushPotentialBlur(expectedFocusRevision: number): Promise<boolean> {
+  const expectedSettingsRevision = settingsRevision;
   const settings = await settingsReady;
-  if (!settings.enabled || revision !== settingsRevision) return false;
+  if (!settings.enabled || expectedSettingsRevision !== settingsRevision || expectedFocusRevision !== focusRevision)
+    return false;
   try {
     await tellOffscreen({ type: 'watch-flush' });
     return true;
@@ -186,7 +187,7 @@ chrome.windows.onFocusChanged.addListener(
   (windowId) => {
     focusRevision += 1;
     if (windowId === chrome.windows.WINDOW_ID_NONE) {
-      potentialBlur = { revision: focusRevision, flushed: flushPotentialBlur() };
+      potentialBlur = { revision: focusRevision, flushed: flushPotentialBlur(focusRevision) };
     }
     void refreshFocus().catch((error: unknown) =>
       console.debug('UTM Randomizer: could not check browser focus', error),

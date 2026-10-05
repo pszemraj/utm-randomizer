@@ -13,6 +13,7 @@ async function startBackground(
   settings: Partial<Settings> = {},
   focused = true,
   initialFocus?: Promise<{ id: number; focused: boolean }[]>,
+  initialSettings?: Promise<Settings>,
 ) {
   let exists = false;
   let currentSettings = { ...DEFAULT_SETTINGS, enabled: false, ...settings };
@@ -54,9 +55,10 @@ async function startBackground(
     storage: { onChanged: { addListener: onStorageChanged } },
     windows: { getAll, WINDOW_ID_NONE: -1, onFocusChanged: { addListener: onFocusChanged } },
   });
-  vi.mocked(loadSettings).mockResolvedValue(currentSettings);
+  if (initialSettings) vi.mocked(loadSettings).mockReturnValueOnce(initialSettings);
+  else vi.mocked(loadSettings).mockResolvedValue(currentSettings);
   await import('../../src/background');
-  await vi.waitFor(() => expect(initialFocus ? getAll : getContexts).toHaveBeenCalled());
+  if (!initialSettings) await vi.waitFor(() => expect(initialFocus ? getAll : getContexts).toHaveBeenCalled());
   const settingsListener = vi.mocked(watchSettings).mock.calls[0]?.[0];
   const storageListener = onStorageChanged.mock.calls[0]?.[0];
   const focusListener = onFocusChanged.mock.calls[0]?.[0];
@@ -252,6 +254,25 @@ it('forces an untouched baseline when focus returns before a blur query resolves
       baseline: true,
     }),
   );
+});
+
+it('cancels a delayed blur flush when focus returns before startup settings resolve', async () => {
+  let releaseSettings!: () => void;
+  const initialSettings = new Promise<Settings>((resolve) => {
+    releaseSettings = () => resolve({ ...DEFAULT_SETTINGS, enabled: true });
+  });
+  const worker = await startBackground({ enabled: true }, true, undefined, initialSettings);
+  worker.changeFocus(false);
+  worker.changeFocus(true);
+  releaseSettings();
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: true },
+      baseline: true,
+    }),
+  );
+  expect(worker.sendMessage).not.toHaveBeenCalledWith({ type: 'watch-flush' });
 });
 
 it('treats any currently focused Chrome window as active', async () => {
