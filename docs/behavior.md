@@ -24,9 +24,11 @@ Unrecognized fields in supported campaign namespaces draw a word from the combin
 
 A copied whole URL is eligible, and surrounding whitespace is stripped when it is rewritten. Compact share text is also eligible: the extension rewrites each supported absolute `http://` or `https://` URL while preserving captions, punctuation, Markdown wrappers, and other surrounding text byte-for-byte.
 
+Embedded URL spans containing raw non-ASCII characters stay untouched because adjacent prose cannot reliably be separated from a URL value. Other eligible spans in the same payload can still be rewritten. Percent-encoded characters remain eligible; standalone URLs retain their documented non-Latin replacement support.
+
 The compact-share boundary is deliberately explicit. Up to eight URLs are inspected. Text is eligible when it has at most 280 non-whitespace characters outside its URLs, or when URL characters are at least as numerous as the remaining non-whitespace characters. This covers ordinary share captions and link-heavy lists. Longer prose-dominated copies—such as a README, article, or document where links are a minority—stay entirely untouched. If a payload exceeds the URL-count boundary, it also stays untouched rather than being partially rewritten.
 
-Only absolute web URLs are recognized inside a wrapper. Scheme-less links such as `www.example.com/page?utm_source=x`, protocol-relative links, and relative links are supported only when the entire trimmed clipboard text is that link. A copied hyperlink whose text contains no URL stays unchanged; use **Copy link address** to copy its destination.
+Only absolute web URLs are recognized inside a wrapper. Scheme-less links such as `www.example.com/page?utm_source=x` and protocol-relative links are supported only when the entire trimmed clipboard text is that link. Relative URLs stay unchanged. A copied hyperlink whose text contains no URL stays unchanged; use **Copy link address** to copy its destination.
 
 Recognition is case-insensitive and applies on every website:
 
@@ -54,9 +56,9 @@ The extension does not inject scripts into web pages or intercept copy/cut event
 
 ### Clipboard coordination
 
-The offscreen document reads, checks, and writes each eligible clipboard entry synchronously in one tick. The service worker starts and stops polling from settings and Chrome-window focus changes. Losing focus triggers a final tick before polling stops. Clipboard operations are not atomic with arbitrary external apps.
+The offscreen document reads, checks, and writes each eligible clipboard entry synchronously in one tick. Settings start and stop its focus checks; the service worker supplies the queried Chrome-window focus state. Losing focus triggers a final clipboard tick, then suspends clipboard reads while focus checks continue. Clipboard operations are not atomic with arbitrary external apps.
 
-The coordinator retains the current entry's before-and-after identities in memory. It reads back its own output and leaves repeated observations of that output alone. The original URL is not a suppression rule: copying it again draws fresh replacements. Different observed contents replace the current record, even when they contain no URL. Closing the coordinator releases the record; its first read after restarting establishes a baseline. There is no clipboard history or timer that reprocesses unchanged contents.
+The coordinator retains the current entry's full text, HTML when present, and format names in memory as a serialized snapshot, including entries that contain no URL. A successful rewrite also retains the output snapshot. It reads back its own output and leaves repeated observations of that output alone. The original URL is not a suppression rule: copying it again draws fresh replacements. Different observed contents replace the current record. Closing the coordinator releases the record; its first read after restarting establishes a baseline. There is no clipboard history or timer that reprocesses unchanged contents.
 
 ### Background watching
 

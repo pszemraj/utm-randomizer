@@ -8,9 +8,10 @@ Decoy, Silly, Hybrid, and Remove are the four modes.
 
 1. **Process new clipboard entries only while Chrome is focused.** Origin is
    irrelevant: any new entry observed during a focused interval is eligible.
-   Poll every 200 ms; on blur, take one final tick before stopping. Every focus
-   regain establishes an untouched baseline, with no short-gap exception.
-   Explicit Copy and Undo require Chrome focus. Never rewrite existing contents
+   Check focus every 200 ms; on blur, take one final clipboard tick before
+   suspending clipboard reads. Focus checks continue while cleaning is enabled.
+   Every focus regain establishes an untouched baseline, with no short-gap
+   exception. Never rewrite existing contents
    merely because Chrome starts, regains focus, navigates, or pastes.
 2. **Change only the clipboard payload.** URL processing must never change page
    links, the page URL, browser history, or the address bar, or trigger navigation.
@@ -61,7 +62,8 @@ page fields and synthetic events cannot stand in for those controls.
 2. **Classify tracking conservatively.** Favor a small, evidence-backed rule set.
    Missing some tracking is preferable to breaking a functional link; leave
    uncertain or ambiguous parameters untouched. Keep one generic rewrite engine
-   and an exact global allowlist; do not restore site-specific or prefix rules.
+   and the documented campaign namespaces and exact-name allowlist; do not add
+   site-specific rules or broaden namespace coverage without an explicit request.
    Prefer removing or narrowing an overbroad rule to accumulating site-specific
    exceptions, and do not expand site coverage opportunistically during fixes.
    Follow the [parameter rules and required control tests](CONTRIBUTING.md#adding-a-tracking-parameter).
@@ -76,21 +78,25 @@ page fields and synthetic events cannot stand in for those controls.
    output. Never suppress the original URL, add a revert guard, retain history,
    or re-randomize unchanged contents. Different observed contents discard the
    current before-and-after record.
-6. **Rewrite only one whole URL.** Normalize surrounding whitespace; leave prose,
-   documents, multiple URLs, and HTML-only link destinations untouched. Write
-   accepted replacements as plain text. Skip detectable images, files, and custom
-   non-text formats. Undo restores only the original URL text.
+6. **Rewrite whole URLs and bounded compact share text.** Normalize surrounding
+   whitespace for a lone URL; preserve accepted share captions and wrappers
+   byte-for-byte. Follow the [share-text boundaries](docs/behavior.md#what-gets-rewritten)
+   and leave long prose-dominated documents and HTML-only link destinations
+   untouched. Write accepted replacements as plain text. Skip detectable images,
+   files, and custom non-text formats.
 7. **Keep feedback inside Chrome.** Use browser feedback only while Chrome is
    focused. Never add system notifications or the notifications permission.
 8. **Messages need payload and sender checks.** Keep message contracts in
-   `src/lib/messages.ts`. Validate known payloads and enforce popup/worker/offscreen
-   direction before changing settings, counters, or clipboard contents. Register
+   `src/lib/messages.ts`. Validate known payloads and enforce worker/offscreen
+   direction before changing clipboard configuration, contents, or feedback. Register
    worker listeners synchronously; worker globals are temporary, not durable state.
 9. **Bound synchronous URL work.** Compact the per-copy seed once before deriving
    per-parameter seeds. Preserve the URL input bound; many tracking parameters
    must not cause repeated full-link hashing.
-10. **Respect cleaning controls.** Preserve the [automatic and explicit action
-    behavior](docs/behavior.md#usage) and [browser-copy focus limits](docs/behavior.md#background-watching).
+10. **Respect cleaning controls.** Preserve the [on/off and mode behavior](docs/behavior.md#usage)
+    and [browser-copy focus limits](docs/behavior.md#background-watching). Settings
+    live in Extension options; do not restore a popup, custom copy actions, Undo,
+    or counters.
 
 ## Validation
 
