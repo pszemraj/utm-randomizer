@@ -6,12 +6,14 @@ const config = { mode: 'strip', focused: true };
 afterEach(() => vi.unstubAllGlobals());
 
 describe('runtime message payloads', () => {
-  it.each([{ type: 'watch-focus' }, { type: 'watch-config', config }, { type: 'watch-config', config: null }])(
-    'accepts a valid $type payload',
-    (message) => {
-      expect(isExtensionMessage(message)).toBe(true);
-    },
-  );
+  it.each([
+    { type: 'watch-focus' },
+    { type: 'rewrite-complete' },
+    { type: 'watch-config', config },
+    { type: 'watch-config', config: null },
+  ])('accepts a valid $type payload', (message) => {
+    expect(isExtensionMessage(message)).toBe(true);
+  });
 
   it.each([
     null,

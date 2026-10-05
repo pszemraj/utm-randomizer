@@ -36,8 +36,10 @@ async function start() {
     | ((message: unknown, sender: chrome.runtime.MessageSender, respond: (response: { ok: boolean }) => void) => void)
     | undefined;
   let workerConfig: import('../../src/lib/messages').WatchConfig | null = CONFIG;
-  const requestFocus = vi.fn(() => {
-    onMessage?.({ type: 'watch-config', config: workerConfig }, WORKER, () => undefined);
+  const requestFocus = vi.fn((message: import('../../src/lib/messages').ExtensionMessage) => {
+    if (message.type === 'watch-focus') {
+      onMessage?.({ type: 'watch-config', config: workerConfig }, WORKER, () => undefined);
+    }
     return Promise.resolve({ ok: true });
   });
   vi.stubGlobal('chrome', {
@@ -153,11 +155,12 @@ it('pauses without flushing an entry copied since the last poll', async () => {
 });
 
 it('rewrites a fresh URL without a website reader and leaves its output stable', async () => {
-  const { clipboard, writes } = await start();
+  const { clipboard, writes, requestFocus } = await start();
   clipboard.text = TRACKED;
   await vi.advanceTimersByTimeAsync(200);
   expect(clipboard.text).toBe(CLEAN);
   expect(writes).toHaveBeenCalledOnce();
+  expect(requestFocus).toHaveBeenCalledWith({ type: 'rewrite-complete' });
   await vi.advanceTimersByTimeAsync(50 * 200);
   expect(clipboard.text).toBe(CLEAN);
   expect(writes).toHaveBeenCalledOnce();
@@ -247,14 +250,14 @@ it('expires completed output after observing unrelated text', async () => {
   expect(writes).toHaveBeenCalledTimes(2);
 });
 
-it('normalizes a rewritten single URL to plain text', async () => {
+it('normalizes rewritten clipboard text to plain text', async () => {
   const { clipboard } = await start();
-  const original = ` \t${TRACKED}\r\n`;
+  const original = `Read ${TRACKED} today`;
   clipboard.text = original;
   clipboard.html = `<a href="${TRACKED}">A link</a>`;
   clipboard.types = ['text/plain', 'text/html'];
   await vi.advanceTimersByTimeAsync(200);
-  expect(clipboard.text).toBe(CLEAN);
+  expect(clipboard.text).toBe(`Read ${CLEAN} today`);
   expect(clipboard.html).toBeNull();
   expect(clipboard.types).toEqual(['text/plain']);
 });
@@ -306,13 +309,10 @@ it.each([
   'A document with no links',
   'https://example.com/item?id=42',
   'https://cdn.example/report?utm_source=email&Expires=1&Signature=abc&Key-Pair-Id=K',
-  `Read ${TRACKED} today`,
-  `${TRACKED} ${TRACKED}`,
   `# Report\n\n${TRACKED}\n${'A paragraph. '.repeat(100)}`,
-  `[article](${TRACKED})`,
   '',
   '/relative?utm_source=email',
-])('leaves non-URL document copies untouched: %s', async (text) => {
+])('leaves ineligible clipboard copies untouched: %s', async (text) => {
   const { clipboard, writes } = await start();
   clipboard.text = text;
   clipboard.html = `<a href="${TRACKED}">${text}</a>`;

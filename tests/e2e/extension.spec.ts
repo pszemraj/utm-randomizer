@@ -158,7 +158,18 @@ test.describe('native clipboard processing', () => {
     await expect.poll(readClipboard).toBe(CLEAN);
   });
 
-  test('preserves unrelated text, multiple URLs, labels, relative and signed links', async ({
+  test('rewrites compact multi-link share text', async ({ playground, readClipboard, setSettings, waitForWatcher }) => {
+    await setSettings({ mode: 'strip' });
+    await waitForWatcher(true);
+    await playground.getByTestId('copy-sharetext').click();
+    await expect
+      .poll(readClipboard)
+      .toBe(
+        'Check this out: https://example.com/a?x=1 and https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c3d',
+      );
+  });
+
+  test('preserves unrelated text, long documents, labels, relative and signed links', async ({
     writeClipboardExternally,
     readClipboard,
     waitForWatcher,
@@ -166,9 +177,7 @@ test.describe('native clipboard processing', () => {
     await waitForWatcher(true);
     for (const text of [
       'ordinary document text',
-      `Read ${ARTICLE} today`,
-      `${ARTICLE}\n${ARTICLE}`,
-      `${ARTICLE} https://example.org/?utm_source=other`,
+      `# Report\n\nRead ${ARTICLE}\n${'A paragraph of document text. '.repeat(100)}`,
       '/article?utm_source=newsletter',
       'https://example.com/?id=42&si=abc',
       'https://example.com/?utm_source=email&X-Amz-Signature=abc&X-Amz-Algorithm=AWS4-HMAC-SHA256',
@@ -248,7 +257,7 @@ test.describe('native clipboard processing', () => {
 
 test.describe('clipboard formats', () => {
   for (const text of [ARTICLE, 'A product']) {
-    test(`whole URL classification controls HTML and hidden metadata (${text === ARTICLE ? 'URL' : 'label'})`, async ({
+    test(`eligible-text classification controls HTML and hidden metadata (${text === ARTICLE ? 'URL' : 'label'})`, async ({
       context,
       playground,
       readClipboard,
@@ -495,7 +504,15 @@ test.describe('extension options', () => {
     const manifest = await serviceWorker.evaluate(() => chrome.runtime.getManifest());
     expect(manifest.options_ui).toEqual({ page: 'options.html', open_in_tab: false });
     expect(manifest.permissions).toEqual(['clipboardRead', 'clipboardWrite', 'offscreen', 'storage']);
-    expect(manifest.action).toBeUndefined();
+    expect(manifest.action).toEqual({
+      default_title: 'UTM Randomizer',
+      default_icon: {
+        16: 'icons/icon16.png',
+        32: 'icons/icon32.png',
+        48: 'icons/icon48.png',
+        128: 'icons/icon128.png',
+      },
+    });
     expect(manifest.commands).toBeUndefined();
     await options.close();
   });

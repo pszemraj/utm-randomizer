@@ -12,7 +12,7 @@ vi.mock('../../src/lib/settings', async (importOriginal) => ({
 async function startBackground(
   settings: Partial<Settings> = {},
   focused = true,
-  initialFocus?: Promise<{ id: number; focused: boolean }>,
+  initialFocus?: Promise<{ id: number; focused: boolean }[]>,
 ) {
   let exists = false;
   let currentSettings = { ...DEFAULT_SETTINGS, enabled: false, ...settings };
@@ -22,8 +22,8 @@ async function startBackground(
     return Promise.resolve();
   });
   const sendMessage = vi.fn<(message: ExtensionMessage) => Promise<{ ok: boolean }>>().mockResolvedValue({ ok: true });
-  const getLastFocused = vi.fn().mockResolvedValue({ id: 1, focused });
-  if (initialFocus) getLastFocused.mockReturnValueOnce(initialFocus);
+  const getAll = vi.fn().mockResolvedValue([{ id: 1, focused }]);
+  if (initialFocus) getAll.mockReturnValueOnce(initialFocus);
   const onFocusChanged = vi.fn<(listener: (windowId: number) => void) => void>();
   const onMessage =
     vi.fn<
@@ -37,6 +37,9 @@ async function startBackground(
     >();
   const onStorageChanged =
     vi.fn<(listener: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void) => void>();
+  const setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
+  const setBadgeText = vi.fn().mockResolvedValue(undefined);
+  const setTitle = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal('chrome', {
     runtime: {
       id: 'extension-id',
@@ -47,12 +50,13 @@ async function startBackground(
       sendMessage,
     },
     offscreen: { createDocument, Reason: { CLIPBOARD: 'CLIPBOARD' } },
+    action: { setBadgeBackgroundColor, setBadgeText, setTitle },
     storage: { onChanged: { addListener: onStorageChanged } },
-    windows: { getLastFocused, WINDOW_ID_NONE: -1, onFocusChanged: { addListener: onFocusChanged } },
+    windows: { getAll, WINDOW_ID_NONE: -1, onFocusChanged: { addListener: onFocusChanged } },
   });
   vi.mocked(loadSettings).mockResolvedValue(currentSettings);
   await import('../../src/background');
-  await vi.waitFor(() => expect(initialFocus ? getLastFocused : getContexts).toHaveBeenCalled());
+  await vi.waitFor(() => expect(initialFocus ? getAll : getContexts).toHaveBeenCalled());
   const settingsListener = vi.mocked(watchSettings).mock.calls[0]?.[0];
   const storageListener = onStorageChanged.mock.calls[0]?.[0];
   const focusListener = onFocusChanged.mock.calls[0]?.[0];
@@ -61,9 +65,13 @@ async function startBackground(
     getContexts,
     createDocument,
     sendMessage,
-    getLastFocused,
+    getAll,
     onFocusChanged,
-    requestFocus(
+    setBadgeBackgroundColor,
+    setBadgeText,
+    setTitle,
+    send(
+      message: ExtensionMessage,
       sender: chrome.runtime.MessageSender = {
         id: 'extension-id',
         url: 'chrome-extension://extension-id/offscreen.html',
@@ -72,11 +80,14 @@ async function startBackground(
       const respond = vi.fn();
       const listener = onMessage.mock.calls[0]?.[0];
       if (!listener) throw new Error('Missing worker listener');
-      listener({ type: 'watch-focus' }, sender, respond);
+      listener(message, sender, respond);
       return respond;
     },
+    requestFocus(sender?: chrome.runtime.MessageSender) {
+      return this.send({ type: 'watch-focus' }, sender);
+    },
     changeFocus(nextFocused: boolean, windowId = 1, queriedFocus = nextFocused) {
-      getLastFocused.mockResolvedValue({ id: windowId, focused: queriedFocus });
+      getAll.mockResolvedValue([{ id: windowId, focused: queriedFocus }]);
       focusListener(nextFocused ? windowId : -1);
     },
     changeSettings(next: Partial<Settings>) {
@@ -204,7 +215,7 @@ it('keeps polling through a menu NONE event when the window remains focused', as
     }),
   );
   // A real blur after the menu may have no new event, so the next poll must query it.
-  worker.getLastFocused.mockResolvedValue({ id: 1, focused: false });
+  worker.getAll.mockResolvedValue([{ id: 1, focused: false }]);
   const response = worker.requestFocus();
   await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
   expect(worker.sendMessage).toHaveBeenLastCalledWith({
@@ -212,6 +223,22 @@ it('keeps polling through a menu NONE event when the window remains focused', as
     config: { mode: 'hybrid', focused: false },
   });
   expect(vi.mocked(loadSettings)).toHaveBeenCalledOnce();
+});
+
+it('treats any currently focused Chrome window as active', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  worker.getAll.mockResolvedValue([
+    { id: 1, focused: false, type: 'normal' },
+    { id: 2, focused: true, type: 'devtools' },
+  ]);
+  const response = worker.requestFocus();
+  await vi.waitFor(() => expect(response).toHaveBeenCalledWith({ ok: true }));
+  expect(worker.sendMessage).toHaveBeenLastCalledWith({
+    type: 'watch-config',
+    config: { mode: 'hybrid', focused: true },
+  });
 });
 
 it('rejects a focus request from an extension tab', async () => {
@@ -228,10 +255,68 @@ it('rejects a focus request from an extension tab', async () => {
   expect(worker.sendMessage).not.toHaveBeenCalled();
 });
 
+it('shows an exact Chrome-only success confirmation while focused', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  const response = worker.send({ type: 'rewrite-complete' });
+  expect(response).toHaveBeenCalledWith({ ok: true });
+  await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenCalledWith({ text: '✓' }));
+  expect(worker.setBadgeBackgroundColor).toHaveBeenCalledWith({ color: '#2e7d32' });
+  expect(worker.setTitle).toHaveBeenCalledWith({ title: 'Your link was randomized.' });
+});
+
+it('does not show rewrite confirmation when Chrome is unfocused', async () => {
+  const worker = await startBackground({ enabled: true }, false);
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.send({ type: 'rewrite-complete' });
+  await vi.waitFor(() => expect(worker.getAll.mock.calls.length).toBeGreaterThan(1));
+  expect(worker.setBadgeText).not.toHaveBeenCalledWith({ text: '✓' });
+  expect(worker.setTitle).not.toHaveBeenCalledWith({ title: 'Your link was randomized.' });
+});
+
+it('clears a confirmation whose action update overlaps a real blur', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  let release!: () => void;
+  worker.setBadgeText.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  worker.send({ type: 'rewrite-complete' });
+  await vi.waitFor(() => expect(release).toBeDefined());
+  worker.changeFocus(false);
+  release();
+  await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '' }));
+  expect(worker.setTitle).toHaveBeenLastCalledWith({ title: 'UTM Randomizer' });
+});
+
+it('clears a visible confirmation when cleaning is disabled', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.send({ type: 'rewrite-complete' });
+  await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenCalledWith({ text: '✓' }));
+  worker.changeSettings({ enabled: false });
+  await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '' }));
+  expect(worker.setTitle).toHaveBeenLastCalledWith({ title: 'UTM Randomizer' });
+});
+
+it('rejects rewrite confirmation from an extension tab', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  const response = worker.send(
+    { type: 'rewrite-complete' },
+    { id: 'extension-id', url: 'chrome-extension://extension-id/options.html', tab: { id: 7 } as chrome.tabs.Tab },
+  );
+  expect(response).toHaveBeenCalledWith({ ok: false });
+  expect(worker.setBadgeText).not.toHaveBeenCalledWith({ text: '✓' });
+});
+
 it.each([true, false])('ignores a late startup query after a focus event reports %s', async (focused) => {
   let release!: () => void;
-  const initialFocus = new Promise<{ id: number; focused: boolean }>((resolve) => {
-    release = () => resolve({ id: 1, focused: !focused });
+  const initialFocus = new Promise<{ id: number; focused: boolean }[]>((resolve) => {
+    release = () => resolve([{ id: 1, focused: !focused }]);
   });
   const worker = await startBackground({ enabled: true }, !focused, initialFocus);
   worker.changeFocus(focused);
@@ -243,7 +328,7 @@ it.each([true, false])('ignores a late startup query after a focus event reports
     type: 'watch-config',
     config: { mode: 'strip', focused: !focused },
   });
-  expect(worker.getLastFocused.mock.calls.length).toBeGreaterThan(1);
+  expect(worker.getAll.mock.calls.length).toBeGreaterThan(1);
 });
 
 it('discards an old mode configuration when settings change during offscreen lookup', async () => {

@@ -76,11 +76,12 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string): boolean {
   if (ok) {
     const landed = readClipboard() ?? snapshot;
     entry = { before, after: identity(landed) };
+    void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
   }
   return ok;
 }
 
-/** Performs one synchronous read, whole-URL decision, write, and read-back. */
+/** Performs one synchronous read, eligible-text decision, write, and read-back. */
 function tick(baseline = false): void {
   const snapshot = readClipboard();
   if (!snapshot) return;

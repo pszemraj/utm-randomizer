@@ -154,10 +154,11 @@
     <main>
       <h1>UTM Randomizer playground</h1>
       <p class="muted">
-        Copy a single URL, then paste into the box at the bottom (or anywhere) to see what reached your clipboard. Prose
-        and multiple links stay untouched. In <strong>Decoy</strong> mode tracking values turn into believable fakes, in
-        <strong>Silly</strong> mode into nonsense, in <strong>Hybrid</strong> mode into a mix of both, and in
-        <strong>Remove</strong> mode they disappear. Links under “Should not change” must paste exactly as shown.
+        Copy a URL or a compact share snippet, then paste into the box at the bottom (or anywhere) to see what reached
+        your clipboard. Long prose-dominated documents stay untouched. In <strong>Decoy</strong> mode tracking values
+        turn into believable fakes, in <strong>Silly</strong> mode into nonsense, in <strong>Hybrid</strong> mode into a
+        mix of both, and in <strong>Remove</strong> mode they disappear. Links under “Should not change” must paste
+        exactly as shown.
       </p>
 
       <section>
@@ -189,7 +190,7 @@
           class="row"
           data-text="Check this out: https://example.com/a?utm_source=twitter&amp;x=1 and https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c3d&amp;utm_source=share"
         >
-          <button data-copy="writeText" data-testid="copy-sharetext">Prose with 2 links (unchanged)</button>
+          <button data-copy="writeText" data-testid="copy-sharetext">Compact share with 2 links</button>
           <span class="url"></span>
         </div>
       </section>
@@ -279,7 +280,7 @@
           />
         </div>
         <div class="row">
-          <span>Prose with links (unchanged)</span>
+          <span>Compact share text</span>
           <textarea data-testid="select-textarea" rows="3">
 Notes: https://example.com/a?utm_campaign=x&id=1 and https://example.com/b?fbclid=y&id=2.</textarea>
         </div>

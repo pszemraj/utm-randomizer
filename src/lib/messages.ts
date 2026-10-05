@@ -15,7 +15,8 @@ export interface WatchConfig {
 }
 
 /** Extension runtime operations and their direction-specific payloads. */
-export type ExtensionMessage = { type: 'watch-config'; config: WatchConfig | null } | { type: 'watch-focus' };
+export type ExtensionMessage =
+  { type: 'watch-config'; config: WatchConfig | null } | { type: 'watch-focus' } | { type: 'rewrite-complete' };
 
 /** Whether a value has named payload fields. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -39,6 +40,7 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
     case 'watch-config':
       return value.config === null || isWatchConfig(value.config);
     case 'watch-focus':
+    case 'rewrite-complete':
       return true;
     default:
       return false;
