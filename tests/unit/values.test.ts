@@ -251,6 +251,16 @@ describe('replacementValue', () => {
     expect(replacementValue('decoy', 'campaign', hex, 'seed-0')).not.toBe(hex);
   });
 
+  it.each([
+    ['crm+software', 'collision-600'],
+    ['crm%20software', 'collision-3288'],
+  ])('changes a search term when its composed decoy and fallback collide (%s)', (raw, seed) => {
+    const replacement = replacementValue('decoy', 'term', raw, seed);
+    expect(decodeURIComponent(replacement.replace(/\+/g, ' '))).not.toBe('crm software');
+    expect(isWordy(replacement)).toBe(true);
+    expect(replacement).not.toBe(raw);
+  });
+
   it('only produces URL-safe values', () => {
     for (let i = 0; i < 2000; i += 1) {
       for (const category of CATEGORIES) {

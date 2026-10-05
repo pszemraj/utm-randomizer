@@ -688,7 +688,7 @@ const UNKNOWN_SILLY = Object.values(FUNNY).flat();
 function pickDifferent(random: Random, words: readonly string[], original: string): string {
   return pick(
     random,
-    words.filter((word) => word !== original),
+    words.filter((word) => word.replace(/\+/g, ' ') !== original),
   );
 }
 
