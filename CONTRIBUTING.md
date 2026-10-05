@@ -8,7 +8,7 @@ Use the [source build](README.md#build-from-source) to load the extension and th
 
 Run focused regression tests for changed behavior and the applicable [lint, formatting, type, and build checks](docs/development.md). For documentation-only changes, check formatting, relative links, and examples against the current code. `npm run format` fixes formatting.
 
-Unit mocks cannot establish native clipboard access, format handling, browser focus, or worker termination behavior. Changes to those paths require a real loaded-extension browser run. Exercise real clipboard data and browser focus; inject delays or failures when testing races. Cover newer copies, unsupported formats, and stale writes where relevant. Keep native browser-control workflows that automation cannot reach in the [manual checks](docs/development.md#manual-testing).
+Unit mocks cannot establish native clipboard access, format handling, browser focus, or worker termination behavior. Changes to those paths require a real loaded-extension browser run. Exercise real clipboard data and browser focus; inject delays or failures when testing races. Cover newer copies, unsupported formats, and stale writes where relevant. Keep native browser-control workflows that automation cannot reach in the [manual checks](docs/development.md#manual-testing). On the user's macOS desktop, perform those checks deliberately through computer use in the already-running Chrome; never launch a headed Playwright suite that can flash or steal focus.
 
 ## Code style
 

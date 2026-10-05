@@ -11,7 +11,7 @@ npm run dev
 # Lint, format, types, tests
 npm run check
 
-# Test loaded extension
+# Test the loaded extension headlessly; no browser window is shown
 npm run test:e2e
 
 # Manual: 127.0.0.1:5173
@@ -26,13 +26,13 @@ npm run icons
 
 ## Browser tests
 
-The end-to-end tests load `dist/` into Playwright's Chromium and exercise single-URL clipboard changes, unchanged page addresses, settings, and non-URL and non-text controls. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary. Run `HEADED=1 npm run test:e2e` to show the browser.
+The end-to-end command loads `dist/` into headless Playwright Chromium and exercises single-URL clipboard changes, unchanged page addresses, settings, and non-URL and non-text controls without opening or foregrounding a browser window. The fixture hard-codes headless mode; environment variables such as `HEADED=1` do not override it. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary.
 
-Focus tests require `HEADED=1` to exercise a visible browser's native window focus. State this limitation before a headless run and run the focus cases in a visible browser before claiming full coverage.
+Native minimize/regain, address-bar, and context-menu checks are not Playwright jobs. Run them deliberately through computer use in the user's already-open Chrome, one bounded interaction at a time. Never launch an automated foreground browser suite on the user's desktop.
 
 See the [validation requirements](../CONTRIBUTING.md#checks) when choosing local checks.
 
-Settings tests run the options page in an extension tab. Background-watcher tests write through an extension tab, including cleaning without a webpage reader; focus tests minimize and restore the browser window. These tests do not exercise native address-bar copying, browser menu selection, the embedded options view, or copying from another application.
+Settings tests run the options page in an extension tab. Background-watcher tests write through an extension tab, including cleaning without a webpage reader. The automated suite does not minimize, restore, or foreground browser windows, and it does not exercise native address-bar copying, browser menu selection, the embedded options view, or copying from another application.
 
 ## Manual testing
 

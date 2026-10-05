@@ -73,7 +73,8 @@ export const test = base.extend<ExtensionFixtures, { server: Playground }>({
       // Set CHROMIUM_PATH to reuse an installed Chromium instead of Playwright's download.
       executablePath: process.env.CHROMIUM_PATH || undefined,
       channel: process.env.CHROMIUM_PATH ? undefined : 'chromium',
-      headless: !process.env.HEADED,
+      // This suite must never open or foreground a browser on the user's desktop.
+      headless: true,
       args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
     });
     try {
