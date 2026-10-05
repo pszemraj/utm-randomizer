@@ -26,6 +26,8 @@ A copied whole URL is eligible, and surrounding whitespace is stripped when it i
 
 Embedded URL spans containing raw non-ASCII characters stay untouched because adjacent prose cannot reliably be separated from a URL value. Other eligible spans in the same payload can still be rewritten. Percent-encoded characters remain eligible; standalone URLs retain their documented non-Latin replacement support.
 
+The supported product scope is English-language share text and URLs expressed with ASCII or percent-encoded bytes. Raw-Unicode embedded URL parsing is not a compatibility target; ambiguous spans are skipped instead of accumulating language-specific boundary rules.
+
 The compact-share boundary is deliberately explicit. Up to eight URLs are inspected. Text is eligible when it has at most 280 non-whitespace characters outside its URLs, or when URL characters are at least as numerous as the remaining non-whitespace characters. This covers ordinary share captions and link-heavy lists. Longer prose-dominated copies—such as a README, article, or document where links are a minority—stay entirely untouched. If a payload exceeds the URL-count boundary, it also stays untouched rather than being partially rewritten.
 
 Only absolute web URLs are recognized inside a wrapper. Scheme-less links such as `www.example.com/page?utm_source=x` and protocol-relative links are supported only when the entire trimmed clipboard text is that link. Relative URLs stay unchanged. A copied hyperlink whose text contains no URL stays unchanged; use **Copy link address** to copy its destination.

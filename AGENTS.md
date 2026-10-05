@@ -25,6 +25,10 @@ Decoy, Silly, Hybrid, and Remove are the four modes.
 
 - Keep changes focused on the requested behavior. Prefer deleting obsolete code
   over adding abstractions or compatibility layers.
+- Target English-language share text and URLs expressed with ASCII or
+  percent-encoded bytes. Do not add language-specific raw-Unicode URL parsing
+  or boundary heuristics unless explicitly requested; conservatively skipping
+  ambiguous embedded spans is acceptable.
 - **Commit verified implementation work before finishing.** Use atomic
   Conventional Commits at logical points; do not leave completed fixes
   uncommitted. Work on a branch.
