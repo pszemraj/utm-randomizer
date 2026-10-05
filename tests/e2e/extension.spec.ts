@@ -294,9 +294,14 @@ test.describe('clipboard formats', () => {
             const [item] = await navigator.clipboard.read();
             return item ? (await item.getType(type)).text() : '';
           }, extra);
-          expect(payload).toBe(
-            extra === 'text/html' ? '<a href="https://example.com/?utm_source=real">A product</a>' : 'metadata',
-          );
+          if (extra === 'text/html') {
+            // Headed Chrome on macOS prepends this marker while normalizing HTML onto the native pasteboard.
+            expect(payload.replace(/^<meta charset="utf-8">/i, '')).toBe(
+              '<a href="https://example.com/?utm_source=real">A product</a>',
+            );
+          } else {
+            expect(payload).toBe('metadata');
+          }
         }
       }
     });
@@ -385,6 +390,7 @@ test.describe('focus and navigation', () => {
     expect(await expectStable(readClipboard)).toBe(ARTICLE);
     await writeClipboardExternally('different text');
     await expect.poll(readClipboard).toBe('different text');
+    expect(await expectStable(readClipboard)).toBe('different text');
     await writeClipboardExternally(ARTICLE);
     await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
   });
