@@ -180,6 +180,7 @@ it.each([{ mode: 'strip' as const }, { enabled: false }])(
     worker.changeSettings(changes, pending);
     const response = worker.requestFocus();
     await vi.waitFor(() => expect(worker.getAll).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(worker.sendMessage).not.toHaveBeenCalled();
     expect(response).not.toHaveBeenCalled();
     release();
