@@ -43,7 +43,7 @@ const MAX_TEXT_LENGTH = 100_000;
 const MAX_SHARE_URLS = 8;
 /** Treats ordinary social captions and link labels as compact share text. */
 const MAX_COMPACT_PROSE = 280;
-const ABSOLUTE_URL = /https?:\/\/[^\s\u200B-\u200D\uFEFF<>"'`\u2018\u2019\u201c\u201d]+/giu;
+const ABSOLUTE_URL = /https?:\/\/[^\s\u200B-\u200D\uFEFF<>"`\u2018\u2019\u201c\u201d]+/giu;
 const TRAILING_PROSE_PUNCTUATION = new Set(['.', ',', '!', '?', ';', ':']);
 const BARE_HOST = /^[a-z0-9.-]+\.[a-z]{2,}(?:[/?#:]|$)/i;
 
@@ -116,6 +116,10 @@ function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
     }
     break;
   }
+  const trailingProse = /\.{3}and$/i.exec(text.slice(start, end));
+  if (trailingProse?.index !== undefined) {
+    end = start + trailingProse.index;
+  }
   if (outsideWrapperLength > 0) {
     let trailingWrapperLength = 0;
     let index = end - 1;
@@ -127,10 +131,7 @@ function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
       end -= trailingWrapperLength;
     }
   }
-  const trailingProse = /\.{3}and$/i.exec(text.slice(start, end));
-  if (trailingProse?.index !== undefined) {
-    end = start + trailingProse.index;
-  }
+  if (text.charAt(start - 1) === "'" && text.charAt(end - 1) === "'") end -= 1;
   return end;
 }
 
@@ -160,17 +161,17 @@ function isAmbiguousEmbeddedUrl(text: string, start: number, end: number): boole
   const fragmentStart = link.indexOf('#');
   if (queryStart === -1 || (fragmentStart !== -1 && fragmentStart < queryStart)) return false;
   const queryEnd = fragmentStart === -1 ? link.length : fragmentStart;
-  return link
-    .slice(queryStart + 1, queryEnd)
-    .split('&')
-    .some((segment) => {
-      const separator = segment.indexOf('=');
-      if (separator === -1) return false;
-      const rawKey = segment.slice(0, separator);
-      const rawValue = segment.slice(separator + 1);
-      const boundaryValue = rawValue.replace(/\.{2,}/g, '');
-      return classifyParam(safeDecode(rawKey)) !== null && /[.,!?;:]/.test(boundaryValue);
-    });
+  const rawQuery = link.slice(queryStart + 1, queryEnd);
+  // A raw apostrophe is legal in a URL but indistinguishable from attached English prose here.
+  if (rawQuery.includes("'")) return true;
+  return rawQuery.split('&').some((segment) => {
+    const separator = segment.indexOf('=');
+    if (separator === -1) return false;
+    const rawKey = segment.slice(0, separator);
+    const rawValue = segment.slice(separator + 1);
+    const boundaryValue = rawValue.replace(/\.{2,}/g, '');
+    return classifyParam(safeDecode(rawKey)) !== null && /[.,!?;:]/.test(boundaryValue);
+  });
 }
 
 /** Decodes a form-encoded query component, returning the input unchanged when it is malformed. */

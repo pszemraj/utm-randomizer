@@ -655,6 +655,10 @@ describe('rewriteText', () => {
             `Read (${wrapper}${link}${wrapper}), then reply`,
             `Read (${wrapper}${rewritten?.url ?? ''}${wrapper}), then reply`,
           ],
+          [
+            `Read ${wrapper}${link}${wrapper}...and more`,
+            `Read ${wrapper}${rewritten?.url ?? ''}${wrapper}...and more`,
+          ],
         ] as const) {
           expect(rewriteText(text, options)).toEqual({ text: expected, urls: 1, params: 1 });
         }
@@ -710,6 +714,13 @@ describe('rewriteText', () => {
       }
     },
   );
+
+  it('leaves ambiguous raw apostrophes in an embedded query untouched', () => {
+    const text = "Read https://example.com/?utm_campaign=O'Reilly&item=42";
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
+    }
+  });
 
   it('retains comma and semicolon bytes that are internal to one embedded URL', () => {
     expect(rewriteText('Read https://example.com/a,b;c?utm_source=email', strip)).toEqual({
