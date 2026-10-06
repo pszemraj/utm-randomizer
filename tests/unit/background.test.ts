@@ -35,8 +35,10 @@ async function startBackground(
         ) => boolean,
       ) => void
     >();
+  const onInstalled = vi.fn<(listener: (details: chrome.runtime.InstalledDetails) => void) => void>();
   const onStorageChanged =
     vi.fn<(listener: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void) => void>();
+  const removeLocal = vi.fn().mockResolvedValue(undefined);
   const setBadgeBackgroundColor = vi.fn().mockResolvedValue(undefined);
   const setBadgeText = vi.fn().mockResolvedValue(undefined);
   const setTitle = vi.fn().mockResolvedValue(undefined);
@@ -45,13 +47,14 @@ async function startBackground(
       id: 'extension-id',
       getURL: (path: string) => `chrome-extension://extension-id/${path}`,
       onMessage: { addListener: onMessage },
+      onInstalled: { addListener: onInstalled },
       ContextType: { OFFSCREEN_DOCUMENT: 'OFFSCREEN_DOCUMENT' },
       getContexts,
       sendMessage,
     },
     offscreen: { createDocument, Reason: { CLIPBOARD: 'CLIPBOARD' } },
     action: { setBadgeBackgroundColor, setBadgeText, setTitle },
-    storage: { onChanged: { addListener: onStorageChanged } },
+    storage: { local: { remove: removeLocal }, onChanged: { addListener: onStorageChanged } },
     windows: { getAll, WINDOW_ID_NONE: -1, onFocusChanged: { addListener: onFocusChanged } },
   });
   if (initialSettings) vi.mocked(loadSettings).mockReturnValueOnce(initialSettings);
@@ -60,7 +63,8 @@ async function startBackground(
   if (!initialSettings) await vi.waitFor(() => expect(initialFocus ? getAll : getContexts).toHaveBeenCalled());
   const storageListener = onStorageChanged.mock.calls[0]?.[0];
   const focusListener = onFocusChanged.mock.calls[0]?.[0];
-  if (!storageListener || !focusListener) throw new Error('listeners were not registered');
+  const installedListener = onInstalled.mock.calls[0]?.[0];
+  if (!storageListener || !focusListener || !installedListener) throw new Error('listeners were not registered');
   return {
     getContexts,
     createDocument,
@@ -70,6 +74,13 @@ async function startBackground(
     setBadgeBackgroundColor,
     setBadgeText,
     setTitle,
+    removeLocal,
+    install() {
+      installedListener({ reason: 'install' });
+    },
+    update(previousVersion = '1.2.0') {
+      installedListener({ reason: 'update', previousVersion });
+    },
     send(
       message: ExtensionMessage,
       sender: chrome.runtime.MessageSender = {
@@ -136,6 +147,15 @@ it('does not create a clipboard document while disabled', async () => {
   const worker = await startBackground();
   expect(worker.createDocument).not.toHaveBeenCalled();
   expect(worker.sendMessage).not.toHaveBeenCalled();
+});
+
+it('removes persisted 1.2 counter keys only when the extension updates', async () => {
+  const worker = await startBackground();
+  worker.install();
+  expect(worker.removeLocal).not.toHaveBeenCalled();
+  worker.update();
+  expect(worker.removeLocal).toHaveBeenCalledOnce();
+  expect(worker.removeLocal).toHaveBeenCalledWith(['totalCount', 'sessionCount']);
 });
 
 it('recreates a lost offscreen document on the next focus event and restores the current mode', async () => {

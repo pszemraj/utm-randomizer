@@ -32,7 +32,7 @@ The 2.x work has not been released; these notes describe the changes from 1.2.0.
 
 ### Removed
 
-- The toolbar popup and randomization statistics from 1.2.0.
+- The toolbar popup and randomization statistics from 1.2.0; upgrading deletes their stored counter keys.
 - Page-injected notifications and content scripts; only clipboard contents change.
 
 ## [1.2.0] - 2025-12-17

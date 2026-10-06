@@ -5,6 +5,7 @@ const WINDOW_TYPES: `${chrome.windows.WindowType}`[] = ['normal', 'popup', 'devt
 const DEFAULT_ACTION_TITLE = 'UTM Randomizer';
 const SUCCESS_ACTION_TITLE = 'Your link was randomized.';
 const CONFIRMATION_MS = 1800;
+const LEGACY_LOCAL_KEYS = ['totalCount', 'sessionCount'];
 let offscreenQueue: Promise<unknown> = Promise.resolve();
 let confirmationTimer: ReturnType<typeof setTimeout> | undefined;
 let confirmationRevision = 0;
@@ -186,6 +187,12 @@ function syncWatcher(): Promise<void> {
   }).catch((error: unknown) => console.debug('UTM Randomizer: could not update the clipboard watcher', error));
 }
 
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason !== 'update') return;
+  void chrome.storage.local
+    .remove(LEGACY_LOCAL_KEYS)
+    .catch((error: unknown) => console.debug('UTM Randomizer: could not remove legacy counters', error));
+});
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) return;
   settingsRevision += 1;
