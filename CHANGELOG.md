@@ -18,6 +18,7 @@ The 2.x work has not been released; these notes describe the changes from 1.2.0.
 - [Extension options](README.md#usage) for the on/off setting and replacement mode.
 - A brief Chrome-only check on the extension icon after successful rewriting.
 - [Development tools](docs/development.md) for builds, tests, manual checks, icons, and Web Store packaging.
+- Release-only automation that builds and attaches the installable extension ZIP to versioned GitHub releases.
 
 ### Changed
 

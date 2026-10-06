@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to package, such as v2.0.3
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Verify release version
+        run: |
+          expected_tag="v$(node -p "require('./package.json').version")"
+          if [[ "$RELEASE_TAG" != "$expected_tag" ]]; then
+            echo "Release tag $RELEASE_TAG does not match package version $expected_tag" >&2
+            exit 1
+          fi
+      - run: npm run check
+      - name: Build and inspect extension package
+        id: package
+        run: |
+          npm run package
+          archive="release/utm-randomizer-${RELEASE_TAG#v}.zip"
+          test -f "$archive"
+          unzip -t "$archive"
+          unzip -Z1 "$archive" | awk '$0 == "manifest.json" { found = 1 } END { exit !found }'
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+      - name: Publish GitHub release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            asset_name="${ARCHIVE##*/}"
+            existing_assets="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' --repo "$GITHUB_REPOSITORY")"
+            if grep -Fxq "$asset_name" <<< "$existing_assets"; then
+              echo "$asset_name is already attached to $RELEASE_TAG"
+            else
+              gh release upload "$RELEASE_TAG" "$ARCHIVE" --repo "$GITHUB_REPOSITORY"
+            fi
+          else
+            gh release create "$RELEASE_TAG" "$ARCHIVE" \
+              --verify-tag \
+              --generate-notes \
+              --title "UTM Randomizer ${RELEASE_TAG#v}" \
+              --repo "$GITHUB_REPOSITORY"
+          fi

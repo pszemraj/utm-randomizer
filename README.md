@@ -10,7 +10,7 @@ UTM and other supported campaign fields and ad click IDs are rewritten. Ambiguou
 
 Requires Chrome 123 or newer.
 
-1. Open the [latest release](https://github.com/pszemraj/utm-randomizer/releases/latest). If its **Assets** include `utm-randomizer-<version>.zip`, download that file. GitHub's automatically generated **Source code** archives are not built extensions; when the project ZIP is absent, use the [source build](#build-from-source) instead.
+1. Open the [latest release](https://github.com/pszemraj/utm-randomizer/releases/latest). If its **Assets** include `utm-randomizer-<version>.zip`, download that file. Tagged releases build this asset automatically. GitHub's automatically generated **Source code** archives are not built extensions; older releases without the project ZIP require the [source build](#build-from-source) instead.
 2. Unzip the project ZIP into a permanent folder, such as `Documents/ChromeExtensions/utm-randomizer/`. Keep that folder in place; Chrome loads the extension's files from it.
 3. Open `chrome://extensions` and turn on **Developer mode** in the top-right corner.
 4. Click **Load unpacked** and select the extracted folder containing `manifest.json`.
