@@ -97,7 +97,15 @@ function tick(baseline = false): void {
   const result = rewriteText(snapshot.text, { ...config, key: createSeed() });
   if (!result) return;
   const latest = readClipboard();
-  if (!latest || identity(latest) !== current) return;
+  if (!latest) {
+    entry = { before: current, pending: true };
+    return;
+  }
+  const latestIdentity = identity(latest);
+  if (latestIdentity !== current) {
+    entry = { before: latestIdentity, pending: true };
+    return;
+  }
   if (!writeClipboard(plainText(result.text), current)) {
     // The different observation already invalidated the prior output; keep this entry retryable.
     entry = { before: current, pending: true };

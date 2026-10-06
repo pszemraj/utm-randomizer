@@ -313,6 +313,29 @@ it.each([false, true])(
   },
 );
 
+it('processes a recopied URL after different data wins the pre-write safety read', async () => {
+  const { clipboard, writes } = await start();
+  const raced = 'unrelated newer contents';
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- races the synchronous safety read
+  const command = document.execCommand.bind(document);
+  let pasteCount = 0;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the clipboard harness around the race
+    const result = command(name);
+    if (name === 'paste' && ++pasteCount === 1) clipboard.text = raced;
+    return result;
+  });
+
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(raced);
+  expect(writes).not.toHaveBeenCalled();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
 it('retries an unchanged fresh URL after an automatic write fails', async () => {
   const { clipboard, writes } = await start();
   clipboard.text = TRACKED;
