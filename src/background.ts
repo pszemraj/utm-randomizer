@@ -139,6 +139,7 @@ function refreshFocus(recover = true): Promise<void> {
     if (!outcome.ok) throw outcome.error;
     const settings = await settingsReady;
     if (expectedFocusRevision !== focusRevision) {
+      // NONE also fires for native Chrome menus. Require an observed blur so menu copies remain eligible.
       if (!outcome.focused) baselineRequired = true;
       return;
     }

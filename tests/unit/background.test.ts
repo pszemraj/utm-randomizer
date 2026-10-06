@@ -366,6 +366,33 @@ it('forces an untouched baseline when focus returns before a blur query resolves
   );
 });
 
+it('does not infer a blur when a stale NONE query still observes focused Chrome', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.sendMessage.mockClear();
+  let releaseMenuQuery!: () => void;
+  worker.getAll.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        releaseMenuQuery = () => resolve([{ id: 1, focused: true }]);
+      }),
+  );
+  worker.changeFocus(false);
+  await vi.waitFor(() => expect(releaseMenuQuery).toBeDefined());
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-flush' }));
+  worker.changeFocus(true);
+  releaseMenuQuery();
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: true },
+    }),
+  );
+  expect(worker.sendMessage).not.toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'watch-config', baseline: true }),
+  );
+});
+
 it('cancels a delayed blur flush when focus returns before startup settings resolve', async () => {
   let releaseSettings!: () => void;
   const initialSettings = new Promise<Settings>((resolve) => {
