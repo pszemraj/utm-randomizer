@@ -692,16 +692,20 @@ describe('rewriteText', () => {
     }
   });
 
-  it('keeps an ellipsis-like sequence inside a tracking value', () => {
+  it('leaves an ambiguous ellipsis-like embedded tracking value untouched', () => {
     const link = 'https://example.com/?utm_source=a...b';
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
       const options = { mode, key: 'test-key' };
       const rewritten = rewriteUrl(link, options);
-      expect(rewriteText(`Read ${link} now`, options)).toEqual({
-        text: `Read ${rewritten?.url ?? ''} now`,
-        urls: 1,
-        params: 1,
-      });
+      expect(rewriteText(link, options)).toEqual({ text: rewritten?.url ?? '', urls: 1, params: 1 });
+      expect(rewriteText(`Read ${link} now`, options)).toBeNull();
+    }
+  });
+
+  it.each(['then', 'but', 'or'])('preserves an ambiguous attached ellipsis caption (%s)', (word) => {
+    const text = `See https://example.com/?utm_source=x...${word} more`;
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
     }
   });
 

@@ -169,8 +169,7 @@ function isAmbiguousEmbeddedUrl(text: string, start: number, end: number): boole
     if (separator === -1) return false;
     const rawKey = segment.slice(0, separator);
     const rawValue = segment.slice(separator + 1);
-    const boundaryValue = rawValue.replace(/\.{2,}/g, '');
-    return classifyParam(safeDecode(rawKey)) !== null && /[.,!?;:]/.test(boundaryValue);
+    return classifyParam(safeDecode(rawKey)) !== null && /[.,!?;:]/.test(rawValue);
   });
 }
 
