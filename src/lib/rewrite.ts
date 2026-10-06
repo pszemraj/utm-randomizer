@@ -43,23 +43,8 @@ const MAX_TEXT_LENGTH = 100_000;
 const MAX_SHARE_URLS = 8;
 /** Treats ordinary social captions and link labels as compact share text. */
 const MAX_COMPACT_PROSE = 280;
-const ABSOLUTE_URL =
-  /https?:\/\/[^\s\u200B-\u200D\uFEFF<>"'`\u2018\u2019\u201c\u201d\u3001\uff0c\u3002\uff01\uff1b\uff1a]+/giu;
-const TRAILING_PROSE_PUNCTUATION = new Set([
-  '.',
-  ',',
-  '!',
-  '?',
-  ';',
-  ':',
-  '\u3001',
-  '\uff0c',
-  '\u3002',
-  '\uff01',
-  '\uff1f',
-  '\uff1b',
-  '\uff1a',
-]);
+const ABSOLUTE_URL = /https?:\/\/[^\s\u200B-\u200D\uFEFF<>"'`\u2018\u2019\u201c\u201d]+/giu;
+const TRAILING_PROSE_PUNCTUATION = new Set(['.', ',', '!', '?', ';', ':']);
 const BARE_HOST = /^[a-z0-9.-]+\.[a-z]{2,}(?:[/?#:]|$)/i;
 
 /** Counts visible non-URL prose without making whitespace padding affect classification. */
@@ -84,6 +69,14 @@ function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
   const openers: Record<string, number> = { '(': 0, '[': 0, '{': 0 };
   const unmatchedClosers = new Set<number>();
   const outsideWrapper = text.charAt(start - 1);
+  let outsideWrapperLength = 0;
+  if (outsideWrapper === '*' || outsideWrapper === '_' || outsideWrapper === '~') {
+    let index = start - 1;
+    while (text.charAt(index) === outsideWrapper) {
+      outsideWrapperLength += 1;
+      index -= 1;
+    }
+  }
   let nestedAbsoluteUrl = false;
   for (let index = start; index < rawEnd; index += 1) {
     const char = text.charAt(index);
@@ -119,6 +112,21 @@ function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
       continue;
     }
     break;
+  }
+  if (outsideWrapperLength > 0) {
+    let trailingWrapperLength = 0;
+    let index = end - 1;
+    while (text.charAt(index) === outsideWrapper) {
+      trailingWrapperLength += 1;
+      index -= 1;
+    }
+    if (trailingWrapperLength === outsideWrapperLength) {
+      end -= trailingWrapperLength;
+    }
+  }
+  const trailingProse = /\.{3}[A-Za-z][A-Za-z'-]*$/.exec(text.slice(start, end));
+  if (trailingProse?.index !== undefined) {
+    end = start + trailingProse.index;
   }
   return end;
 }
@@ -289,9 +297,17 @@ export function rewriteText(text: string, options: RewriteOptions): TextRewrite 
     end -= 1;
   }
   const trimmed = text.slice(start, end);
-  const rewritten = rewriteUrl(trimmed, options);
-  if (rewritten) return { text: rewritten.url, urls: 1, params: rewritten.params };
-  if (parseLink(trimmed)) return null;
+  const trimmedSpans = absoluteUrlSpans(trimmed);
+  const firstFragment = trimmed.indexOf('#');
+  const hasAdjacentUrls =
+    trimmedSpans !== null &&
+    trimmedSpans.length > 1 &&
+    (firstFragment === -1 || (trimmedSpans[0]?.end ?? trimmed.length) < firstFragment);
+  if (trimmedSpans && !hasAdjacentUrls) {
+    const rewritten = rewriteUrl(trimmed, options);
+    if (rewritten) return { text: rewritten.url, urls: 1, params: rewritten.params };
+    if (parseLink(trimmed)) return null;
+  }
 
   const spans = absoluteUrlSpans(text);
   if (!spans || spans.length === 0) return null;

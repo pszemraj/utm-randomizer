@@ -529,8 +529,6 @@ describe('rewriteText', () => {
     ['Read this: https://example.com/?utm_source=x', 'Read this: https://example.com/'],
     ['Really? https://example.com/?utm_source=x?', 'Really? https://example.com/?'],
     ['https://example.com/?utm_source=x thanks', 'https://example.com/ thanks'],
-    ['请访问 https://example.com/?utm_source=x，然后继续', '请访问 https://example.com/，然后继续'],
-    ['詳しくはhttps://example.com/?utm_source=x。次に進む', '詳しくはhttps://example.com/。次に進む'],
     ['Read “https://example.com/?utm_source=x”next.', 'Read “https://example.com/”next.'],
   ])('rewrites links inside compact share text while preserving its wrapper (%s)', (text, expected) => {
     expect(rewriteText(text, strip)).toEqual({ text: expected, urls: 1, params: 1 });
@@ -543,6 +541,8 @@ describe('rewriteText', () => {
     'Read https://example.com/?utm_source=x—then reply',
     'Read https://example.com/新製品?utm_source=x',
     'Read https://例子.example/?utm_source=x',
+    '请访问 https://example.com/?utm_source=x，然后继续',
+    '詳しくはhttps://example.com/?utm_source=x。次に進む',
   ])('preserves ambiguous embedded Unicode spans while cleaning other links (%s)', (text) => {
     const other = 'https://example.com/other?utm_source=email';
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
@@ -605,6 +605,77 @@ describe('rewriteText', () => {
     ],
   ])('keeps adjacent compact-share links separate (%s)', (text, expected) => {
     expect(rewriteText(text, strip)).toEqual({ text: expected, urls: 2, params: 2 });
+  });
+
+  it.each([',', ';'])('keeps adjacent whole-copy links separate with %s', (separator) => {
+    const first = 'https://a.example/?utm_source=x';
+    const trackedSecond = 'https://b.example/?utm_source=y';
+    const functionalSecond = 'https://b.example/?id=2';
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      const options = { mode, key: 'test-key' };
+      const rewrittenFirst = rewriteUrl(first, options);
+      const rewrittenSecond = rewriteUrl(trackedSecond, options);
+      expect(rewriteText(`${first}${separator}${trackedSecond}`, options)).toEqual({
+        text: `${rewrittenFirst?.url ?? ''}${separator}${rewrittenSecond?.url ?? ''}`,
+        urls: 2,
+        params: 2,
+      });
+      expect(rewriteText(`${first}${separator}${functionalSecond}`, options)).toEqual({
+        text: `${rewrittenFirst?.url ?? ''}${separator}${functionalSecond}`,
+        urls: 1,
+        params: 1,
+      });
+    }
+  });
+
+  it.each([',', ';'])('does not split URL-shaped text inside a functional fragment with %s', (separator) => {
+    const link = `https://a.example/?utm_source=x#see${separator}https://b.example/?utm_source=y`;
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      const options = { mode, key: 'test-key' };
+      const rewritten = rewriteUrl(link, options);
+      expect(rewriteText(link, options)).toEqual({
+        text: rewritten?.url ?? '',
+        urls: 1,
+        params: 1,
+      });
+    }
+  });
+
+  it('preserves attached Markdown emphasis wrappers in every mode', () => {
+    const link = 'https://example.com/?utm_source=x';
+    for (const wrapper of ['*', '**', '_', '~~']) {
+      for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+        const options = { mode, key: 'test-key' };
+        const rewritten = rewriteUrl(link, options);
+        for (const [text, expected] of [
+          [`Read ${wrapper}${link}${wrapper} now`, `Read ${wrapper}${rewritten?.url ?? ''}${wrapper} now`],
+          [
+            `Read (${wrapper}${link}${wrapper}), then reply`,
+            `Read (${wrapper}${rewritten?.url ?? ''}${wrapper}), then reply`,
+          ],
+        ] as const) {
+          expect(rewriteText(text, options)).toEqual({ text: expected, urls: 1, params: 1 });
+        }
+      }
+    }
+  });
+
+  it('preserves an attached English ellipsis suffix in every mode', () => {
+    const link = 'https://example.com/?utm_source=x';
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      const options = { mode, key: 'test-key' };
+      const rewritten = rewriteUrl(link, options);
+      expect(rewriteText(`See ${link}...and more`, options)).toEqual({
+        text: `See ${rewritten?.url ?? ''}...and more`,
+        urls: 1,
+        params: 1,
+      });
+      expect(rewriteText(`See ${link}...and`, options)).toEqual({
+        text: `See ${rewritten?.url ?? ''}...and`,
+        urls: 1,
+        params: 1,
+      });
+    }
   });
 
   it('retains comma and semicolon bytes that are internal to one embedded URL', () => {
