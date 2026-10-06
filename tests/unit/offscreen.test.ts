@@ -335,6 +335,33 @@ it('retries an unchanged fresh URL after an automatic write fails', async () => 
   expect(writes).toHaveBeenCalledOnce();
 });
 
+it('does not resurrect an older output suppression after a later write fails', async () => {
+  const { clipboard, message, writes } = await start();
+  message({ type: 'watch-config', config: { mode: 'silly', focused: true } });
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  const priorOutput = clipboard.text;
+  const later = 'https://example.com/later?utm_source=social';
+  clipboard.text = later;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises synchronous copy failure
+  const command = document.execCommand.bind(document);
+  let fail = true;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'copy' && fail) {
+      fail = false;
+      return false;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserve normal reads and subsequent writes
+    return command(name);
+  });
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(later);
+  clipboard.text = priorOutput;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).not.toBe(priorOutput);
+  expect(writes).toHaveBeenCalledTimes(2);
+});
+
 it.each(['image/png', 'Files', 'application/custom'])('preserves detectable non-text format %s', async (type) => {
   const { clipboard, writes } = await start();
   clipboard.text = TRACKED;

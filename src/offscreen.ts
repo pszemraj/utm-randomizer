@@ -99,7 +99,8 @@ function tick(baseline = false): void {
   const latest = readClipboard();
   if (!latest || identity(latest) !== current) return;
   if (!writeClipboard(plainText(result.text), current)) {
-    entry = previous;
+    // The different observation already invalidated the prior output; keep this entry retryable.
+    entry = { before: current, pending: true };
     return;
   }
 }
