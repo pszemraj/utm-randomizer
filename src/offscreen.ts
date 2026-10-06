@@ -8,8 +8,8 @@ const POLL_MS = 200;
 let config: WatchConfig | null = null;
 let timer = 0;
 let checkingFocus = false;
-/** One current entry; different observed contents replace both identities. */
-let entry: { before: string; after?: string } | null = null;
+/** One current entry; `pending` marks raced read-back contents not yet evaluated by a tick. */
+let entry: { before: string; after?: string; pending?: boolean } | null = null;
 
 /** Finds the extension-owned clipboard sink. */
 function field(): HTMLTextAreaElement {
@@ -76,8 +76,9 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string): boolean {
   if (ok) {
     const expected = identity(snapshot);
     const landed = readClipboard();
-    entry = { before, after: expected };
-    if (landed && identity(landed) === expected) {
+    const observed = landed ? identity(landed) : null;
+    entry = observed && observed !== expected ? { before: observed, pending: true } : { before, after: expected };
+    if (observed === expected) {
       void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
     }
   }
@@ -89,7 +90,7 @@ function tick(baseline = false): void {
   const snapshot = readClipboard();
   if (!snapshot) return;
   const current = identity(snapshot);
-  if (current === (entry?.after ?? entry?.before)) return;
+  if (!entry?.pending && current === (entry?.after ?? entry?.before)) return;
   const previous = entry;
   entry = { before: current };
   if (baseline || previous === null || !config || !supported(snapshot)) return;
