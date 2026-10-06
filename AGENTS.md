@@ -55,6 +55,10 @@ Use the Node version in `.nvmrc` and the npm scripts in `package.json`. Follow t
 including extension reloads and browser-test setup. See the [source map](docs/development.md#source-map)
 for file responsibilities.
 
+Before desktop checks, read the [agent browser validation notes](docs/development.md#agent-browser-validation-notes).
+Use Safari for alternate-app checks; Ghostty is prohibited. Do not use GUI terminals
+or editors as focus or clipboard test surfaces, and ask before accessing other apps.
+
 Keep the manifest, build target, and [minimum Chrome version](README.md#install)
 consistent. Do not add older-browser support unless requested. Run applicable
 browser tests and verify native Chrome controls in the user's actual profile;

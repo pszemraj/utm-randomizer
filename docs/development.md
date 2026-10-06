@@ -41,9 +41,21 @@ The playground provides copy controls, tracked and functional links, and a box t
 Use Chrome's actual controls for the workflows outside the automated suite:
 
 - Copy the tracked address with Ctrl+L / Cmd+L followed by Ctrl+C / Cmd+C. Check the clipboard both while the address bar remains focused and after returning to the page; separately try switching directly to another app to exercise the final tick. The page address must stay unchanged. See the [current focus limits](behavior.md#background-watching).
-- Select **Copy link address** from a real context menu. Check that `chrome.windows.getAll()` still reports a focused Chrome window while the menu or address-bar dropdown is open, even if its focus event reports `WINDOW_ID_NONE`.
+- Select **Copy link address** from a real context menu. Check that `chrome.windows.getAll({ windowTypes: ['normal', 'popup', 'devtools'] })` still reports a focused Chrome window while the menu or address-bar dropdown is open, even if its focus event reports `WINDOW_ID_NONE`.
 - Open `chrome://extensions` -> **UTM Randomizer** -> **Details** -> **Extension options**. Check on/off and each replacement mode.
 - With Chrome unfocused and the watcher stopped, copy a tracked link in another app, then focus Chrome and paste. That existing clipboard entry must remain unchanged. Separately write a new URL to the clipboard while Chrome stays focused: it should be processed regardless of the writing application.
+
+### Agent browser validation notes
+
+These checks touch the real desktop and clipboard. Use synthetic URLs, preserve all native clipboard formats privately, and restore the original clipboard and settings afterward. Pause the installed watcher while headless tests share the native clipboard. Keep profiles, screenshots, backups, and probe scripts out of commits.
+
+- If Chromium aborts at launch with sandbox `EPERM`/`SIGABRT`, rerun the unchanged headless command outside the agent sandbox. A launch failure is not an application test failure; do not add project workarounds for it.
+- Use the Node major in `.nvmrc`. If unavailable locally, a temporary registry runtime such as `npm exec --yes --package=node@24 -- npm run check` avoids changing global installations. Confirm the executed version and use the same runtime for browser tests and packaging.
+- Browser-session clipboard APIs may be virtualized. For native clipboard checks, open a fresh tab through Chrome's native UI without claiming it through the browser-session provider. Verify a native copy and paste against the OS pasteboard; a page's "Copied" message alone is insufficient.
+- Page focus can be emulated by browser tooling. Match the worker's explicit window types when sampling `chrome.windows.getAll`; its default excludes DevTools. Close inspectors before blur/minimize tests: a focused DevTools window legitimately keeps cleaning active.
+- Computer-use observation of a minimized Chrome window can restore it. After minimizing, observe only the approved alternate app until the outside copy is verified. Read-only OS diagnostics and a bounded worker focus trace can distinguish genuine blur from reactivation by the test harness. Remove temporary probes afterward.
+- App-targeted input or an accessibility `Raise` action is not proof that macOS switched foreground apps. Verify the actual foreground app and Chrome window focus. If a genuine switch cannot be achieved with approved controls, report that check as unverified, not as a product failure or an automation artifact.
+- Use Safari for alternate-app checks. Ghostty is prohibited; do not use GUI terminals or editors as focus/clipboard test surfaces. Ask before accessing another app or granting desktop permissions. Repository commands belong in the execution tool, not a GUI terminal.
 
 ## Packaging and CI
 
