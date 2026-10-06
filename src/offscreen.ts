@@ -8,7 +8,7 @@ const POLL_MS = 200;
 let config: WatchConfig | null = null;
 let timer = 0;
 let checkingFocus = false;
-/** One current entry; `pending` marks raced read-back contents not yet evaluated by a tick. */
+/** One current entry; `pending` permits one retry after an inconclusive clipboard operation. */
 let entry: { before: string; after?: string; pending?: boolean } | null = null;
 
 /** Finds the extension-owned clipboard sink. */
@@ -59,8 +59,13 @@ function plainText(text: string): ClipboardSnapshot {
   return { text, html: null, types: ['text/plain'] };
 }
 
-/** Writes a URL and records only the intended output, so a raced external entry stays eligible. */
-function writeClipboard(snapshot: ClipboardSnapshot, before: string): boolean {
+/** Keeps an inconclusive observation eligible once, then settles it to prevent a write loop. */
+function recordRetry(before: string, retrying: boolean): void {
+  entry = retrying ? { before } : { before, pending: true };
+}
+
+/** Writes a URL, verifies the result when possible, and bounds inconclusive retries. */
+function writeClipboard(snapshot: ClipboardSnapshot, before: string, retrying: boolean): boolean {
   const textarea = field();
   const onCopy = (event: ClipboardEvent) => {
     event.preventDefault();
@@ -77,9 +82,14 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string): boolean {
     const expected = identity(snapshot);
     const landed = readClipboard();
     const observed = landed ? identity(landed) : null;
-    entry = observed && observed !== expected ? { before: observed, pending: true } : { before, after: expected };
     if (observed === expected) {
+      entry = { before, after: expected };
       void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
+    } else if (observed === null) {
+      // Suppress the intended output to avoid a retry loop, but do not claim success without read-back.
+      entry = { before, after: expected };
+    } else {
+      recordRetry(observed, retrying);
     }
   }
   return ok;
@@ -91,6 +101,7 @@ function tick(baseline = false): void {
   if (!snapshot) return;
   const current = identity(snapshot);
   if (!entry?.pending && current === (entry?.after ?? entry?.before)) return;
+  const retrying = entry?.pending === true && current === entry.before;
   const previous = entry;
   entry = { before: current };
   if (baseline || previous === null || !config || !supported(snapshot)) return;
@@ -98,7 +109,7 @@ function tick(baseline = false): void {
   if (!result) return;
   const latest = readClipboard();
   if (!latest) {
-    entry = { before: current, pending: true };
+    recordRetry(current, retrying);
     return;
   }
   const latestIdentity = identity(latest);
@@ -106,9 +117,8 @@ function tick(baseline = false): void {
     entry = { before: latestIdentity, pending: true };
     return;
   }
-  if (!writeClipboard(plainText(result.text), current)) {
-    // The different observation already invalidated the prior output; keep this entry retryable.
-    entry = { before: current, pending: true };
+  if (!writeClipboard(plainText(result.text), current, retrying)) {
+    recordRetry(current, retrying);
     return;
   }
 }

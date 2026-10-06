@@ -313,6 +313,78 @@ it.each([false, true])(
   },
 );
 
+it.each(['html', 'newline'] as const)(
+  'bounds retries when automatic write read-back gains %s data',
+  async (variant) => {
+    const { clipboard, message, writes, requestFocus } = await start();
+    message({ type: 'watch-config', config: { mode: 'hybrid', focused: true } });
+    clipboard.text = TRACKED;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- alters synchronous read-back after each write
+    const command = document.execCommand.bind(document);
+    vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the clipboard harness before altering read-back
+      const result = command(name);
+      if (name === 'copy') {
+        if (variant === 'html') {
+          clipboard.html = `<a href="${clipboard.text}">${clipboard.text}</a>`;
+          clipboard.types = ['text/plain', 'text/html'];
+        } else {
+          clipboard.text += '\n';
+        }
+      }
+      return result;
+    });
+
+    await vi.advanceTimersByTimeAsync(20 * 200);
+    expect(writes).toHaveBeenCalledTimes(2);
+    expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(0);
+  },
+);
+
+it.each(['strip', 'decoy', 'silly', 'hybrid'] as const)(
+  'bounds retries when copy reports success without changing the clipboard (%s)',
+  async (mode) => {
+    const { clipboard, message, writes, requestFocus } = await start();
+    message({ type: 'watch-config', config: { mode, focused: true } });
+    clipboard.text = TRACKED;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- simulates a successful command whose write is replaced
+    const command = document.execCommand.bind(document);
+    vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+      if (name !== 'copy') {
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves ordinary reads
+        return command(name);
+      }
+      const previous = { ...clipboard, types: [...clipboard.types] };
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- records an attempted write before restoring the clipboard
+      const result = command(name);
+      Object.assign(clipboard, previous, { types: previous.types });
+      return result;
+    });
+
+    await vi.advanceTimersByTimeAsync(20 * 200);
+    expect(writes).toHaveBeenCalledTimes(2);
+    expect(clipboard.text).toBe(TRACKED);
+    expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(0);
+  },
+);
+
+it('settles an entry after two unavailable pre-write safety reads', async () => {
+  const { clipboard, writes } = await start();
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- simulates a synchronous reader that twice returns no data
+  const command = document.execCommand.bind(document);
+  let pasteCount = 0;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'paste' && [2, 4].includes(++pasteCount)) return true;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves all other clipboard reads
+    return command(name);
+  });
+
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+});
+
 it('processes a recopied URL after different data wins the pre-write safety read', async () => {
   const { clipboard, writes } = await start();
   const raced = 'unrelated newer contents';
@@ -333,6 +405,28 @@ it('processes a recopied URL after different data wins the pre-write safety read
   clipboard.text = TRACKED;
   await vi.advanceTimersByTimeAsync(200);
   expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
+it('processes a different tracked URL that wins the pre-write safety read', async () => {
+  const { clipboard, writes } = await start();
+  const raced = 'https://example.com/newer?utm_source=email';
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- races a newer tracked entry against the safety read
+  const command = document.execCommand.bind(document);
+  let pasteCount = 0;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the clipboard harness around the race
+    const result = command(name);
+    if (name === 'paste' && ++pasteCount === 1) clipboard.text = raced;
+    return result;
+  });
+
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(raced);
+  expect(writes).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe('https://example.com/newer');
   expect(writes).toHaveBeenCalledOnce();
 });
 
