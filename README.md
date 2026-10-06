@@ -15,6 +15,8 @@ Requires Chrome 123 or newer.
 3. Open `chrome://extensions` and turn on **Developer mode** in the top-right corner.
 4. Click **Load unpacked** and select the extracted folder containing `manifest.json`.
 
+If you previously loaded 1.2.0 from the repository root, note whether cleaning is enabled, remove that extension entry, then load the 2.x release folder or `dist/` and restore your choice. Chrome derives an unpacked extension's identity from its folder, so moving from the repository root creates a fresh installation with default settings. Do not leave both versions loaded.
+
 ## Usage
 
 - Copy a URL or a compact share snippet while Chrome is focused: Ctrl+C / Cmd+C, a site's copy button, or **Copy link address**. Supported links inside short captions are cleaned; long prose-dominated documents stay unchanged.

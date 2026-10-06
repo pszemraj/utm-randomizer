@@ -6,7 +6,7 @@ The 2.x work has not been released; these notes describe the changes from 1.2.0.
 
 ### Breaking
 
-- The unpacked extension lives in `dist/`: load that folder in `chrome://extensions` instead of the repository root.
+- The unpacked extension lives in `dist/`. Existing 1.2 source installs must be removed and loaded again from the release folder or `dist/`; Chrome treats the new path as a fresh install, so restore the on/off choice.
 - Requires Chrome 123 or newer (was 102).
 - Hybrid is the default replacement mode. The original nonsense values are available as Silly mode.
 - Rewritten clipboard entries are plain text. Accompanying HTML, URI lists, and hidden web-added data are discarded; detectable images, files, and custom non-text formats leave the entry unchanged.
