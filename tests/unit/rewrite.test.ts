@@ -633,11 +633,13 @@ describe('rewriteText', () => {
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
       const options = { mode, key: 'test-key' };
       const rewritten = rewriteUrl(link, options);
-      expect(rewriteText(link, options)).toEqual({
-        text: rewritten?.url ?? '',
-        urls: 1,
-        params: 1,
-      });
+      for (const prefix of ['', 'Read ']) {
+        expect(rewriteText(`${prefix}${link}`, options)).toEqual({
+          text: `${prefix}${rewritten?.url ?? ''}`,
+          urls: 1,
+          params: 1,
+        });
+      }
     }
   });
 
@@ -699,12 +701,15 @@ describe('rewriteText', () => {
     }
   });
 
-  it.each([',', ';'])('leaves an ambiguous punctuation-attached caption untouched (%s)', (punctuation) => {
-    const text = `See https://example.com/?utm_source=x${punctuation}and more`;
-    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
-      expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
-    }
-  });
+  it.each([',and', ';then', ',1st', ';2nd', '!(next)', ':read', '.next', '?then'])(
+    'leaves an ambiguous punctuation-attached caption untouched (%s)',
+    (suffix) => {
+      const text = `See https://example.com/?utm_source=x${suffix} more`;
+      for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+        expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
+      }
+    },
+  );
 
   it('retains comma and semicolon bytes that are internal to one embedded URL', () => {
     expect(rewriteText('Read https://example.com/a,b;c?utm_source=email', strip)).toEqual({

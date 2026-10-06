@@ -79,13 +79,15 @@ function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
     if (/[A-Za-z0-9]/.test(text.charAt(index))) outsideWrapperLength = 0;
   }
   let nestedAbsoluteUrl = false;
+  let fragment = false;
   for (let index = start; index < rawEnd; index += 1) {
     const char = text.charAt(index);
+    if (char === '#') fragment = true;
     if (index > start && (char === 'h' || char === 'H') && startsAbsoluteUrl(text, index)) {
       nestedAbsoluteUrl = true;
     }
     if (char === ',' || char === ';') {
-      if (!nestedAbsoluteUrl && startsAbsoluteUrl(text, index + 1)) {
+      if (!fragment && !nestedAbsoluteUrl && startsAbsoluteUrl(text, index + 1)) {
         end = index;
         break;
       }
@@ -166,7 +168,8 @@ function isAmbiguousEmbeddedUrl(text: string, start: number, end: number): boole
       if (separator === -1) return false;
       const rawKey = segment.slice(0, separator);
       const rawValue = segment.slice(separator + 1);
-      return classifyParam(safeDecode(rawKey)) !== null && /[,;][A-Za-z]/.test(rawValue);
+      const boundaryValue = rawValue.replace(/\.{2,}/g, '');
+      return classifyParam(safeDecode(rawKey)) !== null && /[.,!?;:]/.test(boundaryValue);
     });
 }
 

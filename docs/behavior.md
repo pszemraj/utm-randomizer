@@ -24,7 +24,7 @@ Unrecognized fields in supported campaign namespaces draw a word from the combin
 
 A copied whole URL is eligible, and surrounding whitespace is stripped when it is rewritten. Compact share text is also eligible: the extension rewrites each supported absolute `http://` or `https://` URL while preserving captions, punctuation, Markdown wrappers, and other surrounding text byte-for-byte.
 
-Embedded URL spans containing raw non-ASCII characters or comma- or semicolon-attached words inside a tracking value stay untouched because adjacent prose cannot reliably be separated from the URL. Other eligible spans in the same payload can still be rewritten. Percent-encoded characters remain eligible; standalone URLs retain their documented non-Latin replacement support.
+Embedded URL spans containing raw non-ASCII characters or ambiguous raw prose punctuation inside a tracking value stay untouched because adjacent prose cannot reliably be separated from the URL. Other eligible spans in the same payload can still be rewritten. Percent-encoded characters remain eligible; standalone URLs retain their documented non-Latin replacement support.
 
 The supported product scope is English-language share text and URLs expressed with ASCII or percent-encoded bytes. Raw-Unicode embedded URL parsing is not a compatibility target; ambiguous spans are skipped instead of accumulating language-specific boundary rules.
 
