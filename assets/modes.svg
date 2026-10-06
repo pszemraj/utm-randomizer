@@ -1,0 +1,78 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="520"
+  height="326"
+  viewBox="0 0 520 326"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">One link, four ways to share it</title>
+  <desc id="description">
+    The destination https://example.com/article?id=42 stays intact in every mode. The copied link has
+    utm_source=newsletter and utm_medium=email. Decoy uses plausible values such as outbrain and notification. Silly
+    uses carrier-pigeon and telepathy. Hybrid mixes carrier-pigeon with notification. Remove deletes both tracking
+    parameters. These are illustrative values; replacements vary by installation.
+  </desc>
+  <style>
+    text {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .label {
+      fill: #f0f6fc;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .detail {
+      fill: #adbdcc;
+      font-size: 14px;
+    }
+    .key {
+      fill: #adbdcc;
+      font-size: 16px;
+    }
+    .value {
+      font-size: 22px;
+    }
+    .mono {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+    }
+  </style>
+  <rect x="1" y="1" width="518" height="324" rx="12" fill="#0d141d" stroke="#2c3c4d" stroke-width="2" />
+
+  <rect x="14" y="14" width="492" height="56" rx="8" fill="#152b23" stroke="#345c48" />
+  <text x="26" y="35" fill="#86deb0" font-size="14" font-weight="600">DESTINATION KEPT IN EVERY MODE</text>
+  <text x="26" y="58" fill="#e1f5e9" class="mono" font-size="20">https://example.com/article?id=42</text>
+
+  <text x="116" y="95" class="mono key">utm_source</text>
+  <text x="310" y="95" class="mono key">utm_medium</text>
+
+  <rect x="14" y="106" width="492" height="32" rx="6" fill="#151f2b" stroke="#2c3c4d" />
+  <text x="26" y="128" class="label">Copied</text>
+  <text x="116" y="128" fill="#f0f6fc" class="mono value">newsletter</text>
+  <text x="310" y="128" fill="#f0f6fc" class="mono value">email</text>
+
+  <rect x="14" y="150" width="492" height="32" rx="6" fill="#151f2b" stroke="#2c3c4d" />
+  <rect x="14" y="157" width="3" height="18" rx="1" fill="#9bc9ff" />
+  <text x="26" y="172" class="label">Decoy</text>
+  <text x="116" y="172" fill="#9bc9ff" class="mono value">outbrain</text>
+  <text x="310" y="172" fill="#9bc9ff" class="mono value">notification</text>
+
+  <rect x="14" y="188" width="492" height="32" rx="6" fill="#151f2b" stroke="#2c3c4d" />
+  <rect x="14" y="195" width="3" height="18" rx="1" fill="#f4cf80" />
+  <text x="26" y="210" class="label">Silly</text>
+  <text x="116" y="210" fill="#f4cf80" class="mono value">carrier-pigeon</text>
+  <text x="310" y="210" fill="#f4cf80" class="mono value">telepathy</text>
+
+  <rect x="14" y="226" width="492" height="32" rx="6" fill="#151f2b" stroke="#2c3c4d" />
+  <rect x="14" y="233" width="3" height="18" rx="1" fill="#d9b6fd" />
+  <text x="26" y="248" class="label">Hybrid</text>
+  <text x="116" y="248" fill="#f4cf80" class="mono value">carrier-pigeon</text>
+  <text x="310" y="248" fill="#9bc9ff" class="mono value">notification</text>
+
+  <rect x="14" y="264" width="492" height="32" rx="6" fill="#152b23" stroke="#345c48" />
+  <rect x="14" y="271" width="3" height="18" rx="1" fill="#86deb0" />
+  <text x="26" y="286" class="label">Remove</text>
+  <text x="116" y="286" fill="#86deb0" font-size="20">Both tracking parameters deleted</text>
+
+  <text x="14" y="316" class="detail">Illustrative values; replacements vary by installation.</text>
+</svg>

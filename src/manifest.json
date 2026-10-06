@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "UTM Randomizer",
+  "version": "0.0.0",
+  "description": "Replaces known tracking parameters in copied links with decoys or nonsense, or removes them.",
+  "minimum_chrome_version": "123",
+  "permissions": ["clipboardRead", "clipboardWrite", "offscreen", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "UTM Randomizer",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

@@ -1,72 +1,46 @@
 # UTM Randomizer
 
-A Chrome extension that automatically replaces tracking parameters (UTM, fbclid, gclid, etc.) with random values when you copy links, disrupting analytics attribution while keeping links functional.
+A Chrome extension that replaces tracking parameters in copied URLs with believable decoys, nonsense, or nothing. Page addresses stay unchanged. [Everything stays in your browser](PRIVACY.md).
 
-## Features
+![A copied link keeps its destination and id=42: Decoy uses plausible tracking values, Silly uses nonsense, Hybrid mixes both, and Remove deletes tracking.](assets/modes.svg)
 
-- Detects UTM parameters and analytics IDs (`fbclid`, `gclid`, `msclkid`, `mkt_tok`, HubSpot, Marketo, Mailchimp, Adobe, Omeda, and more)
-- Replaces tracking values with humorous nonsense (IDs become word salad, sources become jokes)
-- Works with both `Ctrl+C` copy events and "Copy Link" buttons
-- Popup UI with enable/disable toggle and randomization stats
-- Shows brief notification when parameters are randomized
-- Privacy-focused: no data collection, all processing is local
+UTM and other supported campaign fields and ad click IDs are rewritten. Ambiguous and site-specific fields stay untouched. See [supported parameters and limits](docs/behavior.md#what-gets-rewritten) and [mode details](docs/behavior.md#replacement-values).
 
-## Installation
+## Install
 
-### From Source
+Requires Chrome 123 or newer.
 
-1. Clone this repository
-2. Run `npm install` to install dependencies
-3. Run `npm run build` to build the extension
-4. Open Chrome and navigate to `chrome://extensions/`
-5. Enable "Developer mode" (toggle in top right)
-6. Click "Load unpacked" and select this directory
-7. The extension icon will appear in your toolbar
+1. Open the [latest release](https://github.com/pszemraj/utm-randomizer/releases/latest). If its **Assets** include `utm-randomizer-<version>.zip`, download that file. Tagged releases build this asset automatically. GitHub's automatically generated **Source code** archives are not built extensions; older releases without the project ZIP require the [source build](#build-from-source) instead.
+2. Unzip the project ZIP into a permanent folder, such as `Documents/ChromeExtensions/utm-randomizer/`. Keep that folder in place; Chrome loads the extension's files from it.
+3. Open `chrome://extensions` and turn on **Developer mode** in the top-right corner.
+4. Click **Load unpacked** and select the extracted folder containing `manifest.json`.
+
+If you previously loaded 1.2.0 from the repository root, note whether cleaning is enabled, remove that extension entry, then load the 2.x release folder or `dist/` and restore your choice. Chrome derives an unpacked extension's identity from its folder, so moving from the repository root creates a fresh installation with default settings. Do not leave both versions loaded.
 
 ## Usage
 
-Once installed, the extension runs automatically. Copy any URL containing tracking parameters and they will be replaced with random values.
+- Copy a URL or a compact share snippet while Chrome is focused: Ctrl+C / Cmd+C, a site's copy button, or **Copy link address**. Supported links inside short captions are cleaned; long prose-dominated documents stay unchanged.
+- To change the mode or turn cleaning off, open `chrome://extensions`, find **UTM Randomizer**, and select **Details** -> **Extension options**.
+- Cleaning and **Hybrid** mode are enabled by default. Rewritten URLs are plain text. A successful rewrite briefly shows a green check on the extension icon with the title **Your link was randomized.** There are no system notifications, toolbar popup, or keyboard shortcuts.
 
-**Before:**
+Try it: right-click [this test link](https://example.com/article?id=42&utm_source=newsletter&utm_medium=email), select **Copy link address**, and paste into a text field. The tracking values should change while `id=42` stays intact.
+
+## Build from source
+
+Use Node 22.13 or later in the 22.x series, or Node 24 or later ([`.nvmrc`](.nvmrc) pins 24):
+
+```bash
+git clone https://github.com/pszemraj/utm-randomizer.git
+cd utm-randomizer
+npm ci
+npm run build
 ```
-https://example.com/page?utm_source=facebook&utm_medium=cpc&fbclid=IwAR3xyz123
-```
 
-**After:**
-```
-https://example.com/page?utm_source=carrier-pigeon&utm_medium=smoke-signals&fbclid=cookie-crumbler-mystery-tour-abc123
-```
-
-Click the extension icon to:
-- Toggle the extension on/off
-- View randomization statistics
-
-### Supported Parameters
-
-| Category | Examples |
-|----------|----------|
-| UTM | `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` |
-| Click IDs | `fbclid`, `gclid`, `gbraid`, `wbraid`, `msclkid`, `yclid`, `ttclid`, `twclid` |
-| Marketing Platforms | `mkt_tok`, `_hsenc`, `_hsmi`, `mc_eid`, `mc_cid`, `oly_anon_id` |
-| Generic | `campaign`, `source`, `adgroup`, `creative`, `placement`, `ref` |
+Follow the Chrome steps above, selecting `dist/` instead of an extracted release folder. Verify it with the test link under [Usage](#usage). After rebuilding, reload the extension in `chrome://extensions`.
 
 ## Development
 
-```bash
-npm run dev          # Development build with watch mode
-npm run build        # Production build
-npm run lint         # Run ESLint
-npm run type-check   # TypeScript type checking
-npm run test         # Run unit tests
-```
-
-## Permissions
-
-| Permission | Purpose |
-|------------|---------|
-| `clipboardRead` | Read copied URLs to detect tracking parameters |
-| `clipboardWrite` | Write randomized URLs back to clipboard |
-| `storage` | Persist enable/disable state and statistics |
+Run `npm run dev` to rebuild on edits and `npm run check` for lint, formatting, types, and unit tests. See [development commands and browser tests](docs/development.md), [behavior and clipboard details](docs/behavior.md), and [contributing](CONTRIBUTING.md).
 
 ## License
 

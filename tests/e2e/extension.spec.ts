@@ -1,0 +1,446 @@
+import { expect, test } from './fixtures';
+
+const ARTICLE =
+  'https://example.com/article?id=42&utm_source=newsletter&utm_medium=email&utm_campaign=spring&fbclid=IwAR3xyz';
+const CLEAN = 'https://example.com/article?id=42';
+const BASELINE = 'test clipboard baseline';
+
+test.beforeEach(async ({ writeClipboardExternally, waitForWatcher }) => {
+  await writeClipboardExternally(BASELINE);
+  await waitForWatcher(true);
+});
+
+/** Waits for a nonempty clipboard value satisfying the expected outcome. */
+async function waitForClipboard(read: () => Promise<string>, accept: (text: string) => boolean): Promise<string> {
+  let text = '';
+  await expect
+    .poll(
+      async () => {
+        text = await read();
+        return text !== '' && text !== BASELINE && accept(text);
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+  return text;
+}
+
+/** Checks that observations, settings changes, and focus do not repeatedly rewrite an entry. */
+async function expectStable(read: () => Promise<string>, ms = 800): Promise<string> {
+  const first = await read();
+  for (let elapsed = 0; elapsed < ms; elapsed += 200) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(await read()).toBe(first);
+  }
+  return first;
+}
+
+test.describe('native clipboard processing', () => {
+  test('draws fresh replacements for repeated page writeText copies', async ({
+    playground,
+    readClipboard,
+    waitForWatcher,
+  }) => {
+    await waitForWatcher(true);
+    const outputs = new Set<string>();
+    for (let i = 0; i < 4; i += 1) {
+      await playground.getByTestId('copy-writetext').click();
+      const copied = await waitForClipboard(readClipboard, (text) => text !== ARTICLE && !outputs.has(text));
+      const url = new URL(copied);
+      expect(url.searchParams.get('id')).toBe('42');
+      expect(url.searchParams.get('utm_source')).not.toBe('newsletter');
+      outputs.add(copied);
+    }
+    expect(outputs.size).toBe(4);
+    expect(outputs.has(await expectStable(readClipboard))).toBe(true);
+  });
+
+  for (const mode of ['strip', 'decoy', 'silly', 'hybrid'] as const) {
+    test(`applies ${mode} to an entire copied URL`, async ({
+      playground,
+      readClipboard,
+      setSettings,
+      waitForWatcher,
+      writeClipboardExternally,
+    }) => {
+      await setSettings({ mode });
+      await waitForWatcher(true);
+      await playground.getByTestId('copy-writetext').click();
+      const copied = await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
+      expect(new URL(copied).searchParams.get('id')).toBe('42');
+      if (mode === 'strip') expect(copied).toBe(CLEAN);
+      if (mode === 'silly')
+        expect(new URL(copied).searchParams.get('utm_source')).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)+$/);
+
+      const campaign =
+        'https://example.com/article?id=43&utm_penis=chode&mtm_unseen=123&hsa_extra=news&pk_campaign=spring&keep=%2F#part';
+      await writeClipboardExternally(campaign);
+      const rewritten = await waitForClipboard(
+        readClipboard,
+        (text) => text !== campaign && new URL(text).searchParams.get('id') === '43',
+      );
+      expect(rewritten).toContain('keep=%2F#part');
+      if (mode === 'strip') expect(rewritten).toBe('https://example.com/article?id=43&keep=%2F#part');
+      else {
+        const query = new URL(rewritten).searchParams;
+        for (const [key, value] of new URL(campaign).searchParams) {
+          if (key !== 'id' && key !== 'keep') expect(query.get(key)).not.toBe(value);
+        }
+      }
+    });
+  }
+
+  for (const action of ['copy', 'cut'] as const) {
+    test(`cleans keyboard ${action} while preserving native text-field behavior`, async ({
+      playground,
+      readClipboard,
+      setSettings,
+      waitForWatcher,
+    }) => {
+      await setSettings({ mode: 'strip' });
+      await waitForWatcher(true);
+      const field = playground.getByTestId('select-textarea');
+      await field.fill(ARTICLE);
+      await field.press('ControlOrMeta+A');
+      await field.press(action === 'copy' ? 'ControlOrMeta+C' : 'ControlOrMeta+X');
+      await expect.poll(readClipboard).toBe(CLEAN);
+      await expect(field).toHaveValue(action === 'copy' ? ARTICLE : '');
+    });
+  }
+
+  for (const button of ['copy-execcommand', 'copy-setdata', 'copy-delayed']) {
+    test(`cleans the native clipboard from ${button}`, async ({ playground, readClipboard, waitForWatcher }) => {
+      await waitForWatcher(true);
+      const control = playground.getByTestId(button);
+      const original = await control.evaluate((element) => element.closest<HTMLElement>('[data-url]')?.dataset.url);
+      if (!original) throw new Error('Missing fixture URL');
+      await control.click();
+      const copied = await waitForClipboard(readClipboard, (text) => text !== original);
+      expect(new URL(copied).pathname).toBe(new URL(original).pathname);
+    });
+  }
+
+  test('processes a URL with the extension tab active and no webpage reader', async ({
+    context,
+    extensionId,
+    writeClipboardExternally,
+    readClipboard,
+    waitForWatcher,
+    setSettings,
+  }) => {
+    await setSettings({ mode: 'strip' });
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await page.bringToFront();
+    await waitForWatcher(true);
+    await writeClipboardExternally(ARTICLE);
+    await expect.poll(readClipboard).toBe(CLEAN);
+    await page.close();
+  });
+
+  test('processes copies on insecure HTTP without a webpage Clipboard API', async ({
+    playground,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    const response = await playground.request.get(playground.url());
+    await playground.route('http://insecure.test/**', (route) => route.fulfill({ response }));
+    await playground.goto('http://insecure.test/');
+    expect(await playground.evaluate(() => window.isSecureContext)).toBe(false);
+    expect(await playground.evaluate(() => typeof navigator.clipboard)).toBe('undefined');
+    await setSettings({ mode: 'strip' });
+    await waitForWatcher(true);
+    const field = playground.getByTestId('select-textarea');
+    await field.fill(ARTICLE);
+    await field.press('ControlOrMeta+A');
+    await field.press('ControlOrMeta+C');
+    await expect.poll(readClipboard).toBe(CLEAN);
+  });
+
+  test('rewrites compact multi-link share text', async ({ playground, readClipboard, setSettings, waitForWatcher }) => {
+    await setSettings({ mode: 'strip' });
+    await waitForWatcher(true);
+    await playground.getByTestId('copy-sharetext').click();
+    await expect
+      .poll(readClipboard)
+      .toBe(
+        'Check this out: https://example.com/a?x=1 and https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=8a1b2c3d',
+      );
+  });
+
+  test('preserves unrelated text, long documents, labels, relative and signed links', async ({
+    writeClipboardExternally,
+    readClipboard,
+    waitForWatcher,
+  }) => {
+    await waitForWatcher(true);
+    for (const text of [
+      'ordinary document text',
+      `# Report\n\nRead ${ARTICLE}\n${'A paragraph of document text. '.repeat(100)}`,
+      '/article?utm_source=newsletter',
+      'https://example.com/?id=42&si=abc',
+      'https://example.com/?utm_source=email&X-Amz-Signature=abc&X-Amz-Algorithm=AWS4-HMAC-SHA256',
+    ]) {
+      await writeClipboardExternally(text);
+      expect(await expectStable(readClipboard, 500)).toBe(text);
+    }
+  });
+
+  test('trims surrounding whitespace and writes a rewritten URL as plain text', async ({
+    writeClipboardExternally,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip' });
+    await waitForWatcher(true);
+    await writeClipboardExternally(` \n\t${ARTICLE}\n `);
+    await expect.poll(readClipboard).toBe(CLEAN);
+  });
+
+  test('keeps output stable and expires its record after unrelated contents', async ({
+    playground,
+    writeClipboardExternally,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await waitForWatcher(true);
+    await playground.getByTestId('copy-writetext').click();
+    const first = await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
+    await playground.locator('h1').click();
+    await playground.keyboard.press('a');
+    await setSettings({ mode: 'hybrid' });
+    expect(await expectStable(readClipboard)).toBe(first);
+    await writeClipboardExternally('unrelated contents');
+    expect(await expectStable(readClipboard, 500)).toBe('unrelated contents');
+    await writeClipboardExternally(first);
+    const second = await waitForClipboard(readClipboard, (text) => text !== first && text !== 'unrelated contents');
+    expect(new URL(second).searchParams.get('id')).toBe('42');
+    expect(await expectStable(readClipboard)).toBe(second);
+  });
+
+  test('preserves percent-encoded identifier and functional bytes', async ({
+    writeClipboardExternally,
+    readClipboard,
+    waitForWatcher,
+    setSettings,
+  }) => {
+    await setSettings({ mode: 'decoy' });
+    await waitForWatcher(true);
+    const id = '0123456789abcdef0123456789abcdef';
+    const encoded = id.replace(/./g, (char) => `%${char.charCodeAt(0).toString(16)}`);
+    const original = `https://example.com/?msclkid=${encoded}&keep=%2F`;
+    await writeClipboardExternally(original);
+    const copied = await waitForClipboard(readClipboard, (text) => text !== original);
+    expect(copied).toMatch(/^https:\/\/example\.com\/\?msclkid=(?:%[0-9a-fA-F]{2}){32}&keep=%2F$/);
+    expect(new URL(copied).searchParams.get('msclkid')).not.toBe(id);
+  });
+
+  test('does nothing while paused and baselines existing contents on resume', async ({
+    playground,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ enabled: false });
+    await waitForWatcher(false);
+    await playground.getByTestId('copy-writetext').click();
+    await expect.poll(readClipboard).toBe(ARTICLE);
+    expect(await expectStable(readClipboard)).toBe(ARTICLE);
+    await setSettings({ enabled: true });
+    await waitForWatcher(true);
+    expect(await expectStable(readClipboard)).toBe(ARTICLE);
+  });
+});
+
+test.describe('clipboard formats', () => {
+  for (const text of [ARTICLE, 'A product']) {
+    test(`eligible-text classification controls HTML and hidden metadata (${text === ARTICLE ? 'URL' : 'label'})`, async ({
+      context,
+      playground,
+      readClipboard,
+      setSettings,
+      waitForWatcher,
+    }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: new URL(playground.url()).origin,
+      });
+      await setSettings({ mode: 'strip' });
+      await waitForWatcher(true);
+      for (const extra of ['text/html', 'web application/x-test']) {
+        await playground.evaluate(
+          async ({ value, type }) => {
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                'text/plain': new Blob([value], { type: 'text/plain' }),
+                [type]: new Blob(
+                  [type === 'text/html' ? '<a href="https://example.com/?utm_source=real">A product</a>' : 'metadata'],
+                  { type },
+                ),
+              }),
+            ]);
+          },
+          { value: text, type: extra },
+        );
+        if (text === ARTICLE) await expect.poll(readClipboard).toBe(CLEAN);
+        else expect(await expectStable(readClipboard, 500)).toBe(text);
+        const types = await playground.evaluate(async () => (await navigator.clipboard.read())[0]?.types);
+        if (text === ARTICLE) expect(types).toEqual(['text/plain']);
+        else {
+          expect(types).toContain(extra);
+          const payload = await playground.evaluate(async (type) => {
+            const [item] = await navigator.clipboard.read();
+            return item ? (await item.getType(type)).text() : '';
+          }, extra);
+          if (extra === 'text/html') {
+            // Headed Chrome on macOS prepends this marker while normalizing HTML onto the native pasteboard.
+            expect(payload.replace(/^<meta charset="utf-8">/i, '')).toBe(
+              '<a href="https://example.com/?utm_source=real">A product</a>',
+            );
+          } else {
+            expect(payload).toBe('metadata');
+          }
+        }
+      }
+    });
+  }
+
+  test('leaves detected custom clipboard formats unchanged', async ({ playground, readClipboard, waitForWatcher }) => {
+    await waitForWatcher(true);
+    await playground.evaluate((text) => {
+      document.addEventListener(
+        'copy',
+        (event) => {
+          event.preventDefault();
+          event.clipboardData?.setData('text/plain', text);
+          event.clipboardData?.setData('application/x-test', 'metadata');
+        },
+        { once: true },
+      );
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- real native legacy copy
+      document.execCommand('copy');
+    }, ARTICLE);
+    expect(await expectStable(readClipboard)).toBe(ARTICLE);
+  });
+
+  test('leaves image plus URL clipboard data unchanged', async ({
+    context,
+    playground,
+    readClipboard,
+    waitForWatcher,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(playground.url()).origin });
+    await waitForWatcher(true);
+    await playground.evaluate(async (text) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const png = await new Promise<Blob>((resolve) =>
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+        }, 'image/png'),
+      );
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'text/plain': new Blob([text], { type: 'text/plain' }), 'image/png': png }),
+      ]);
+    }, ARTICLE);
+    expect(await expectStable(readClipboard)).toBe(ARTICLE);
+    expect(await playground.evaluate(async () => (await navigator.clipboard.read())[0]?.types)).toContain('image/png');
+  });
+});
+
+test.describe('focus and navigation', () => {
+  test('retains completed processing while the service worker restarts', async ({
+    context,
+    extensionId,
+    serviceWorker,
+    playground,
+    readClipboard,
+    waitForWatcher,
+  }) => {
+    await waitForWatcher(true);
+    await playground.getByTestId('copy-writetext').click();
+    const before = await waitForClipboard(readClipboard, (text) => text !== ARTICLE);
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(options.locator('#mode')).toBeEnabled();
+    const session = await context.newCDPSession(playground);
+    const workerUrl = `chrome-extension://${extensionId}/background.js`;
+    const { targetInfos } = await session.send('Target.getTargets');
+    const original = targetInfos.find((target) => target.type === 'service_worker' && target.url === workerUrl);
+    if (!original) throw new Error('Missing extension service worker target');
+    await serviceWorker.evaluate(() => {
+      (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe = true;
+    });
+    await session.send('Target.closeTarget', { targetId: original.targetId });
+    await expect
+      .poll(async () =>
+        (await session.send('Target.getTargets')).targetInfos.some((target) => target.targetId === original.targetId),
+      )
+      .toBe(false);
+    // A settings change wakes the worker through storage.onChanged.
+    await options.locator('#mode').selectOption('hybrid');
+    await expect
+      .poll(async () =>
+        (await session.send('Target.getTargets')).targetInfos.some(
+          (target) => target.type === 'service_worker' && target.url === workerUrl,
+        ),
+      )
+      .toBe(true);
+    // Chrome reuses the target ID; reset worker globals prove that execution really restarted.
+    expect(
+      await serviceWorker.evaluate(() => (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe),
+    ).toBeUndefined();
+    expect(await expectStable(readClipboard, 1200)).toBe(before);
+    await options.close();
+    await session.detach();
+  });
+
+  test('keeps page URL and links unchanged after settings and navigation', async ({
+    playground,
+    server,
+    setSettings,
+  }) => {
+    await playground.goto(`${server.origin}/?utm_source=linkedin`);
+    const address = playground.url();
+    const href = await playground.getByTestId('link-utm').getAttribute('href');
+    for (const mode of ['strip', 'silly', 'hybrid', 'decoy']) {
+      await setSettings({ mode });
+      await playground.waitForTimeout(250);
+      expect(playground.url()).toBe(address);
+      expect(await playground.getByTestId('link-utm').getAttribute('href')).toBe(href);
+    }
+    await playground.getByTestId('push-tracked').click();
+    expect(playground.url()).toBe(`${server.origin}/?page=2&utm_source=homepage&utm_content=promo_tile`);
+  });
+});
+
+test.describe('extension options', () => {
+  test('saves only automatic cleaning and mode settings', async ({ context, extensionId, serviceWorker }) => {
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(options.getByRole('heading', { name: 'UTM Randomizer' })).toBeVisible();
+    await expect(options.locator('#enabled')).toBeChecked();
+    await expect(options.locator('#mode')).toHaveValue('hybrid');
+    await options.locator('#mode').selectOption('strip');
+    await options.locator('#enabled').uncheck();
+    await expect
+      .poll(() => serviceWorker.evaluate(() => chrome.storage.local.get(['mode', 'enabled'])))
+      .toEqual({ mode: 'strip', enabled: false });
+    const manifest = await serviceWorker.evaluate(() => chrome.runtime.getManifest());
+    expect(manifest.options_ui).toEqual({ page: 'options.html', open_in_tab: false });
+    expect(manifest.permissions).toEqual(['clipboardRead', 'clipboardWrite', 'offscreen', 'storage']);
+    expect(manifest.action).toEqual({
+      default_title: 'UTM Randomizer',
+      default_icon: {
+        16: 'icons/icon16.png',
+        32: 'icons/icon32.png',
+        48: 'icons/icon48.png',
+        128: 'icons/icon128.png',
+      },
+    });
+    expect(manifest.commands).toBeUndefined();
+    await options.close();
+  });
+});

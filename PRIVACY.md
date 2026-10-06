@@ -1,43 +1,34 @@
 # Privacy Policy
 
-**UTM Randomizer** is designed with privacy as a core principle.
+UTM Randomizer processes copied URLs inside your browser. It makes no network requests, uses no analytics or telemetry, and sets no cookies.
 
-## Data Collection
+## What the extension reads
 
-This extension **does not collect, store, or transmit any user data**. Specifically:
+- **Clipboard text, HTML when present, and available format information**, while cleaning is enabled and Chrome is focused, plus one final read on focus loss, using the [background watcher](docs/behavior.md#background-watching). Background reads can cause system clipboard-access prompts. Whole URLs and [bounded compact share text](docs/behavior.md#what-gets-rewritten) are eligible for rewriting; [other contents stay unchanged](docs/behavior.md#clipboard-formats).
 
-- No personal information is collected
-- No browsing history is recorded
-- No data is sent to external servers
-- No analytics or telemetry is used
-- No cookies are set by the extension
+Clipboard contents are never written to extension storage, logged, or transmitted outside your browser. The extension does not read tab addresses, inject scripts into web pages, or read page content.
 
-## How the Extension Works
+## What the extension stores
 
-When you copy a URL to your clipboard, this extension:
+Chrome's local extension storage holds only your on/off and replacement-mode settings. They are never synced or transmitted.
 
-1. Reads the clipboard content locally in your browser
-2. Checks if the URL contains tracking parameters (UTM codes, click IDs, etc.)
-3. Replaces those parameters with random nonsense values
-4. Writes the modified URL back to your clipboard
+The [clipboard coordinator](docs/behavior.md#clipboard-coordination) retains the current entry's full text, HTML when present, and format names in memory as a serialized snapshot, even when that entry contains no URL. After a successful rewrite, it also retains the output snapshot to prevent repeated rewrites. Observed clipboard changes replace this record; closing the offscreen document releases it. No clipboard history is accumulated.
 
-**All processing happens entirely within your browser.** The extension makes no network requests.
+## Permissions
 
-## Permissions Used
+| Permission       | Why it is needed                                       |
+| ---------------- | ------------------------------------------------------ |
+| `clipboardRead`  | Reading copied URL text and checking clipboard changes |
+| `clipboardWrite` | Writing the cleaned URL back as plain text             |
+| `offscreen`      | The extension's clipboard reader and writer            |
+| `storage`        | Saving on/off and replacement-mode settings            |
 
-- **clipboardRead**: Required to detect when you copy a URL with tracking parameters
-- **clipboardWrite**: Required to replace the tracking parameters with randomized values
+## Open source
 
-These permissions are used solely for the extension's core functionality.
-
-## Open Source
-
-This extension is open source. You can review the code at any time to verify these privacy claims.
+The [source code](src/) is public and available for inspection.
 
 ## Contact
 
-If you have privacy concerns, please open an issue on the project's GitHub repository.
+For privacy questions or concerns, [open an issue](https://github.com/pszemraj/utm-randomizer/issues).
 
----
-
-*Last updated: December 2024*
+_Last updated: October 5, 2026_

@@ -1,0 +1,6 @@
+dist/
+release/
+coverage/
+test-results/
+playwright-report/
+package-lock.json

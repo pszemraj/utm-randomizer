@@ -1,24 +1,42 @@
 {
   "name": "utm-randomizer",
-  "version": "1.2.0",
-  "description": "Chrome extension that replaces tracking parameters in copied URLs with absurd values",
+  "version": "2.0.3",
+  "private": true,
+  "description": "Chrome extension that swaps tracking parameters in copied links for believable decoys (or removes them)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "^22.13.0 || >=24"
+  },
   "scripts": {
-    "build": "webpack --mode=production",
-    "dev": "webpack --mode=development --watch",
-    "lint": "eslint src/**/*.ts",
-    "type-check": "tsc --noEmit",
-    "test": "node tests/run-tests.js"
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "package": "npm run build && node scripts/package.mjs",
+    "playground": "node scripts/playground.mjs",
+    "icons": "node scripts/render-icons.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npm run build && playwright test",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.268",
-    "@types/node": "^24.7.2",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "eslint": "^8.57.0",
-    "ts-loader": "^9.5.1",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.4.5",
-    "webpack": "^5.91.0",
-    "webpack-cli": "^5.1.4"
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@types/chrome": "^0.3.4",
+    "@types/node": "^24.19.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.11.0",
+    "eslint-plugin-jsdoc": "^65.0.0",
+    "fflate": "^0.8.3",
+    "globals": "^17.12.0",
+    "happy-dom": "^20.14.5",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.2"
   }
 }
