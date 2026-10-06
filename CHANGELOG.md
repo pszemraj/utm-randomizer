@@ -10,6 +10,7 @@ The 2.x work has not been released; these notes describe the changes from 1.2.0.
 - Requires Chrome 123 or newer (was 102).
 - Hybrid is the default replacement mode. The original nonsense values are available as Silly mode.
 - Rewritten clipboard entries are plain text. Accompanying HTML, URI lists, and hidden web-added data are discarded; detectable images, files, and custom non-text formats leave the entry unchanged.
+- Parameter coverage is narrower than 1.2.0: generic names such as `ref`, `source`, and `campaign`; identifiers such as `yclid`, `mkt_tok`, `_hsenc`, and `mc_eid`; and broad `oly_`, `vero_`, `trk_`, and `hss*` prefixes are no longer rewritten unless they match the documented namespaces or exact names.
 
 ### Added
 
@@ -21,7 +22,7 @@ The 2.x work has not been released; these notes describe the changes from 1.2.0.
 ### Changed
 
 - One [background clipboard watcher](docs/behavior.md#background-watching) handles new entries from any source while Chrome is focused, including browser-control copies. It checks focus every 200 ms, takes one final clipboard tick on focus loss, and establishes an untouched baseline on startup and focus regain.
-- [Whole URLs and bounded compact share text](docs/behavior.md#what-gets-rewritten) are eligible. Captions and wrappers stay intact; long prose-dominated documents, relative URLs, and ambiguous embedded spans containing raw non-ASCII characters stay untouched.
+- [Whole URLs and bounded compact share text](docs/behavior.md#what-gets-rewritten) are eligible. Captions and wrappers stay intact; long prose-dominated documents, path-relative URLs, and ambiguous embedded spans containing raw non-ASCII characters stay untouched.
 - Campaign namespaces and documented exact tracking names use one [global classifier](docs/behavior.md#what-gets-rewritten), backed by vendor references. Unrelated query bytes, duplicate keys, fragments, and functional parameters stay intact; recognized signed links are skipped.
 - Each accepted copy draws fresh replacements. Word values and mutable identifiers differ from their originals while preserving the documented formats; the current clipboard snapshot prevents repeated rewriting without accumulating history.
 - New icon with transparent padding, following Chrome Web Store icon guidelines.

@@ -30,7 +30,7 @@ The supported product scope is English-language share text and URLs expressed wi
 
 The compact-share boundary is deliberately explicit. Up to eight URLs are inspected. Text is eligible when it has at most 280 non-whitespace characters outside its URLs, or when URL characters are at least as numerous as the remaining non-whitespace characters. This covers ordinary share captions and link-heavy lists. Longer prose-dominated copies—such as a README, article, or document where links are a minority—stay entirely untouched. If a payload exceeds the URL-count boundary, it also stays untouched rather than being partially rewritten.
 
-Only absolute web URLs are recognized inside a wrapper. Scheme-less links such as `www.example.com/page?utm_source=x` and protocol-relative links are supported only when the entire trimmed clipboard text is that link. Relative URLs stay unchanged. A copied hyperlink whose text contains no URL stays unchanged; use **Copy link address** to copy its destination.
+Only absolute web URLs are recognized inside a wrapper. Scheme-less links such as `www.example.com/page?utm_source=x` and protocol-relative links are supported only when the entire trimmed clipboard text is that link. Path-relative forms such as `/page?utm_source=x`, `./page?utm_source=x`, and bare paths without a dotted hostname stay unchanged. A copied hyperlink whose text contains no URL stays unchanged; use **Copy link address** to copy its destination.
 
 Recognition is case-insensitive and applies on every website:
 
@@ -40,7 +40,7 @@ Recognition is case-insensitive and applies on every website:
 
 Other parameters stay untouched, including YouTube and Spotify's `si`, X's `s` and `t`, Amazon's `ref` and `qid`, and email and affiliate markers such as `mc_eid` and `irclickid`. Supported campaign fields and click IDs are still rewritten on those sites. Unseen suffixes are recognized by this extension's policy; that does not mean vendors consume every possible field. There are no site-specific rules. Exact aliases, categories, and vendor references are in [`src/lib/params.ts`](../src/lib/params.ts).
 
-Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less standalone links such as `www.example.com/page?utm_source=x` are supported. Relative URLs stay unchanged because clipboard text does not identify the page they came from. Trailing punctuation remains part of a standalone URL.
+Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less standalone links such as `www.example.com/page?utm_source=x` are supported. Text that looks like a dotted scheme-less host, including an ambiguous form such as `index.php?utm_source=x`, is treated as one; other path-relative URLs stay unchanged because clipboard text does not identify the page they came from. Trailing punctuation remains part of a standalone URL.
 
 Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. A larger previous clipboard value does not prevent cleaning a smaller new copy.
 
