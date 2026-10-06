@@ -660,6 +660,14 @@ describe('rewriteText', () => {
     }
   });
 
+  it('does not treat an underscore inside an ASCII word as a Markdown wrapper', () => {
+    expect(rewriteText('foo_https://example.com/?utm_campaign=a_', strip)).toEqual({
+      text: 'foo_https://example.com/',
+      urls: 1,
+      params: 1,
+    });
+  });
+
   it('preserves an attached English ellipsis suffix in every mode', () => {
     const link = 'https://example.com/?utm_source=x';
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
@@ -672,6 +680,19 @@ describe('rewriteText', () => {
       });
       expect(rewriteText(`See ${link}...and`, options)).toEqual({
         text: `See ${rewritten?.url ?? ''}...and`,
+        urls: 1,
+        params: 1,
+      });
+    }
+  });
+
+  it('keeps an ellipsis-like sequence inside a tracking value', () => {
+    const link = 'https://example.com/?utm_source=a...b';
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      const options = { mode, key: 'test-key' };
+      const rewritten = rewriteUrl(link, options);
+      expect(rewriteText(`Read ${link} now`, options)).toEqual({
+        text: `Read ${rewritten?.url ?? ''} now`,
         urls: 1,
         params: 1,
       });

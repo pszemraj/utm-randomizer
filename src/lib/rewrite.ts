@@ -76,6 +76,7 @@ function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
       outsideWrapperLength += 1;
       index -= 1;
     }
+    if (/[A-Za-z0-9]/.test(text.charAt(index))) outsideWrapperLength = 0;
   }
   let nestedAbsoluteUrl = false;
   for (let index = start; index < rawEnd; index += 1) {
@@ -124,7 +125,7 @@ function embeddedUrlEnd(text: string, start: number, rawEnd: number): number {
       end -= trailingWrapperLength;
     }
   }
-  const trailingProse = /\.{3}[A-Za-z][A-Za-z'-]*$/.exec(text.slice(start, end));
+  const trailingProse = /\.{3}and$/i.exec(text.slice(start, end));
   if (trailingProse?.index !== undefined) {
     end = start + trailingProse.index;
   }
