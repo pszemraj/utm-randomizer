@@ -23,7 +23,7 @@ The 2.x work has not been released; these notes describe the changes from 1.2.0.
 ### Changed
 
 - One [background clipboard watcher](docs/behavior.md#background-watching) handles new entries from any source while Chrome is focused, including browser-control copies. It checks focus every 200 ms, takes one final clipboard tick on focus loss, and establishes an untouched baseline on startup and focus regain.
-- [Whole URLs and bounded compact share text](docs/behavior.md#what-gets-rewritten) are eligible. Captions and wrappers stay intact; long prose-dominated documents, path-relative URLs, and ambiguous embedded spans containing raw non-ASCII characters stay untouched.
+- [Whole URLs and bounded compact share text](docs/behavior.md#what-gets-rewritten) are eligible. Captions and wrappers stay intact; long prose-dominated documents, path-relative URLs, and ambiguous embedded spans stay untouched.
 - Campaign namespaces and documented exact tracking names use one [global classifier](docs/behavior.md#what-gets-rewritten), backed by vendor references. Unrelated query bytes, duplicate keys, fragments, and functional parameters stay intact; recognized signed links are skipped.
 - Each accepted copy draws fresh replacements. Word values and mutable identifiers differ from their originals while preserving the documented formats; the current clipboard snapshot prevents repeated rewriting without accumulating history.
 - New icon with transparent padding, following Chrome Web Store icon guidelines.

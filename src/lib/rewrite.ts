@@ -149,9 +149,25 @@ function absoluteUrlSpans(text: string): { start: number; end: number }[] | null
   return spans;
 }
 
-/** Whether an embedded candidate may contain raw Unicode prose past the actual URL boundary. */
+/** Whether an embedded candidate may contain prose past an uncertain URL boundary. */
 function isAmbiguousEmbeddedUrl(text: string, start: number, end: number): boolean {
-  return /[^\p{ASCII}]/u.test(text.slice(start, end));
+  const link = text.slice(start, end);
+  if (/[^\p{ASCII}]/u.test(link)) return true;
+
+  const queryStart = link.indexOf('?');
+  const fragmentStart = link.indexOf('#');
+  if (queryStart === -1 || (fragmentStart !== -1 && fragmentStart < queryStart)) return false;
+  const queryEnd = fragmentStart === -1 ? link.length : fragmentStart;
+  return link
+    .slice(queryStart + 1, queryEnd)
+    .split('&')
+    .some((segment) => {
+      const separator = segment.indexOf('=');
+      if (separator === -1) return false;
+      const rawKey = segment.slice(0, separator);
+      const rawValue = segment.slice(separator + 1);
+      return classifyParam(safeDecode(rawKey)) !== null && /[,;][A-Za-z]/.test(rawValue);
+    });
 }
 
 /** Decodes a form-encoded query component, returning the input unchanged when it is malformed. */

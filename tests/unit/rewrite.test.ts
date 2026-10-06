@@ -699,6 +699,13 @@ describe('rewriteText', () => {
     }
   });
 
+  it.each([',', ';'])('leaves an ambiguous punctuation-attached caption untouched (%s)', (punctuation) => {
+    const text = `See https://example.com/?utm_source=x${punctuation}and more`;
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
+    }
+  });
+
   it('retains comma and semicolon bytes that are internal to one embedded URL', () => {
     expect(rewriteText('Read https://example.com/a,b;c?utm_source=email', strip)).toEqual({
       text: 'Read https://example.com/a,b;c',
