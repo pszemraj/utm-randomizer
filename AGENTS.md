@@ -44,7 +44,9 @@ Decoy, Silly, Hybrid, and Remove are the four modes.
   Stage intended source files explicitly.
 - Do not expand CI without separate approval of the scope and cost. Preserve
   the existing workflow; permission to run tests locally is not permission to
-  add CI jobs, browser runs, packaging checks, or matrices.
+  add CI jobs, browser runs, packaging checks, or matrices. The existing
+  tag-triggered GitHub Release packaging workflow is approved at its current
+  scope; that approval does not extend to additional triggers, jobs, or matrices.
 
 ## Commands and setup
 
