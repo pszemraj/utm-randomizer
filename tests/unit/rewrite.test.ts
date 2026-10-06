@@ -535,6 +535,31 @@ describe('rewriteText', () => {
     expect(rewriteUrl(text, strip)).toBeNull();
   });
 
+  it.each(['chatgpt.com', 't.co', 'news.ycombinator.com', 'l.facebook.com', 'v1.2', '2024.10'])(
+    'rewrites embedded tracking values containing functional dots (%s)',
+    (value) => {
+      const link = `https://example.com/post?utm_source=${value}&keep=1`;
+      for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+        const options = { mode, key: 'test-key' };
+        const rewritten = rewriteUrl(link, options);
+        expect(rewriteText(`Great read ${link}`, options)).toEqual({
+          text: `Great read ${rewritten?.url ?? ''}`,
+          urls: 1,
+          params: 1,
+        });
+      }
+    },
+  );
+
+  it('rewrites a dotted tracking value inside a Markdown link', () => {
+    const text = '[Example](https://example.com/post?utm_source=chatgpt.com)';
+    expect(rewriteText(text, strip)).toEqual({
+      text: '[Example](https://example.com/post)',
+      urls: 1,
+      params: 1,
+    });
+  });
+
   it.each([
     '新製品はこちらhttps://example.com/?utm_source=twitterをチェック',
     '请看https://example.com/?utm_source=x这个链接',
@@ -709,7 +734,7 @@ describe('rewriteText', () => {
     }
   });
 
-  it.each([',and', ';then', ',1st', ';2nd', '!(next)', ':read', '.next', '?then'])(
+  it.each([',and', ';then', ',1st', ';2nd', '!(next)', ':read', '.Next', '?then'])(
     'leaves an ambiguous punctuation-attached caption untouched (%s)',
     (suffix) => {
       const text = `See https://example.com/?utm_source=x${suffix} more`;
@@ -721,6 +746,23 @@ describe('rewriteText', () => {
 
   it('leaves ambiguous raw apostrophes in an embedded query untouched', () => {
     const text = "Read https://example.com/?utm_campaign=O'Reilly&item=42";
+    for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+      expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
+    }
+  });
+
+  it.each([',and', ';then', ':read', '!wow', '?next'])(
+    'does not consume a caption attached to a valueless tracking key (%s)',
+    (suffix) => {
+      const text = `Read https://example.com/?utm_source${suffix} more`;
+      for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+        expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
+      }
+    },
+  );
+
+  it('does not consume a caption attached with a double hyphen', () => {
+    const text = 'Read https://example.com/?utm_source=x--great stuff';
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
       expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
     }

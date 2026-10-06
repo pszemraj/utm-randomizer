@@ -152,6 +152,38 @@ function absoluteUrlSpans(text: string): { start: number; end: number }[] | null
   return spans;
 }
 
+/** Whether punctuation at this position could be attached English prose rather than URL data. */
+function isAmbiguousRawPunctuation(value: string, index: number): boolean {
+  const char = value.charAt(index);
+  if (char === ',' || char === '!' || char === '?' || char === ';' || char === ':') return true;
+  if (char === '-' && value.charAt(index + 1) === '-') return true;
+  if (char !== '.') return false;
+
+  const before = value.charAt(index - 1);
+  const after = value.charAt(index + 1);
+  return !/[A-Za-z0-9]/.test(before) || !/[a-z0-9]/.test(after);
+}
+
+/** Whether a tracked query segment crosses an uncertain boundary into compact English prose. */
+function hasAmbiguousTrackingPunctuation(segment: string): boolean {
+  const separator = segment.indexOf('=');
+  if (separator !== -1) {
+    const rawKey = segment.slice(0, separator);
+    if (classifyParam(safeDecode(rawKey)) === null) return false;
+    const rawValue = segment.slice(separator + 1);
+    for (let index = 0; index < rawValue.length; index += 1) {
+      if (isAmbiguousRawPunctuation(rawValue, index)) return true;
+    }
+    return false;
+  }
+
+  for (let index = 1; index < segment.length; index += 1) {
+    if (!isAmbiguousRawPunctuation(segment, index)) continue;
+    if (classifyParam(safeDecode(segment.slice(0, index))) !== null) return true;
+  }
+  return false;
+}
+
 /** Whether an embedded candidate may contain prose past an uncertain URL boundary. */
 function isAmbiguousEmbeddedUrl(text: string, start: number, end: number): boolean {
   const link = text.slice(start, end);
@@ -164,13 +196,7 @@ function isAmbiguousEmbeddedUrl(text: string, start: number, end: number): boole
   const rawQuery = link.slice(queryStart + 1, queryEnd);
   // A raw apostrophe is legal in a URL but indistinguishable from attached English prose here.
   if (rawQuery.includes("'")) return true;
-  return rawQuery.split('&').some((segment) => {
-    const separator = segment.indexOf('=');
-    if (separator === -1) return false;
-    const rawKey = segment.slice(0, separator);
-    const rawValue = segment.slice(separator + 1);
-    return classifyParam(safeDecode(rawKey)) !== null && /[.,!?;:]/.test(rawValue);
-  });
+  return rawQuery.split('&').some(hasAmbiguousTrackingPunctuation);
 }
 
 /** Decodes a form-encoded query component, returning the input unchanged when it is malformed. */
