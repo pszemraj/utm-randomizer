@@ -206,6 +206,10 @@ chrome.windows.onFocusChanged.addListener(
     focusRevision += 1;
     if (windowId === chrome.windows.WINDOW_ID_NONE) {
       potentialBlur = { revision: focusRevision, flushed: flushPotentialBlur(focusRevision) };
+    } else if (potentialBlur !== null) {
+      // A regain that overtakes the NONE query may have hidden a real short blur behind a focused result.
+      baselineRequired = true;
+      potentialBlur = null;
     }
     void refreshFocus().catch((error: unknown) =>
       console.debug('UTM Randomizer: could not check browser focus', error),

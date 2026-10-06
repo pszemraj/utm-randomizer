@@ -368,6 +368,100 @@ it.each(['strip', 'decoy', 'silly', 'hybrid'] as const)(
   },
 );
 
+it('bounds retries when a successful copy cannot be read back', async () => {
+  const { clipboard, writes, requestFocus } = await start();
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- simulates a lost write followed by unavailable verification
+  const command = document.execCommand.bind(document);
+  let hideNextPaste = false;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'paste' && hideNextPaste) {
+      hideNextPaste = false;
+      return true;
+    }
+    if (name !== 'copy') {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves ordinary clipboard reads
+      return command(name);
+    }
+    const previous = { ...clipboard, types: [...clipboard.types] };
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- records the attempted write before restoring the original
+    const result = command(name);
+    Object.assign(clipboard, previous, { types: previous.types });
+    hideNextPaste = true;
+    return result;
+  });
+
+  await vi.advanceTimersByTimeAsync(20 * 200);
+  expect(writes).toHaveBeenCalledTimes(2);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(0);
+});
+
+it('recognizes an intended output after its immediate read-back is unavailable', async () => {
+  const { clipboard, message, writes, requestFocus } = await start();
+  message({ type: 'watch-config', config: { mode: 'silly', focused: true } });
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- hides only the verification read after a successful write
+  const command = document.execCommand.bind(document);
+  let hideNextPaste = false;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'paste' && hideNextPaste) {
+      hideNextPaste = false;
+      return true;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the clipboard write and ordinary reads
+    const result = command(name);
+    if (name === 'copy') hideNextPaste = true;
+    return result;
+  });
+
+  message({ type: 'watch-config', config: CONFIG });
+  const output = clipboard.text;
+  expect(output).not.toBe(TRACKED);
+  expect(writes).toHaveBeenCalledOnce();
+  expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(0);
+
+  message({ type: 'watch-config', config: CONFIG });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(output);
+  expect(writes).toHaveBeenCalledOnce();
+  expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(1);
+});
+
+it('keeps a raced new entry eligible after the prior entry exhausts its retry', async () => {
+  const { clipboard, message, writes } = await start();
+  const raced = 'https://example.com/newer?utm_source=email';
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- races a new copy against the retried write read-back
+  const command = document.execCommand.bind(document);
+  let copies = 0;
+  let raceNextPaste = false;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'paste' && raceNextPaste) {
+      clipboard.text = raced;
+      raceNextPaste = false;
+    }
+    if (name !== 'copy') {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves ordinary reads around the race
+      return command(name);
+    }
+    copies += 1;
+    const previous = { ...clipboard, types: [...clipboard.types] };
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- performs the attempted clipboard write
+    const result = command(name);
+    if (copies === 1) Object.assign(clipboard, previous, { types: previous.types });
+    else if (copies === 2) raceNextPaste = true;
+    return result;
+  });
+
+  await vi.advanceTimersByTimeAsync(2 * 200);
+  expect(clipboard.text).toBe(raced);
+  expect(writes).toHaveBeenCalledTimes(2);
+  message({ type: 'watch-config', config: CONFIG });
+  expect(clipboard.text).toBe('https://example.com/newer');
+  expect(writes).toHaveBeenCalledTimes(3);
+});
+
 it('settles an entry after two unavailable pre-write safety reads', async () => {
   const { clipboard, writes } = await start();
   clipboard.text = TRACKED;
@@ -380,6 +474,29 @@ it('settles an entry after two unavailable pre-write safety reads', async () => 
     return command(name);
   });
 
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it('keeps a focus-regain baseline pending until the clipboard can be read', async () => {
+  const { clipboard, message, writes } = await start();
+  message({ type: 'watch-config', config: null });
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- makes only the immediate regain baseline unavailable
+  const command = document.execCommand.bind(document);
+  let unavailable = true;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'paste' && unavailable) {
+      unavailable = false;
+      return true;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the next successful baseline read
+    return command(name);
+  });
+
+  message({ type: 'watch-config', config: CONFIG });
+  message({ type: 'watch-config', config: CONFIG });
   await vi.advanceTimersByTimeAsync(1000);
   expect(clipboard.text).toBe(TRACKED);
   expect(writes).not.toHaveBeenCalled();

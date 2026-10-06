@@ -364,9 +364,18 @@ it('forces an untouched baseline when focus returns before a blur query resolves
       baseline: true,
     }),
   );
+  worker.sendMessage.mockClear();
+  worker.changeFocus(true, 2);
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: true },
+    }),
+  );
+  expect(worker.sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ baseline: true }));
 });
 
-it('does not infer a blur when a stale NONE query still observes focused Chrome', async () => {
+it('baselines an explicit short-gap regain when its stale blur query observes refocused Chrome', async () => {
   const worker = await startBackground({ enabled: true });
   await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
   worker.sendMessage.mockClear();
@@ -386,10 +395,8 @@ it('does not infer a blur when a stale NONE query still observes focused Chrome'
     expect(worker.sendMessage).toHaveBeenCalledWith({
       type: 'watch-config',
       config: { mode: 'hybrid', focused: true },
+      baseline: true,
     }),
-  );
-  expect(worker.sendMessage).not.toHaveBeenCalledWith(
-    expect.objectContaining({ type: 'watch-config', baseline: true }),
   );
 });
 

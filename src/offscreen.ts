@@ -8,8 +8,9 @@ const POLL_MS = 200;
 let config: WatchConfig | null = null;
 let timer = 0;
 let checkingFocus = false;
-/** One current entry; `pending` permits one retry after an inconclusive clipboard operation. */
-let entry: { before: string; after?: string; pending?: boolean } | null = null;
+let baselinePending = false;
+/** One current entry; `pending` permits one retry and `intended` recognizes a delayed successful write. */
+let entry: { before: string; after?: string; intended?: string; pending?: boolean } | null = null;
 
 /** Finds the extension-owned clipboard sink. */
 function field(): HTMLTextAreaElement {
@@ -59,9 +60,13 @@ function plainText(text: string): ClipboardSnapshot {
   return { text, html: null, types: ['text/plain'] };
 }
 
-/** Keeps an inconclusive observation eligible once, then settles it to prevent a write loop. */
-function recordRetry(before: string, retrying: boolean): void {
-  entry = retrying ? { before } : { before, pending: true };
+/** Keeps one identity eligible once while remembering any output whose verification was unavailable. */
+function recordRetry(before: string, retrying: boolean, intended?: string): void {
+  entry = {
+    before,
+    ...(intended === undefined ? {} : { intended }),
+    ...(retrying ? {} : { pending: true }),
+  };
 }
 
 /** Writes a URL, verifies the result when possible, and bounds inconclusive retries. */
@@ -86,10 +91,12 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string, retrying: b
       entry = { before, after: expected };
       void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
     } else if (observed === null) {
-      // Suppress the intended output to avoid a retry loop, but do not claim success without read-back.
-      entry = { before, after: expected };
-    } else {
+      recordRetry(before, retrying, expected);
+    } else if (observed === before || landed?.text.trim() === snapshot.text) {
       recordRetry(observed, retrying);
+    } else {
+      // A different external entry has not used its own retry merely because the previous entry did.
+      entry = { before: observed, pending: true };
     }
   }
   return ok;
@@ -97,10 +104,22 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string, retrying: b
 
 /** Performs one synchronous read, eligible-text decision, write, and read-back. */
 function tick(baseline = false): void {
+  if (baseline) baselinePending = true;
   const snapshot = readClipboard();
   if (!snapshot) return;
   const current = identity(snapshot);
-  if (!entry?.pending && current === (entry?.after ?? entry?.before)) return;
+  if (baselinePending) {
+    baselinePending = false;
+    entry = { before: current };
+    return;
+  }
+  if (current === entry?.after) return;
+  if (current === entry?.intended) {
+    entry = { before: entry.before, after: current };
+    void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
+    return;
+  }
+  if (!entry?.pending && entry?.after === undefined && current === entry?.before) return;
   const retrying = entry?.pending === true && current === entry.before;
   const previous = entry;
   entry = { before: current };
