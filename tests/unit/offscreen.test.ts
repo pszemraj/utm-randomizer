@@ -279,6 +279,30 @@ it('normalizes rewritten clipboard text to plain text', async () => {
   expect(clipboard.types).toEqual(['text/plain']);
 });
 
+it('processes an external entry that replaces a successful write before read-back', async () => {
+  const { clipboard, writes, requestFocus } = await start();
+  const raced = 'https://example.com/newer?utm_source=email';
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- races the synchronous write and read-back
+  const command = document.execCommand.bind(document);
+  let pasteCount = 0;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'paste' && ++pasteCount === 3) clipboard.text = raced;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the clipboard harness around the race
+    return command(name);
+  });
+
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(raced);
+  expect(writes).toHaveBeenCalledOnce();
+  expect(requestFocus.mock.calls.filter(([message]) => message.type === 'rewrite-complete')).toHaveLength(0);
+
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe('https://example.com/newer');
+  expect(writes).toHaveBeenCalledTimes(2);
+  expect(requestFocus.mock.calls.filter(([message]) => message.type === 'rewrite-complete')).toHaveLength(1);
+});
+
 it('retries an unchanged fresh URL after an automatic write fails', async () => {
   const { clipboard, writes } = await start();
   clipboard.text = TRACKED;

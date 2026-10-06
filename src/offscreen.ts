@@ -59,7 +59,7 @@ function plainText(text: string): ClipboardSnapshot {
   return { text, html: null, types: ['text/plain'] };
 }
 
-/** Writes a URL and records Chrome's actual read-back, so its own output stays untouched. */
+/** Writes a URL and records only the intended output, so a raced external entry stays eligible. */
 function writeClipboard(snapshot: ClipboardSnapshot, before: string): boolean {
   const textarea = field();
   const onCopy = (event: ClipboardEvent) => {
@@ -74,9 +74,12 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string): boolean {
   textarea.removeEventListener('copy', onCopy);
   textarea.value = '';
   if (ok) {
-    const landed = readClipboard() ?? snapshot;
-    entry = { before, after: identity(landed) };
-    void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
+    const expected = identity(snapshot);
+    const landed = readClipboard();
+    entry = { before, after: expected };
+    if (landed && identity(landed) === expected) {
+      void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
+    }
   }
   return ok;
 }
