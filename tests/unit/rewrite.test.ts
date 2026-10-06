@@ -761,6 +761,16 @@ describe('rewriteText', () => {
     },
   );
 
+  it.each(['(archived)', '[archived]', '{archived}'])(
+    'leaves an ambiguous attached parenthetical untouched (%s)',
+    (suffix) => {
+      const text = `See https://example.com/?utm_source=x${suffix} now`;
+      for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+        expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
+      }
+    },
+  );
+
   it('does not consume a caption attached with a double hyphen', () => {
     const text = 'Read https://example.com/?utm_source=x--great stuff';
     for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {

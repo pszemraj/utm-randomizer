@@ -152,10 +152,11 @@ function absoluteUrlSpans(text: string): { start: number; end: number }[] | null
   return spans;
 }
 
-/** Whether punctuation at this position could be attached English prose rather than URL data. */
+/** Whether punctuation or an opening wrapper here could be attached English prose rather than URL data. */
 function isAmbiguousRawPunctuation(value: string, index: number): boolean {
   const char = value.charAt(index);
   if (char === ',' || char === '!' || char === '?' || char === ';' || char === ':') return true;
+  if (char === '(' || char === '[' || char === '{') return true;
   if (char === '-' && value.charAt(index + 1) === '-') return true;
   if (char !== '.') return false;
 
