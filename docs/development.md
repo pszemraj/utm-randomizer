@@ -73,6 +73,8 @@ Squash merges leave one commit on `main`, so generated entries usually contain t
 
 The release workflow runs only when a `v*` tag is pushed or when it is manually dispatched for an existing tag. The tag must equal `v` plus the version in `package.json`. It runs the repository checks, builds and inspects the package, then creates the GitHub release or attaches a missing ZIP on a manual rerun. An existing release asset is left unchanged.
 
+After merging, let the tag-triggered workflow create the release with its ZIP attached. Publishing an [immutable release](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases) beforehand blocks later asset uploads; disabling immutability afterward does not unlock that release. Its title and release notes remain editable.
+
 Routine CI remains one static-check job for pull requests and `main`; release packaging does not run on ordinary branch updates. Run browser tests and packaging locally when relevant. See [CONTRIBUTING.md](../CONTRIBUTING.md) for adding parameters and replacement values and for submitting changes.
 
 ## Source map
