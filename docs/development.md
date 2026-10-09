@@ -20,6 +20,9 @@ npm run playground
 # Web Store zip in release/
 npm run package
 
+# Generate the changelog for the version in package.json
+npm run changelog
+
 # Render icons from icon.svg
 npm run icons
 ```
@@ -59,6 +62,12 @@ These checks touch the real desktop and clipboard. Use synthetic URLs, preserve 
 - Use Safari for alternate-app checks. Ghostty is prohibited; do not use GUI terminals or editors as focus/clipboard test surfaces. Ask before accessing another app or granting desktop permissions. Repository commands belong in the execution tool, not a GUI terminal.
 
 ## Packaging and CI
+
+`npm run changelog` regenerates `CHANGELOG.md` from Git tags and commit history. The `-p` option uses the version in `package.json` for the latest section even before its tag exists; generating that section does not publish a release. Generated changelog Markdown is excluded from Prettier.
+
+The default output includes at most three ordinary commits per release. Use `npm run changelog -- --commit-limit false` to include all of them.
+
+Squash merges leave one commit on `main`, so generated entries usually contain the pull request title rather than a detailed list of changes. Keep user-facing highlights and migration notes in the corresponding GitHub release notes; regenerating the changelog replaces manual additions. Review those notes when releasing after the pull request is squash-merged.
 
 `npm run package` creates `release/utm-randomizer-<version>.zip`, with `manifest.json` at the ZIP's root. Attach that file to a GitHub release as the extension download.
 
