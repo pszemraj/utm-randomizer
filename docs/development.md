@@ -20,6 +20,9 @@ npm run playground
 # Web Store zip in release/
 npm run package
 
+# Generate the changelog for the version in package.json
+npm run changelog
+
 # Render icons from icon.svg
 npm run icons
 ```
@@ -60,9 +63,19 @@ These checks touch the real desktop and clipboard. Use synthetic URLs, preserve 
 
 ## Packaging and CI
 
+`npm run changelog` regenerates `CHANGELOG.md` from Git tags and commit history. The `-p` option uses the version in `package.json` for the latest section even before its tag exists; generating that section does not publish a release. Generated changelog Markdown is excluded from Prettier.
+
+On feature branches, preview with `npm run changelog -- --stdout` and keep pending-version sections out of the committed changelog: squash merging replaces the branch commits. Generate the pending section from the updated `main` after the pull request is squash-merged and before tagging.
+
+The default output includes at most three ordinary commits per release. Use `npm run changelog -- --commit-limit false` to include all of them.
+
+Squash merges leave one commit on `main`, so generated entries usually contain the pull request title rather than a detailed list of changes. Keep user-facing highlights and migration notes in the corresponding GitHub release notes; regenerating the changelog replaces manual additions. Review those notes when releasing after the pull request is squash-merged.
+
 `npm run package` creates `release/utm-randomizer-<version>.zip`, with `manifest.json` at the ZIP's root. Attach that file to a GitHub release as the extension download.
 
 The release workflow runs only when a `v*` tag is pushed or when it is manually dispatched for an existing tag. The tag must equal `v` plus the version in `package.json`. It runs the repository checks, builds and inspects the package, then creates the GitHub release or attaches a missing ZIP on a manual rerun. An existing release asset is left unchanged.
+
+After merging, let the tag-triggered workflow create the release with its ZIP attached. Publishing an [immutable release](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases) beforehand blocks later asset uploads; disabling immutability afterward does not unlock that release. Its title and release notes remain editable.
 
 Routine CI remains one static-check job for pull requests and `main`; release packaging does not run on ordinary branch updates. Run browser tests and packaging locally when relevant. See [CONTRIBUTING.md](../CONTRIBUTING.md) for adding parameters and replacement values and for submitting changes.
 

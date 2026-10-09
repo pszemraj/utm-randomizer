@@ -1,78 +1,55 @@
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width="520"
-  height="326"
-  viewBox="0 0 520 326"
-  role="img"
-  aria-labelledby="title description"
->
-  <title id="title">One link, four ways to share it</title>
-  <desc id="description">
-    The destination https://example.com/article?id=42 stays intact in every mode. The copied link has
-    utm_source=newsletter and utm_medium=email. Decoy uses plausible values such as outbrain and notification. Silly
-    uses carrier-pigeon and telepathy. Hybrid mixes carrier-pigeon with notification. Remove deletes both tracking
-    parameters. These are illustrative values; replacements vary by installation.
-  </desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="312" viewBox="0 0 860 312" role="img" aria-labelledby="t d">
+  <title id="t">UTM Randomizer replacement modes</title>
+  <desc id="d">A copied link, https://example.com/article?id=42&amp;utm_source=newsletter&amp;utm_medium=email, and what you paste in each mode. Decoy swaps in believable values, Silly swaps in nonsense, Hybrid picks one or the other per value and is the default, and Remove deletes both tracking parameters. The address and id=42 never change.</desc>
   <style>
-    text {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    }
-    .label {
-      fill: #f0f6fc;
-      font-size: 18px;
-      font-weight: 600;
-    }
-    .detail {
-      fill: #adbdcc;
-      font-size: 14px;
-    }
-    .key {
-      fill: #adbdcc;
-      font-size: 16px;
-    }
-    .value {
-      font-size: 22px;
-    }
-    .mono {
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-    }
+    .sans { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 13px; }
+    .dim { fill: #8a98a8; }
+    .orig { fill: #ff9e9e; }
+    .decoy { fill: #7fb2ff; }
+    .silly { fill: #f2c26b; }
+    .ok { fill: #6fd3a0; }
+    .lab { font-size: 13px; font-weight: 700; fill: #e6edf5; }
+    .cap { font-size: 11px; letter-spacing: 1.6px; font-weight: 600; fill: #8a98a8; }
   </style>
-  <rect x="1" y="1" width="518" height="324" rx="12" fill="#0d141d" stroke="#2c3c4d" stroke-width="2" />
 
-  <rect x="14" y="14" width="492" height="56" rx="8" fill="#152b23" stroke="#345c48" />
-  <text x="26" y="35" fill="#86deb0" font-size="14" font-weight="600">DESTINATION KEPT IN EVERY MODE</text>
-  <text x="26" y="58" fill="#e1f5e9" class="mono" font-size="20">https://example.com/article?id=42</text>
+  <rect x="0.5" y="0.5" width="859" height="311" rx="14" fill="#0f1722" stroke="#263445"/>
 
-  <text x="116" y="95" class="mono key">utm_source</text>
-  <text x="310" y="95" class="mono key">utm_medium</text>
+  <!-- what you copy -->
+  <rect x="16" y="20" width="828" height="36" rx="8" fill="#162231"/>
+  <text class="sans lab" x="34" y="43">You copy</text>
+  <text class="mono" x="148" y="42" xml:space="preserve"><tspan class="dim">https://example.com/article?id=42&amp;utm_source=</tspan><tspan class="orig">newsletter</tspan><tspan class="dim">&amp;utm_medium=</tspan><tspan class="orig">email</tspan></text>
 
-  <rect x="14" y="106" width="492" height="32" rx="6" fill="#151f2b" stroke="#2c3c4d" />
-  <text x="26" y="128" class="label">Copied</text>
-  <text x="116" y="128" fill="#f0f6fc" class="mono value">newsletter</text>
-  <text x="310" y="128" fill="#f0f6fc" class="mono value">email</text>
+  <!-- divider -->
+  <text class="sans cap" x="34" y="88">YOU PASTE</text>
+  <line x1="120" y1="84" x2="844" y2="84" stroke="#263445"/>
 
-  <rect x="14" y="150" width="492" height="32" rx="6" fill="#151f2b" stroke="#2c3c4d" />
-  <rect x="14" y="157" width="3" height="18" rx="1" fill="#9bc9ff" />
-  <text x="26" y="172" class="label">Decoy</text>
-  <text x="116" y="172" fill="#9bc9ff" class="mono value">outbrain</text>
-  <text x="310" y="172" fill="#9bc9ff" class="mono value">notification</text>
+  <!-- Decoy -->
+  <rect x="16" y="100" width="828" height="36" rx="8" fill="#162231"/>
+  <rect x="16" y="108" width="4" height="20" rx="2" fill="#7fb2ff"/>
+  <text class="sans lab" x="34" y="123">Decoy</text>
+  <text class="mono" x="148" y="122" xml:space="preserve"><tspan class="dim">https://example.com/article?id=42&amp;utm_source=</tspan><tspan class="decoy">outbrain</tspan><tspan class="dim">&amp;utm_medium=</tspan><tspan class="decoy">notification</tspan></text>
 
-  <rect x="14" y="188" width="492" height="32" rx="6" fill="#151f2b" stroke="#2c3c4d" />
-  <rect x="14" y="195" width="3" height="18" rx="1" fill="#f4cf80" />
-  <text x="26" y="210" class="label">Silly</text>
-  <text x="116" y="210" fill="#f4cf80" class="mono value">carrier-pigeon</text>
-  <text x="310" y="210" fill="#f4cf80" class="mono value">telepathy</text>
+  <!-- Silly -->
+  <rect x="16" y="144" width="828" height="36" rx="8" fill="#162231"/>
+  <rect x="16" y="152" width="4" height="20" rx="2" fill="#f2c26b"/>
+  <text class="sans lab" x="34" y="167">Silly</text>
+  <text class="mono" x="148" y="166" xml:space="preserve"><tspan class="dim">https://example.com/article?id=42&amp;utm_source=</tspan><tspan class="silly">carrier-pigeon</tspan><tspan class="dim">&amp;utm_medium=</tspan><tspan class="silly">telepathy</tspan></text>
 
-  <rect x="14" y="226" width="492" height="32" rx="6" fill="#151f2b" stroke="#2c3c4d" />
-  <rect x="14" y="233" width="3" height="18" rx="1" fill="#d9b6fd" />
-  <text x="26" y="248" class="label">Hybrid</text>
-  <text x="116" y="248" fill="#f4cf80" class="mono value">carrier-pigeon</text>
-  <text x="310" y="248" fill="#9bc9ff" class="mono value">notification</text>
+  <!-- Hybrid (default) -->
+  <rect x="16" y="188" width="828" height="36" rx="8" fill="#162231"/>
+  <rect x="16" y="196" width="4" height="20" rx="2" fill="#c792ea"/>
+  <text class="sans lab" x="34" y="211">Hybrid</text>
+  <rect x="86" y="198" width="46" height="16" rx="8" fill="none" stroke="#c792ea"/>
+  <text class="sans" x="109" y="209.5" text-anchor="middle" font-size="10" font-weight="600" fill="#c792ea">default</text>
+  <text class="mono" x="148" y="210" xml:space="preserve"><tspan class="dim">https://example.com/article?id=42&amp;utm_source=</tspan><tspan class="silly">carrier-pigeon</tspan><tspan class="dim">&amp;utm_medium=</tspan><tspan class="decoy">notification</tspan></text>
 
-  <rect x="14" y="264" width="492" height="32" rx="6" fill="#152b23" stroke="#345c48" />
-  <rect x="14" y="271" width="3" height="18" rx="1" fill="#86deb0" />
-  <text x="26" y="286" class="label">Remove</text>
-  <text x="116" y="286" fill="#86deb0" font-size="20">Both tracking parameters deleted</text>
+  <!-- Remove -->
+  <rect x="16" y="232" width="828" height="36" rx="8" fill="#162231"/>
+  <rect x="16" y="240" width="4" height="20" rx="2" fill="#6fd3a0"/>
+  <text class="sans lab" x="34" y="255">Remove</text>
+  <text class="mono dim" x="148" y="254">https://example.com/article?id=42</text>
+  <text class="sans ok" x="440" y="254" font-size="12.5">utm_source and utm_medium deleted</text>
 
-  <text x="14" y="316" class="detail">Illustrative values; replacements vary by installation.</text>
+  <text class="sans dim" x="34" y="294" font-size="12">Dimmed text never changes. Replacement values are drawn fresh on every copy.</text>
 </svg>

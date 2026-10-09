@@ -1,6 +1,6 @@
 {
   "name": "utm-randomizer",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "private": true,
   "description": "Chrome extension that swaps tracking parameters in copied links for believable decoys (or removes them)",
   "license": "MIT",
@@ -12,6 +12,7 @@
     "build": "node scripts/build.mjs",
     "dev": "node scripts/build.mjs --watch",
     "package": "npm run build && node scripts/package.mjs",
+    "changelog": "auto-changelog -p",
     "playground": "node scripts/playground.mjs",
     "icons": "node scripts/render-icons.mjs",
     "lint": "eslint .",
@@ -28,6 +29,7 @@
     "@playwright/test": "^1.63.0",
     "@types/chrome": "^0.3.4",
     "@types/node": "^24.19.0",
+    "auto-changelog": "^2.7.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "eslint-plugin-jsdoc": "^65.0.0",
