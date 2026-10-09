@@ -65,6 +65,8 @@ These checks touch the real desktop and clipboard. Use synthetic URLs, preserve 
 
 `npm run changelog` regenerates `CHANGELOG.md` from Git tags and commit history. The `-p` option uses the version in `package.json` for the latest section even before its tag exists; generating that section does not publish a release. Generated changelog Markdown is excluded from Prettier.
 
+On feature branches, preview with `npm run changelog -- --stdout` and keep pending-version sections out of the committed changelog: squash merging replaces the branch commits. Generate the pending section from the updated `main` after the pull request is squash-merged and before tagging.
+
 The default output includes at most three ordinary commits per release. Use `npm run changelog -- --commit-limit false` to include all of them.
 
 Squash merges leave one commit on `main`, so generated entries usually contain the pull request title rather than a detailed list of changes. Keep user-facing highlights and migration notes in the corresponding GitHub release notes; regenerating the changelog replaces manual additions. Review those notes when releasing after the pull request is squash-merged.
