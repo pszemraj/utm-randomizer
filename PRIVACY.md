@@ -8,6 +8,10 @@ UTM Randomizer processes copied URLs inside your browser. It makes no network re
 
 Clipboard contents are never written to extension storage, logged, or transmitted outside your browser. The extension does not read tab addresses, inject scripts into web pages, or read page content.
 
+Copied text and HTML may contain personal, health, financial, authentication, communication, location, or website information. The extension reads these only as clipboard contents to detect changes and rewrite eligible links; it does not request or analyze these categories separately. It also checks whether Chrome is focused to decide when clipboard processing is allowed.
+
+UTM Randomizer's use of information received from Chrome APIs adheres to the Chrome Web Store User Data Policy, including the Limited Use requirements. Data is used only for the link-cleaning feature and is never sold, shared with third parties, or used for advertising, creditworthiness, or lending.
+
 ## What the extension stores
 
 Chrome's local extension storage holds only your on/off and replacement-mode settings. They are never synced or transmitted.
@@ -31,4 +35,4 @@ The [source code](src/) is public and available for inspection.
 
 For privacy questions or concerns, [open an issue](https://github.com/pszemraj/utm-randomizer/issues).
 
-_Last updated: October 5, 2026_
+_Last updated: October 10, 2026_

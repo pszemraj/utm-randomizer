@@ -42,6 +42,8 @@ Follow the Chrome steps above, selecting `dist/` instead of an extracted release
 
 Run `npm run dev` to rebuild on edits and `npm run check` for lint, formatting, types, and unit tests. See [development commands and browser tests](docs/development.md), [behavior and clipboard details](docs/behavior.md), and [contributing](CONTRIBUTING.md).
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pszemraj/utm-randomizer)
+
 ## License
 
 MIT
