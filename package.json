@@ -1,6 +1,6 @@
 {
   "name": "utm-randomizer",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "private": true,
   "description": "Chrome extension that swaps tracking parameters in copied links for believable decoys (or removes them)",
   "license": "MIT",
