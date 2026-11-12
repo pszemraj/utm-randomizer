@@ -112,7 +112,8 @@ function tick(baseline = false): void {
   // Full paste can load native images before onPaste runs; polling must stay text-only.
   const plain = readClipboard('pasteAndMatchStyle');
   if (!plain) return;
-  if (!baselinePending && plain.text === observedText && !entry?.pending) return;
+  const sameText = plain.text === observedText;
+  if (!baselinePending && sameText && !entry?.pending) return;
   const result = config ? rewriteText(plain.text, { ...config, key: createSeed() }) : null;
   const confirming = entry?.intended !== undefined && entry.intended === identity(plainText(plain.text));
   if (!result && !confirming) {
@@ -130,7 +131,7 @@ function tick(baseline = false): void {
   const snapshot = readClipboard();
   if (!snapshot) {
     const current = identity(plain);
-    const retrying = entry?.pending === true && current === entry.before;
+    const retrying = entry?.pending === true && (sameText || current === entry.before);
     const intended = confirming ? entry?.intended : undefined;
     observedText = plain.text;
     recordRetry(current, retrying, intended);
@@ -150,7 +151,7 @@ function tick(baseline = false): void {
     return;
   }
   if (!entry?.pending && entry?.after === undefined && current === entry?.before) return;
-  const retrying = entry?.pending === true && current === entry.before;
+  const retrying = entry?.pending === true && (sameText || current === entry.before);
   entry = { before: current };
   if (!config || !supported(snapshot) || !result) return;
   const latest = readClipboard();

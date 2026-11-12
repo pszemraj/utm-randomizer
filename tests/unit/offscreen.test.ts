@@ -511,6 +511,28 @@ it('bounds unavailable initial rich reads and accepts a different text afterward
   expect(writes).toHaveBeenCalledOnce();
 });
 
+it.each([{ failures: [1, 3] }, { failures: [2, 3] }])(
+  'shares the retry limit across mixed rich-read failures (%j)',
+  async ({ failures }) => {
+    const { clipboard, writes } = await start();
+    clipboard.text = TRACKED;
+    clipboard.html = `<a href="${TRACKED}">link</a>`;
+    clipboard.types = ['text/plain', 'text/html'];
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- fails inspection and safety reads in either order
+    const command = document.execCommand.bind(document);
+    let richReads = 0;
+    vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+      if (name === 'paste' && failures.includes(++richReads)) return true;
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves successful reads and writes
+      return command(name);
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(writes).not.toHaveBeenCalled();
+    expect(clipboard.text).toBe(TRACKED);
+    expect(richReads).toBe(3);
+  },
+);
+
 it('keeps a focus-regain baseline pending until the clipboard can be read', async () => {
   const { clipboard, message, writes } = await start();
   message({ type: 'watch-config', config: null });
