@@ -399,36 +399,40 @@ it('bounds retries when a successful copy cannot be read back', async () => {
   expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(0);
 });
 
-it('recognizes an intended output after its immediate read-back is unavailable', async () => {
-  const { clipboard, message, writes, requestFocus } = await start();
-  message({ type: 'watch-config', config: { mode: 'silly', focused: true } });
-  clipboard.text = TRACKED;
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- hides only the verification read after a successful write
-  const command = document.execCommand.bind(document);
-  let hideNextPaste = false;
-  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    if (name === 'paste' && hideNextPaste) {
-      hideNextPaste = false;
-      return true;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the clipboard write and ordinary reads
-    const result = command(name);
-    if (name === 'copy') hideNextPaste = true;
-    return result;
-  });
+it.each(['strip', 'silly'] as const)(
+  'recognizes intended output after unavailable verification and inspection (%s)',
+  async (mode) => {
+    const { clipboard, message, writes, requestFocus } = await start();
+    const config = { mode, focused: true };
+    message({ type: 'watch-config', config });
+    clipboard.text = TRACKED;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- hides verification and the next rich inspection
+    const command = document.execCommand.bind(document);
+    let hiddenPastes = 0;
+    vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+      if (name === 'paste' && hiddenPastes > 0) {
+        hiddenPastes -= 1;
+        return true;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the clipboard write and ordinary reads
+      const result = command(name);
+      if (name === 'copy') hiddenPastes = 2;
+      return result;
+    });
 
-  message({ type: 'watch-config', config: CONFIG });
-  const output = clipboard.text;
-  expect(output).not.toBe(TRACKED);
-  expect(writes).toHaveBeenCalledOnce();
-  expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(0);
+    message({ type: 'watch-config', config });
+    const output = clipboard.text;
+    expect(output).not.toBe(TRACKED);
+    expect(writes).toHaveBeenCalledOnce();
+    expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(0);
 
-  message({ type: 'watch-config', config: CONFIG });
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(clipboard.text).toBe(output);
-  expect(writes).toHaveBeenCalledOnce();
-  expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(1);
-});
+    message({ type: 'watch-config', config });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(clipboard.text).toBe(output);
+    expect(writes).toHaveBeenCalledOnce();
+    expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(1);
+  },
+);
 
 it('keeps a raced new entry eligible after the prior entry exhausts its retry', async () => {
   const { clipboard, message, writes } = await start();
@@ -481,6 +485,32 @@ it('settles an entry after two unavailable pre-write safety reads', async () => 
   expect(writes).not.toHaveBeenCalled();
 });
 
+it('bounds unavailable initial rich reads and accepts a different text afterward', async () => {
+  const { clipboard, reads, writes } = await start();
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- makes only rich inspection unavailable
+  const command = document.execCommand.bind(document);
+  let unavailable = true;
+  const richReads = vi.fn();
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'paste' && unavailable) {
+      richReads();
+      return true;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves ordinary polling and recovered reads
+    return command(name);
+  });
+  reads.mockClear();
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(richReads).toHaveBeenCalledTimes(2);
+  expect(writes).not.toHaveBeenCalled();
+  unavailable = false;
+  clipboard.text = 'https://example.com/newer?utm_source=email';
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe('https://example.com/newer');
+  expect(writes).toHaveBeenCalledOnce();
+});
+
 it('keeps a focus-regain baseline pending until the clipboard can be read', async () => {
   const { clipboard, message, writes } = await start();
   message({ type: 'watch-config', config: null });
@@ -489,7 +519,7 @@ it('keeps a focus-regain baseline pending until the clipboard can be read', asyn
   const command = document.execCommand.bind(document);
   let unavailable = true;
   vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    if (name === 'paste' && unavailable) {
+    if (name === 'pasteAndMatchStyle' && unavailable) {
       unavailable = false;
       return true;
     }
@@ -598,6 +628,37 @@ it('does not resurrect an older output suppression after a later write fails', a
   expect(writes).toHaveBeenCalledTimes(2);
 });
 
+it.each(['baseline', 'output'] as const)(
+  'releases the previous %s after new text is observed but its rich read fails',
+  async (previous) => {
+    const { clipboard, message, writes } = await start();
+    const mode = { mode: 'silly' as const, focused: true };
+    clipboard.text = TRACKED;
+    message({ type: 'watch-config', config: mode, baseline: previous === 'baseline' });
+    const prior = clipboard.text;
+    const previousWrites = writes.mock.calls.length;
+    clipboard.text = 'https://example.com/newer?utm_source=email';
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- makes the new entry's first rich read unavailable
+    const command = document.execCommand.bind(document);
+    let unavailable = true;
+    vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+      if (name === 'paste' && unavailable) {
+        unavailable = false;
+        return true;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves plain polling and subsequent reads
+      return command(name);
+    });
+
+    await vi.advanceTimersByTimeAsync(200);
+    expect(writes).toHaveBeenCalledTimes(previousWrites);
+    clipboard.text = prior;
+    await vi.advanceTimersByTimeAsync(200);
+    expect(clipboard.text).not.toBe(prior);
+    expect(writes).toHaveBeenCalledTimes(previousWrites + 1);
+  },
+);
+
 it.each(['image/png', 'Files', 'application/custom'])('preserves detectable non-text format %s', async (type) => {
   const { clipboard, writes } = await start();
   clipboard.text = TRACKED;
@@ -642,6 +703,21 @@ it('inspects a link with an image once instead of loading its image on every pol
   reads.mockClear();
   await vi.advanceTimersByTimeAsync(10_000);
   expect(reads.mock.calls.filter(([command]) => command === 'paste')).toHaveLength(1);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(clipboard.types).toContain('image/png');
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it('baselines eligible image text without reading its rich formats on each focus regain', async () => {
+  const { clipboard, message, reads, writes } = await start();
+  clipboard.text = TRACKED;
+  clipboard.types = ['text/plain', 'image/png'];
+  reads.mockClear();
+  for (let regain = 0; regain < 5; regain += 1) {
+    message({ type: 'watch-config', config: CONFIG, baseline: true });
+    await vi.advanceTimersByTimeAsync(200);
+  }
+  expect(reads.mock.calls.every(([command]) => command === 'pasteAndMatchStyle')).toBe(true);
   expect(clipboard.text).toBe(TRACKED);
   expect(clipboard.types).toContain('image/png');
   expect(writes).not.toHaveBeenCalled();

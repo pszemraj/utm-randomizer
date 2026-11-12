@@ -109,19 +109,33 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string, retrying: b
 /** Performs one synchronous read, eligible-text decision, write, and read-back. */
 function tick(baseline = false): void {
   if (baseline) baselinePending = true;
+  // Full paste can load native images before onPaste runs; polling must stay text-only.
   const plain = readClipboard('pasteAndMatchStyle');
   if (!plain) return;
   if (!baselinePending && plain.text === observedText && !entry?.pending) return;
   const result = config ? rewriteText(plain.text, { ...config, key: createSeed() }) : null;
-  const confirming = entry?.intended === identity(plainText(plain.text));
+  const confirming = entry?.intended !== undefined && entry.intended === identity(plainText(plain.text));
   if (!result && !confirming) {
     entry = null;
     observedText = null;
     baselinePending = false;
     return;
   }
+  if (baselinePending) {
+    baselinePending = false;
+    observedText = plain.text;
+    entry = null;
+    return;
+  }
   const snapshot = readClipboard();
-  if (!snapshot) return;
+  if (!snapshot) {
+    const current = identity(plain);
+    const retrying = entry?.pending === true && current === entry.before;
+    const intended = confirming ? entry?.intended : undefined;
+    observedText = plain.text;
+    recordRetry(current, retrying, intended);
+    return;
+  }
   if (snapshot.text !== plain.text) {
     entry = null;
     observedText = null;
@@ -129,11 +143,6 @@ function tick(baseline = false): void {
   }
   observedText = snapshot.text;
   const current = identity(snapshot);
-  if (baselinePending) {
-    baselinePending = false;
-    entry = { before: current };
-    return;
-  }
   if (current === entry?.after) return;
   if (current === entry?.intended) {
     entry = { before: entry.before, after: current };
@@ -143,7 +152,7 @@ function tick(baseline = false): void {
   if (!entry?.pending && entry?.after === undefined && current === entry?.before) return;
   const retrying = entry?.pending === true && current === entry.before;
   entry = { before: current };
-  if (baseline || !config || !supported(snapshot) || !result) return;
+  if (!config || !supported(snapshot) || !result) return;
   const latest = readClipboard();
   if (!latest) {
     recordRetry(current, retrying);

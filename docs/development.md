@@ -47,6 +47,7 @@ Use Chrome's actual controls for the workflows outside the automated suite:
 - Select **Copy link address** from a real context menu. Check that `chrome.windows.getAll({ windowTypes: ['normal', 'popup', 'devtools'] })` still reports a focused Chrome window while the menu or address-bar dropdown is open, even if its focus event reports `WINDOW_ID_NONE`.
 - Open `chrome://extensions` -> **UTM Randomizer** -> **Details** -> **Extension options**. Check on/off and each replacement mode.
 - With Chrome unfocused and the watcher stopped, copy a tracked link in another app, then focus Chrome and paste. That existing clipboard entry must remain unchanged. Separately write a new URL to the clipboard while Chrome stays focused: it should be processed regardless of the writing application.
+- On Linux/X11, leave a large image on the clipboard for several minutes while Chrome stays focused, then repeat with an image accompanied by a tracked URL. Neither copy should change or cause sustained browser-memory growth. Ordinary polling and focus-regain baselines must use text-only paste; only newly eligible text should trigger a rich-format check. Include rapid text copies when checking that newer entries remain eligible.
 
 ### Agent browser validation notes
 
