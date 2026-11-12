@@ -374,24 +374,19 @@ test.describe('focus and navigation', () => {
       (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe = true;
     });
     await session.send('Target.closeTarget', { targetId: original.targetId });
-    await expect
-      .poll(async () =>
-        (await session.send('Target.getTargets')).targetInfos.some((target) => target.targetId === original.targetId),
-      )
-      .toBe(false);
     // A settings change wakes the worker through storage.onChanged.
     await options.locator('#mode').selectOption('hybrid');
+    // Reset globals prove execution restarted even when Chrome immediately reuses the target ID.
     await expect
-      .poll(async () =>
-        (await session.send('Target.getTargets')).targetInfos.some(
-          (target) => target.type === 'service_worker' && target.url === workerUrl,
-        ),
-      )
-      .toBe(true);
-    // Chrome reuses the target ID; reset worker globals prove that execution really restarted.
-    expect(
-      await serviceWorker.evaluate(() => (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe),
-    ).toBeUndefined();
+      .poll(async () => {
+        const restarted = context.serviceWorkers().find((worker) => worker.url() === workerUrl);
+        return restarted
+          ? restarted
+              .evaluate(() => (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe)
+              .catch(() => true)
+          : true;
+      })
+      .toBeUndefined();
     expect(await expectStable(readClipboard, 1200)).toBe(before);
     await options.close();
     await session.detach();
