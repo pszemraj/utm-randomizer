@@ -77,10 +77,10 @@ function updateConfirmation(visible: boolean, revision: number): Promise<void> {
 
 /** Clears the transient Chrome-only success indicator. */
 async function clearConfirmation(): Promise<void> {
-  const revision = ++confirmationRevision;
   clearTimeout(confirmationTimer);
   confirmationTimer = undefined;
   if (!confirmationVisible) return;
+  const revision = ++confirmationRevision;
   confirmationVisible = false;
   await updateConfirmation(false, revision);
 }
@@ -162,7 +162,7 @@ function refreshFocus(recover = true): Promise<void> {
       throw error;
     }
     if (potentialBlur?.revision === expectedFocusRevision) potentialBlur = null;
-    if (baseline) baselineRequired = false;
+    if (baseline && expectedFocusRevision === focusRevision) baselineRequired = false;
   });
   focusDelivery = result.catch(() => undefined);
   return result;

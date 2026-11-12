@@ -121,6 +121,72 @@ afterEach(() => {
   vi.resetModules();
 });
 
+it('preserves a queued badge clear when cleaning is disabled after blur', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  let release!: () => void;
+  worker.setBadgeText.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  worker.send({ type: 'rewrite-complete' });
+  await vi.waitFor(() => expect(release).toBeDefined());
+  worker.changeFocus(false);
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: false },
+      skipFinalTick: true,
+    }),
+  );
+  worker.changeSettings({ enabled: false });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
+  release();
+  await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '' }));
+  expect(worker.setTitle).toHaveBeenLastCalledWith({ title: 'UTM Randomizer' });
+});
+
+it('preserves a newer regain baseline when an earlier acknowledgement is delayed', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.changeFocus(false);
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: false },
+      skipFinalTick: true,
+    }),
+  );
+  worker.sendMessage.mockClear();
+  let release!: () => void;
+  worker.sendMessage.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve({ ok: true });
+      }),
+  );
+  worker.changeFocus(true);
+  await vi.waitFor(() => expect(release).toBeDefined());
+  expect(worker.sendMessage).toHaveBeenCalledWith({
+    type: 'watch-config',
+    config: { mode: 'hybrid', focused: true },
+    baseline: true,
+  });
+  worker.changeFocus(false, 1, true);
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-flush' }));
+  worker.changeFocus(true);
+  release();
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenLastCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: true },
+      baseline: true,
+    }),
+  );
+});
+
 it('applies mode changes, disables polling, and resumes without creating a second document', async () => {
   const worker = await startBackground({ enabled: true });
   await vi.waitFor(() =>
