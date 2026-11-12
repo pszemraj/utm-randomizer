@@ -12,7 +12,7 @@ export type Mode = 'decoy' | 'silly' | 'hybrid' | 'strip';
 export interface RewriteOptions {
   mode: Mode;
   /**
-   * Fresh seed supplied by the copy handler and shared across that copy's formats. Writers track
+   * Fresh seed shared by the URLs and parameters rewritten in one clipboard entry. Writers track
    * completed output separately; plausible tracking values are always eligible inputs.
    */
   key?: string;
@@ -171,9 +171,8 @@ function hasAmbiguousTrackingPunctuation(segment: string): boolean {
   if (separator !== -1) {
     const rawKey = segment.slice(0, separator);
     if (classifyParam(safeDecode(rawKey)) === null) return false;
-    const rawValue = segment.slice(separator + 1);
-    for (let index = 0; index < rawValue.length; index += 1) {
-      if (isAmbiguousRawPunctuation(rawValue, index)) return true;
+    for (let index = 0; index < segment.length; index += 1) {
+      if (isAmbiguousRawPunctuation(segment, index)) return true;
     }
     return false;
   }
