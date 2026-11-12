@@ -57,10 +57,11 @@ async function start() {
   const writes = vi.fn();
   const reads = vi.fn();
   const execCommand = (command: string) => {
-    if (command === 'paste') {
-      reads();
+    if (command === 'paste' || command === 'pasteAndMatchStyle') {
+      reads(command);
       const data = new DataTransfer();
       for (const type of clipboard.types) {
+        if (command === 'pasteAndMatchStyle' && type !== 'text/plain') continue;
         data.setData(
           type,
           type === 'text/html' ? (clipboard.html ?? '') : type === 'text/plain' ? clipboard.text : 'opaque',
@@ -143,7 +144,8 @@ it('checks focus without reading the clipboard while unfocused, then baselines t
   message({ type: 'watch-config', config: CONFIG });
   await vi.advanceTimersByTimeAsync(1000);
   expect(writes).not.toHaveBeenCalled();
-  clipboard.html = `<a href="${TRACKED}">Fresh copy</a>`;
+  clipboard.text = `${TRACKED}&utm_medium=email`;
+  clipboard.html = `<a href="${clipboard.text}">Fresh copy</a>`;
   await vi.advanceTimersByTimeAsync(200);
   expect(clipboard.text).toBe(CLEAN);
   expect(clipboard.html).toBeNull();
@@ -603,6 +605,58 @@ it.each(['image/png', 'Files', 'application/custom'])('preserves detectable non-
   const original = { ...clipboard, types: [...clipboard.types] };
   await vi.advanceTimersByTimeAsync(1000);
   expect(clipboard).toEqual(original);
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it('polls image-only contents without reading rich clipboard data', async () => {
+  const { clipboard, reads, writes } = await start();
+  clipboard.text = '';
+  clipboard.types = ['image/png'];
+  reads.mockClear();
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(reads).toHaveBeenCalledTimes(50);
+  expect(reads.mock.calls.every(([command]) => command === 'pasteAndMatchStyle')).toBe(true);
+  expect(clipboard.types).toEqual(['image/png']);
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it.each(['private unrelated text', 'https://example.com/page?keep=42'])(
+  'does not read HTML or other formats for ineligible text: %s',
+  async (text) => {
+    const { clipboard, reads, writes } = await start();
+    clipboard.text = text;
+    clipboard.html = '<p>private HTML</p>';
+    clipboard.types = ['text/plain', 'text/html'];
+    reads.mockClear();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(reads.mock.calls.every(([command]) => command === 'pasteAndMatchStyle')).toBe(true);
+    expect(clipboard.html).toBe('<p>private HTML</p>');
+    expect(writes).not.toHaveBeenCalled();
+  },
+);
+
+it('inspects a link with an image once instead of loading its image on every poll', async () => {
+  const { clipboard, reads, writes } = await start();
+  clipboard.text = TRACKED;
+  clipboard.types = ['text/plain', 'image/png'];
+  reads.mockClear();
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(reads.mock.calls.filter(([command]) => command === 'paste')).toHaveLength(1);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(clipboard.types).toContain('image/png');
+  expect(writes).not.toHaveBeenCalled();
+});
+
+it('ignores HTML-only changes while the observed link text stays unchanged', async () => {
+  const { clipboard, message, reads, writes } = await start();
+  clipboard.text = TRACKED;
+  message({ type: 'watch-config', config: CONFIG, baseline: true });
+  reads.mockClear();
+  clipboard.html = '<a>different HTML</a>';
+  clipboard.types = ['text/plain', 'text/html'];
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(reads.mock.calls.every(([command]) => command === 'pasteAndMatchStyle')).toBe(true);
+  expect(clipboard.text).toBe(TRACKED);
   expect(writes).not.toHaveBeenCalled();
 });
 

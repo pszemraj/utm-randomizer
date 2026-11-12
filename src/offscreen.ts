@@ -9,6 +9,8 @@ let config: WatchConfig | null = null;
 let timer = 0;
 let checkingFocus = false;
 let baselinePending = false;
+/** Last eligible link text; unrelated clipboard contents are never retained. */
+let observedText: string | null = null;
 /** One current entry; `pending` permits one retry and `intended` recognizes a delayed successful write. */
 let entry: { before: string; after?: string; intended?: string; pending?: boolean } | null = null;
 
@@ -19,8 +21,8 @@ function field(): HTMLTextAreaElement {
   return textarea;
 }
 
-/** Reads clipboard text and detectable formats without inserting their contents into the document. */
-function readClipboard(): ClipboardSnapshot | null {
+/** Reads plain text alone for polling, or all detectable formats before processing a link. */
+function readClipboard(command: 'paste' | 'pasteAndMatchStyle' = 'paste'): ClipboardSnapshot | null {
   let snapshot: ClipboardSnapshot | null = null;
   const onPaste = (event: ClipboardEvent) => {
     event.preventDefault();
@@ -37,7 +39,7 @@ function readClipboard(): ClipboardSnapshot | null {
   textarea.addEventListener('paste', onPaste, { once: true });
   textarea.focus();
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- offscreen documents cannot use the focused async reader
-  document.execCommand('paste');
+  document.execCommand(command);
   textarea.removeEventListener('paste', onPaste);
   return snapshot;
 }
@@ -89,14 +91,16 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string, retrying: b
     const observed = landed ? identity(landed) : null;
     if (observed === expected) {
       entry = { before, after: expected };
+      observedText = snapshot.text;
       void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
     } else if (observed === null) {
       recordRetry(before, retrying, expected);
     } else if (observed === before || landed?.text.trim() === snapshot.text) {
       recordRetry(observed, retrying);
     } else {
-      // A different external entry has not used its own retry merely because the previous entry did.
-      entry = { before: observed, pending: true };
+      // A different external entry is classified afresh instead of retaining unrelated clipboard data.
+      entry = null;
+      observedText = null;
     }
   }
   return ok;
@@ -105,8 +109,25 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string, retrying: b
 /** Performs one synchronous read, eligible-text decision, write, and read-back. */
 function tick(baseline = false): void {
   if (baseline) baselinePending = true;
+  const plain = readClipboard('pasteAndMatchStyle');
+  if (!plain) return;
+  if (!baselinePending && plain.text === observedText && !entry?.pending) return;
+  const result = config ? rewriteText(plain.text, { ...config, key: createSeed() }) : null;
+  const confirming = entry?.intended === identity(plainText(plain.text));
+  if (!result && !confirming) {
+    entry = null;
+    observedText = null;
+    baselinePending = false;
+    return;
+  }
   const snapshot = readClipboard();
   if (!snapshot) return;
+  if (snapshot.text !== plain.text) {
+    entry = null;
+    observedText = null;
+    return;
+  }
+  observedText = snapshot.text;
   const current = identity(snapshot);
   if (baselinePending) {
     baselinePending = false;
@@ -121,11 +142,8 @@ function tick(baseline = false): void {
   }
   if (!entry?.pending && entry?.after === undefined && current === entry?.before) return;
   const retrying = entry?.pending === true && current === entry.before;
-  const previous = entry;
   entry = { before: current };
-  if (baseline || previous === null || !config || !supported(snapshot)) return;
-  const result = rewriteText(snapshot.text, { ...config, key: createSeed() });
-  if (!result) return;
+  if (baseline || !config || !supported(snapshot) || !result) return;
   const latest = readClipboard();
   if (!latest) {
     recordRetry(current, retrying);
@@ -133,7 +151,8 @@ function tick(baseline = false): void {
   }
   const latestIdentity = identity(latest);
   if (latestIdentity !== current) {
-    entry = { before: latestIdentity, pending: true };
+    entry = null;
+    observedText = null;
     return;
   }
   if (!writeClipboard(plainText(result.text), current, retrying)) {
