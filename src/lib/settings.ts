@@ -17,11 +17,16 @@ export const DEFAULT_SETTINGS: Settings = {
 const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
 const MODES: readonly Mode[] = ['decoy', 'silly', 'hybrid', 'strip'];
 
+/** Whether a value is one of the supported replacement modes. */
+export function isMode(value: unknown): value is Mode {
+  return MODES.some((mode) => mode === value);
+}
+
 /** Fills in defaults for missing or malformed stored values. */
 function normalize(stored: Record<string, unknown>): Settings {
   return {
     enabled: typeof stored.enabled === 'boolean' ? stored.enabled : DEFAULT_SETTINGS.enabled,
-    mode: MODES.find((mode) => mode === stored.mode) ?? DEFAULT_SETTINGS.mode,
+    mode: isMode(stored.mode) ? stored.mode : DEFAULT_SETTINGS.mode,
   };
 }
 

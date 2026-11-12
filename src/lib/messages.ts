@@ -1,5 +1,6 @@
 /** Messages exchanged between the worker and offscreen clipboard coordinator. */
 import type { Mode } from './rewrite';
+import { isMode } from './settings';
 
 /** Clipboard text and detectable accompanying formats from one native paste. */
 export interface ClipboardSnapshot {
@@ -35,12 +36,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Validates the mode supplied to the coordinator. */
 function isWatchConfig(value: unknown): value is WatchConfig {
-  return (
-    isRecord(value) &&
-    typeof value.focused === 'boolean' &&
-    typeof value.mode === 'string' &&
-    ['decoy', 'silly', 'hybrid', 'strip'].includes(value.mode)
-  );
+  return isRecord(value) && typeof value.focused === 'boolean' && isMode(value.mode);
 }
 
 /** Validates every known runtime payload before its receiver acts. */
