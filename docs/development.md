@@ -4,13 +4,9 @@ Use the [source build](../README.md#build-from-source) to install dependencies a
 
 ## Commands
 
+Use the [README development commands](../README.md#development) for watch builds and combined checks.
+
 ```bash
-# Rebuild, then reload
-npm run dev
-
-# Lint, format, types, tests
-npm run check
-
 # Test the loaded extension headlessly; no browser window is shown
 npm run test:e2e
 
@@ -29,13 +25,9 @@ npm run icons
 
 ## Browser tests
 
-The end-to-end command loads `dist/` into headless Playwright Chromium and exercises single-URL clipboard changes, unchanged page addresses, settings, and non-URL and non-text controls without opening or foregrounding a browser window. The fixture hard-codes headless mode; environment variables such as `HEADED=1` do not override it. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary.
+The end-to-end command loads `dist/` into headless Playwright Chromium and exercises URL and compact-share clipboard changes, unchanged page addresses, settings, worker restart, and non-URL and non-text controls. It uses extension tabs for clipboard access and the options page. The fixture hard-codes headless mode; environment variables such as `HEADED=1` do not override it. Before the first run, install the browser with `npx playwright install chromium`, or set `CHROMIUM_PATH` to an existing Chromium binary.
 
-Native minimize/regain, address-bar, and context-menu checks are not Playwright jobs. Run them deliberately through computer use in the user's already-open Chrome, one bounded interaction at a time. Never launch an automated foreground browser suite on the user's desktop.
-
-See the [validation requirements](../CONTRIBUTING.md#checks) when choosing local checks.
-
-Settings tests run the options page in an extension tab. Background-watcher tests write through an extension tab, including cleaning without a webpage reader. The automated suite does not minimize, restore, or foreground browser windows, and it does not exercise native address-bar copying, browser menu selection, the embedded options view, or copying from another application.
+Use the [manual checks](#manual-testing) for native minimize/regain, address-bar and context-menu copying, the embedded options view, and copying from another application. See [CONTRIBUTING.md](../CONTRIBUTING.md#checks) for choosing validation appropriate to a change.
 
 ## Manual testing
 
@@ -51,7 +43,7 @@ Use Chrome's actual controls for the workflows outside the automated suite:
 
 ### Agent browser validation notes
 
-These checks touch the real desktop and clipboard. Use synthetic URLs, preserve all native clipboard formats privately, and restore the original clipboard and settings afterward. Pause the installed watcher while headless tests share the native clipboard. Keep profiles, screenshots, backups, and probe scripts out of commits.
+On a shared desktop, use the already-running Chrome for native checks, one bounded interaction at a time. Never launch a headed automated suite on the user's desktop. Use synthetic URLs, preserve all native clipboard formats privately, and restore the original clipboard and settings afterward. Pause the installed watcher while headless tests share the native clipboard. Keep profiles, screenshots, backups, and probe scripts out of commits.
 
 - If Chromium aborts at launch with sandbox `EPERM`/`SIGABRT`, rerun the unchanged headless command outside the agent sandbox. A launch failure is not an application test failure; do not add project workarounds for it.
 - Use the Node major in `.nvmrc`. If unavailable locally, a temporary registry runtime such as `npm exec --yes --package=node@24 -- npm run check` avoids changing global installations. Confirm the executed version and use the same runtime for browser tests and packaging.
@@ -78,7 +70,7 @@ The release workflow runs only when a `v*` tag is pushed or when it is manually 
 
 After merging, let the tag-triggered workflow create the release with its ZIP attached. Publishing an [immutable release](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases) beforehand blocks later asset uploads; disabling immutability afterward does not unlock that release. Its title and release notes remain editable.
 
-Routine CI remains one static-check job for pull requests and `main`; release packaging does not run on ordinary branch updates. Run browser tests and packaging locally when relevant. See [CONTRIBUTING.md](../CONTRIBUTING.md) for adding parameters and replacement values and for submitting changes.
+Routine CI remains one static-check job for pull requests and `main`; release packaging does not run on ordinary branch updates. Run browser tests and packaging locally when relevant.
 
 ## Source map
 
@@ -90,7 +82,7 @@ Routine CI remains one static-check job for pull requests and `main`; release pa
 - `src/lib/rewrite.ts`: in-place URL rewriting and compact-share classification.
 - `src/lib/values.ts`, `prng.ts`: Decoy, Silly, and Hybrid replacement values, seeded per copy.
 - `src/lib/messages.ts`: runtime message contracts and sender checks.
-- `src/lib/settings.ts`: settings defaults and storage subscriptions.
+- `src/lib/settings.ts`: defaults, shared mode validation, and local settings subscriptions.
 - `tests/unit/`: rules, rewriting, values, settings, and clipboard coordination, using Vitest.
 - `tests/e2e/`: Playwright tests with the extension loaded.
 - `tests/fixtures/playground.html`: manual and end-to-end test page.
