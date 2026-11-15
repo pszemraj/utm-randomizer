@@ -13,6 +13,8 @@ Decoy, Silly, Hybrid, and Remove are the four modes.
    Every focus regain establishes an untouched baseline, with no short-gap
    exception. Never rewrite existing contents
    merely because Chrome starts, regains focus, navigates, or pastes.
+   Polling distinguishes entries by plain text. HTML-only or format-only changes
+   with identical text stay untouched; see the [polling limits](docs/behavior.md#background-watching).
 2. **Change only the clipboard payload.** URL processing must never change page
    links, the page URL, browser history, or the address bar, or trigger navigation.
 3. **Replacements are stochastic; removal is deterministic.** Decoy, Silly, and
@@ -79,14 +81,14 @@ page fields and synthetic events cannot stand in for those controls.
    Follow the [parameter rules and required control tests](CONTRIBUTING.md#adding-a-tracking-parameter).
 3. **Track the current clipboard entry.** Preserve the [replacement behavior](docs/behavior.md#replacement-values).
    The current successful before-and-after write record suppresses repeated
-   processing. Release it after observing different text, HTML, or formats; do not
+   processing. Release it after observing different text; do not
    accumulate clipboard history or use expiry to rewrite unchanged contents.
 4. **Use one clipboard pipeline.** The offscreen document owns all clipboard
    reads and writes. Do not restore content scripts, webpage clipboard readers,
    host permissions, or page event authorization.
 5. **Track observed contents, not provenance.** Skip only the read-back of our own
    output. Never suppress the original URL, add a revert guard, retain history,
-   or re-randomize unchanged contents. Different observed contents discard the
+   or re-randomize unchanged contents. Different observed text discards the
    current before-and-after record.
 6. **Rewrite whole URLs and bounded compact share text.** Normalize surrounding
    whitespace for a lone URL; preserve accepted share captions and wrappers
