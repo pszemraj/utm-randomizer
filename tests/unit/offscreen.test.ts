@@ -123,6 +123,29 @@ it('takes an untouched baseline when the worker marks a same-focus regain', asyn
   expect(writes).not.toHaveBeenCalled();
 });
 
+it('clears a pending retry when the same text becomes a focus-regain baseline', async () => {
+  const { clipboard, message, writes } = await start();
+  clipboard.text = TRACKED;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- hides the first rich inspection
+  const command = document.execCommand.bind(document);
+  let unavailable = true;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'paste' && unavailable) {
+      unavailable = false;
+      return true;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves ordinary reads and writes
+    return command(name);
+  });
+  message({ type: 'watch-config', config: CONFIG });
+  expect(writes).not.toHaveBeenCalled();
+  message({ type: 'watch-config', config: { ...CONFIG, focused: false }, skipFinalTick: true });
+  message({ type: 'watch-config', config: CONFIG, baseline: true });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(TRACKED);
+  expect(writes).not.toHaveBeenCalled();
+});
+
 it.each([false, true])('keeps empty tracking values observed across mode changes (baseline %s)', async (baseline) => {
   const { clipboard, message, writes } = await start();
   const config = { mode: 'hybrid' as const, focused: true };
@@ -804,6 +827,29 @@ it.each([
   await vi.advanceTimersByTimeAsync(1000);
   expect(clipboard).toEqual(original);
   expect(writes).not.toHaveBeenCalled();
+});
+
+it('preserves newer text that arrives between the plain read and rich inspection', async () => {
+  const { clipboard, writes } = await start();
+  clipboard.text = TRACKED;
+  const newer = 'https://other.example/newer?utm_source=email&id=7';
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- replaces the clipboard before its first rich read
+  const command = document.execCommand.bind(document);
+  let replaced = false;
+  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
+    if (name === 'paste' && !replaced) {
+      replaced = true;
+      clipboard.text = newer;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the clipboard commands around the race
+    return command(name);
+  });
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(newer);
+  expect(writes).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe('https://other.example/newer?id=7');
+  expect(writes).toHaveBeenCalledOnce();
 });
 
 it('checks formats again immediately before committing an automatic write', async () => {

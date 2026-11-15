@@ -145,7 +145,6 @@ function tick(baseline = false): void {
   }
   observedText = snapshot.text;
   const current = identity(snapshot);
-  if (current === entry?.after) return;
   if (current === entry?.intended) {
     entry = { before: entry.before, after: current };
     void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
