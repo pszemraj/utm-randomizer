@@ -13,8 +13,7 @@ Decoy, Silly, Hybrid, and Remove are the four modes.
    Every focus regain establishes an untouched baseline, with no short-gap
    exception. Never rewrite existing contents
    merely because Chrome starts, regains focus, navigates, or pastes.
-   Polling distinguishes entries by plain text. HTML-only or format-only changes
-   with identical text stay untouched; see the [polling limits](docs/behavior.md#background-watching).
+   Polling distinguishes entries by plain text. HTML-only or format-only changes with identical text stay untouched; see the [polling limits](docs/behavior.md#background-watching).
 2. **Change only the clipboard payload.** URL processing must never change page
    links, the page URL, browser history, or the address bar, or trigger navigation.
 3. **Replacements are stochastic; removal is deterministic.** Decoy, Silly, and
