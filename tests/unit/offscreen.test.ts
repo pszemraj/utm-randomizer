@@ -322,9 +322,9 @@ it('normalizes rewritten clipboard text to plain text', async () => {
   expect(clipboard.types).toEqual(['text/plain']);
 });
 
-it.each([false, true])(
-  'processes a fresh entry after different data wins read-back (restore intended output %s)',
-  async (restoreIntended) => {
+it.each(['raced', 'intended', 'original'] as const)(
+  'processes a fresh entry after different data wins read-back (restore %s)',
+  async (restore) => {
     const { clipboard, message, writes, requestFocus } = await start();
     const raced = 'https://example.com/newer?utm_source=email';
     message({ type: 'watch-config', config: { mode: 'silly', focused: true } });
@@ -347,7 +347,8 @@ it.each([false, true])(
     expect(writes).toHaveBeenCalledOnce();
     expect(requestFocus.mock.calls.filter(([payload]) => payload.type === 'rewrite-complete')).toHaveLength(0);
 
-    if (restoreIntended) clipboard.text = intended;
+    if (restore === 'intended') clipboard.text = intended;
+    if (restore === 'original') clipboard.text = TRACKED;
     const nextInput = clipboard.text;
     await vi.advanceTimersByTimeAsync(200);
     expect(clipboard.text).not.toBe(nextInput);
@@ -780,6 +781,12 @@ it.each([
   clipboard.text = TRACKED;
   await vi.advanceTimersByTimeAsync(200);
   expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+  expect(classify).toHaveBeenCalledTimes(4);
+  clipboard.text = text;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(classify).toHaveBeenCalledTimes(5);
+  expect(clipboard.text).toBe(text);
   expect(writes).toHaveBeenCalledOnce();
 });
 
