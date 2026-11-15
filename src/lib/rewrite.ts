@@ -38,7 +38,7 @@ export interface TextRewrite {
 
 const WHITESPACE = /[\s\u200B-\u200D\uFEFF]/;
 /** Bounds synchronous processing of both clipboard text and directly rewritten URLs. */
-const MAX_TEXT_LENGTH = 100_000;
+export const MAX_TEXT_LENGTH = 100_000;
 /** Bounds how many links one clipboard observation can make us inspect. */
 const MAX_SHARE_URLS = 8;
 /** Treats ordinary social captions and link labels as compact share text. */

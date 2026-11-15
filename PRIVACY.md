@@ -16,7 +16,7 @@ UTM Randomizer's use of information received from Chrome APIs adheres to the Chr
 
 Chrome's local extension storage holds only your on/off and replacement-mode settings. They are never synced or transmitted.
 
-The [clipboard coordinator](docs/behavior.md#clipboard-coordination) retains only the current eligible link entry's text, HTML when inspected, and format names in memory. After a successful rewrite, it also retains the output snapshot to prevent repeated rewrites. Closing the offscreen document releases it. No clipboard history is accumulated.
+The [clipboard coordinator](docs/behavior.md#clipboard-coordination) retains only the current eligible link entry's text, HTML when inspected, and format names in memory. After a successful rewrite, it also retains the output snapshot to prevent repeated rewrites. For ineligible text within the [input bound](docs/behavior.md#what-gets-rewritten), it retains only a fingerprint to avoid repeated classification. Closing the offscreen document releases these records. No clipboard history is accumulated.
 
 ## Permissions
 
@@ -35,4 +35,4 @@ The [source code](src/) is public and available for inspection.
 
 For privacy questions or concerns, [open an issue](https://github.com/pszemraj/utm-randomizer/issues).
 
-_Last updated: November 12, 2026_
+_Last updated: November 15, 2026_

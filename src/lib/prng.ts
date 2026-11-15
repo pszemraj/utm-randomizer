@@ -32,7 +32,7 @@ function hash128(input: string): [number, number, number, number] {
   return [h1 >>> 0, h2 >>> 0, h3 >>> 0, h4 >>> 0];
 }
 
-/** Compacts a link invariant once, before deriving the seeds for its individual parameters. */
+/** Compacts text into a fingerprint or a link invariant into a seed for its individual parameters. */
 export function compactSeed(input: string): string {
   return hash128(input)
     .map((word) => word.toString(16).padStart(8, '0'))

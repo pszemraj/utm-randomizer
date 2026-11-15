@@ -1,7 +1,7 @@
 // The offscreen document owns every automatic clipboard read, decision, and write.
 import { isExtensionMessage, isWorkerSender, type ClipboardSnapshot, type WatchConfig } from './lib/messages';
-import { rewriteText } from './lib/rewrite';
-import { createSeed } from './lib/prng';
+import { MAX_TEXT_LENGTH, rewriteText } from './lib/rewrite';
+import { compactSeed, createSeed } from './lib/prng';
 
 /** Maximum ordinary polling delay while Chrome is in use. */
 const POLL_MS = 200;
@@ -11,6 +11,8 @@ let checkingFocus = false;
 let baselinePending = false;
 /** Last eligible link text; unrelated clipboard contents are never retained. */
 let observedText: string | null = null;
+/** Recognizes unchanged ineligible text without retaining its contents. */
+let ineligibleTextHash: string | null = null;
 /** One current entry; `pending` permits one retry and `intended` recognizes a delayed successful write. */
 let entry: { before: string; after?: string; intended?: string; pending?: boolean } | null = null;
 
@@ -114,12 +116,16 @@ function tick(baseline = false): void {
   if (!plain) return;
   const sameText = plain.text === observedText;
   if (!baselinePending && sameText && !entry?.pending) return;
+  const textHash = plain.text.length <= MAX_TEXT_LENGTH ? compactSeed(plain.text) : null;
+  const knownIneligible = textHash !== null && textHash === ineligibleTextHash;
+  ineligibleTextHash = null;
   // Eligibility must not change with the mode: empty tracking values still identify an observed link.
-  const removal = config ? rewriteText(plain.text, { mode: 'strip' }) : null;
+  const removal = config && !knownIneligible ? rewriteText(plain.text, { mode: 'strip' }) : null;
   const confirming = entry?.intended !== undefined && entry.intended === identity(plainText(plain.text));
   if (!removal && !confirming) {
     entry = null;
     observedText = null;
+    ineligibleTextHash = textHash;
     baselinePending = false;
     return;
   }

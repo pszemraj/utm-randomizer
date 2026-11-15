@@ -759,6 +759,44 @@ it.each(['private unrelated text', 'https://example.com/page?keep=42'])(
   },
 );
 
+it.each([
+  ['prose', `https://example.com/page?id=42\n${'A paragraph. '.repeat(7400)}`],
+  ['functional URL', `https://example.com/?${Array<string>(16000).fill('id=00').join('&')}`],
+])('classifies unchanged ineligible %s once without retaining earlier entries', async (_kind, text) => {
+  const { clipboard, writes } = await start();
+  const rewrite = await import('../../src/lib/rewrite');
+  const classify = vi.spyOn(rewrite, 'rewriteText');
+  clipboard.text = text;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(classify).toHaveBeenCalledOnce();
+  expect(writes).not.toHaveBeenCalled();
+
+  clipboard.text = 'different unrelated contents';
+  await vi.advanceTimersByTimeAsync(200);
+  expect(classify).toHaveBeenCalledTimes(2);
+  clipboard.text = text;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(classify).toHaveBeenCalledTimes(3);
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
+it('does not fingerprint oversized clipboard text or block a smaller new link', async () => {
+  const { clipboard, writes } = await start();
+  const prng = await import('../../src/lib/prng');
+  const fingerprint = vi.spyOn(prng, 'compactSeed');
+  clipboard.text = 'x'.repeat(200_000);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(fingerprint).not.toHaveBeenCalled();
+  expect(writes).not.toHaveBeenCalled();
+  clipboard.text = TRACKED;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe(CLEAN);
+  expect(writes).toHaveBeenCalledOnce();
+});
+
 it('inspects a link with an image once instead of loading its image on every poll', async () => {
   const { clipboard, reads, writes } = await start();
   clipboard.text = TRACKED;
