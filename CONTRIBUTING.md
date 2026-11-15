@@ -30,7 +30,7 @@ In `scripts/*.mjs`, which are plain JavaScript, write types inside the tags (`@p
 
 Recognition lives in `src/lib/params.ts`: [campaign namespaces and exact names](docs/behavior.md#what-gets-rewritten) use one classifier. Keep coverage deliberate: missing tracking is preferable to breaking functional links. Add names or namespaces only for explicitly requested coverage, with vendor documentation establishing their campaign purpose and a source comment beside the rule. Leave uncertain or ambiguous names untouched; do not add site rules.
 
-Known names declare a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](docs/behavior.md#replacement-values). Use `id` for identifiers. Unknown names inside a supported namespace draw from pooled vocabulary; do not invent category inference.
+Known names declare a category (`source`, `medium`, `campaign`, `term`, `content`, `generic`, or `id`), which selects the [replacement values](docs/behavior.md#replacement-values). Use `id` for identifiers.
 
 Every new rule needs a regression in [`tests/unit/rewrite.test.ts`](tests/unit/rewrite.test.ts) showing cleaning while unrelated query bytes stay intact. For namespaces, cover unseen suffixes and names outside the boundary. A rewriting test establishes the chosen behavior; vendor evidence establishes the campaign use.
 
@@ -41,7 +41,7 @@ Replacement values live in [`src/lib/values.ts`](src/lib/values.ts). Preserve th
 - **Decoy lists** (`DECOY_SOURCES`, `DECOY_MEDIUMS`, and the parts used to compose campaigns, terms, and placements) should read like values real marketing tools produce (`google`, `newsletter`, `paid_social`). Every value must pass `isWordy` after percent-decoding and converting `+` to a space: start with a Unicode letter or number, contain a letter, use only letters, combining marks, numbers, spaces, `_`, `.`, and `-`, and not look like a hexadecimal ID.
 - **Silly lists** (`FUNNY`, `FUNNY_TOKEN_PHRASES`) should be lowercase and hyphenated, humorous but not offensive, obviously fake, and free of real company or brand names.
 
-Property tests in `tests/unit/values.test.ts` and `tests/unit/rewrite.test.ts` cover format preservation, different replacements, and consistent results within a copy and fresh seeds for new copies. Follow [clipboard coordination](docs/behavior.md#clipboard-coordination) when recognizing completed processing.
+Check generator changes with the [replacement](tests/unit/values.test.ts) and [URL](tests/unit/rewrite.test.ts) tests. Follow [clipboard coordination](docs/behavior.md#clipboard-coordination) when recognizing completed processing.
 
 ## Submitting changes
 

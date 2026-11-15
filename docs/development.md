@@ -13,15 +13,11 @@ npm run test:e2e
 # Manual: 127.0.0.1:5173
 npm run playground
 
-# Web Store zip in release/
-npm run package
-
-# Generate the changelog for the version in package.json
-npm run changelog
-
 # Render icons from icon.svg
 npm run icons
 ```
+
+For release artifacts and changelog generation, see [Packaging and CI](#packaging-and-ci).
 
 ## Browser tests
 
@@ -58,11 +54,11 @@ On a shared desktop, use the already-running Chrome for native checks, one bound
 
 `npm run changelog` regenerates `CHANGELOG.md` from Git tags and commit history. The `-p` option uses the version in `package.json` for the latest section even before its tag exists; generating that section does not publish a release. Generated changelog Markdown is excluded from Prettier.
 
-On feature branches, preview with `npm run changelog -- --stdout` and keep pending-version sections out of the committed changelog: squash merging replaces the branch commits. Generate the pending section from the updated `main` after the pull request is squash-merged and before tagging.
+On feature branches, preview with `npm run changelog -- --stdout` and keep pending-version sections out of the committed changelog. Squash merges leave one commit on `main`, so generated entries usually contain the pull request title. Generate the pending section from the updated `main` after the pull request is squash-merged and before tagging.
 
 The default output includes at most three ordinary commits per release. Use `npm run changelog -- --commit-limit false` to include all of them.
 
-Squash merges leave one commit on `main`, so generated entries usually contain the pull request title rather than a detailed list of changes. Keep user-facing highlights and migration notes in the corresponding GitHub release notes; regenerating the changelog replaces manual additions. Review those notes when releasing after the pull request is squash-merged.
+Keep user-facing highlights and migration notes in the GitHub release notes; regenerating the changelog replaces manual additions.
 
 `npm run package` creates `release/utm-randomizer-<version>.zip`, with `manifest.json` at the ZIP's root. Attach that file to a GitHub release as the extension download.
 
