@@ -114,9 +114,10 @@ function tick(baseline = false): void {
   if (!plain) return;
   const sameText = plain.text === observedText;
   if (!baselinePending && sameText && !entry?.pending) return;
-  const result = config ? rewriteText(plain.text, { ...config, key: createSeed() }) : null;
+  // Eligibility must not change with the mode: empty tracking values still identify an observed link.
+  const removal = config ? rewriteText(plain.text, { mode: 'strip' }) : null;
   const confirming = entry?.intended !== undefined && entry.intended === identity(plainText(plain.text));
-  if (!result && !confirming) {
+  if (!removal && !confirming) {
     entry = null;
     observedText = null;
     baselinePending = false;
@@ -153,7 +154,9 @@ function tick(baseline = false): void {
   if (!entry?.pending && entry?.after === undefined && current === entry?.before) return;
   const retrying = entry?.pending === true && (sameText || current === entry.before);
   entry = { before: current };
-  if (!config || !supported(snapshot) || !result) return;
+  if (!config || !supported(snapshot)) return;
+  const result = config.mode === 'strip' ? removal : rewriteText(snapshot.text, { ...config, key: createSeed() });
+  if (!result) return;
   const latest = readClipboard();
   if (!latest) {
     recordRetry(current, retrying);

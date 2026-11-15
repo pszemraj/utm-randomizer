@@ -123,6 +123,24 @@ it('takes an untouched baseline when the worker marks a same-focus regain', asyn
   expect(writes).not.toHaveBeenCalled();
 });
 
+it.each([false, true])('keeps empty tracking values observed across mode changes (baseline %s)', async (baseline) => {
+  const { clipboard, message, writes } = await start();
+  const config = { mode: 'hybrid' as const, focused: true };
+  message({ type: 'watch-config', config });
+  const original = 'https://example.com/page?utm_source=';
+  clipboard.text = original;
+  message({ type: 'watch-config', config, baseline });
+  message({ type: 'watch-config', config: CONFIG });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(clipboard.text).toBe(original);
+  expect(writes).not.toHaveBeenCalled();
+
+  clipboard.text = `${original}&id=42`;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(clipboard.text).toBe('https://example.com/page?id=42');
+  expect(writes).toHaveBeenCalledOnce();
+});
+
 it('takes an immediate final tick when a potential blur event is reported', async () => {
   const { clipboard, message, writes } = await start();
   clipboard.text = TRACKED;

@@ -54,7 +54,7 @@ A rewritten URL is written as plain text. If its copy also included HTML, a URI 
 
 The offscreen document uses text-only reads for ordinary polling and startup or focus-regain baselines, avoiding repeated loading of clipboard images and HTML. A new eligible entry receives a rich-format inspection, another format check immediately before writing, and a read-back after the write. Each tick is synchronous, but clipboard operations are not atomic with arbitrary external apps.
 
-The [current-entry record](../PRIVACY.md#what-the-extension-stores) leaves repeated observations of verified output alone; replacement vocabulary does not identify completed processing. The success indicator appears only after exact read-back. Different observed text replaces or clears the record. There is no timer that reprocesses unchanged contents.
+The [current-entry record](../PRIVACY.md#what-the-extension-stores) leaves repeated observations of verified output alone; replacement vocabulary does not identify completed processing. The success indicator appears only after exact read-back. Different observed text replaces or clears the record. Changing mode applies to new entries, including when the current entry has empty tracking values that replacement modes leave unchanged. There is no timer that reprocesses unchanged contents.
 
 An unavailable text-only read waits for a later poll. Once eligible text is observed, failed rich inspections, pre-write safety reads, and write checks share one retry for that entry, then settle it. A different entry observed during a safety read remains eligible for the next tick.
 

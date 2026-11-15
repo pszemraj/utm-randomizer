@@ -238,6 +238,26 @@ test.describe('native clipboard processing', () => {
     expect(new URL(copied).searchParams.get('msclkid')).not.toBe(id);
   });
 
+  test('preserves an empty-valued tracking baseline when changing modes', async ({
+    writeClipboardExternally,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ enabled: false, mode: 'hybrid' });
+    await waitForWatcher(false);
+    const original = 'https://example.com/page?utm_source=';
+    await writeClipboardExternally(original);
+    await setSettings({ enabled: true });
+    await waitForWatcher(true);
+    expect(await expectStable(readClipboard, 500)).toBe(original);
+    await setSettings({ mode: 'strip' });
+    expect(await expectStable(readClipboard, 500)).toBe(original);
+
+    await writeClipboardExternally(`${original}&id=42`);
+    await expect.poll(readClipboard).toBe('https://example.com/page?id=42');
+  });
+
   test('does nothing while paused and baselines existing contents on resume', async ({
     playground,
     readClipboard,
