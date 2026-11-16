@@ -22,6 +22,7 @@ Decoy, Silly, Hybrid, and Remove are the four modes.
    with a different value where its format
    permits. Remove deletes the supported tracking parameters. Never use a fixed
    mapping across copies or infer completed processing from replacement vocabulary.
+4. **Cleaning is automatic or it is worthless.** A link copied in Chrome is cleaned with no extra step from the user. Do not add or propose a manual clean action (menu item, shortcut, toolbar click) as a feature, a fallback, or a workaround for a platform limit; nobody will use it.
 
 ## Working rules
 
