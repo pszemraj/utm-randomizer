@@ -5,10 +5,14 @@ import { compactSeed, createSeed } from './lib/prng';
 
 /** Maximum ordinary polling delay while Chrome is in use. */
 const POLL_MS = 200;
+/** Clipboard text an ordinary poll may re-read per millisecond; longer text waits in proportion to its length. */
+const REREAD_CHARS_PER_MS = 5;
 let config: WatchConfig | null = null;
 let timer = 0;
 let checkingFocus = false;
 let baselinePending = false;
+/** Earliest time for the next ordinary poll after reading long text; zero when no wait applies. */
+let pollResumesAt = 0;
 /** Last eligible link text; unrelated clipboard contents are never retained. */
 let observedText: string | null = null;
 /** Recognizes unchanged ineligible text without retaining its contents. */
@@ -108,12 +112,19 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string, retrying: b
   return ok;
 }
 
-/** Performs one synchronous read, eligible-text decision, write, and read-back. */
-function tick(baseline = false): void {
+/**
+ * Performs one synchronous read, eligible-text decision, write, and read-back.
+ * An `ordinary` poll waits out the pause set by long text; baselines, final ticks, and pending retries do not.
+ */
+function tick(baseline = false, ordinary = false): void {
   if (baseline) baselinePending = true;
+  if (ordinary && !baselinePending && !entry?.pending && performance.now() < pollResumesAt) return;
   // Full paste can load native images before onPaste runs; polling must stay text-only.
   const plain = readClipboard('pasteAndMatchStyle');
   if (!plain) return;
+  // Chrome on Linux/X11 keeps every clipboard transfer from another application, so each re-read costs its length.
+  const pause = plain.text.length / REREAD_CHARS_PER_MS;
+  pollResumesAt = pause > POLL_MS ? performance.now() + pause : 0;
   const sameText = plain.text === observedText;
   if (!baselinePending && sameText && !entry?.pending) return;
   const textHash = plain.text.length <= MAX_TEXT_LENGTH ? compactSeed(plain.text) : null;
@@ -197,7 +208,7 @@ function configure(next: WatchConfig | null, baseline = false, skipFinalTick = f
   const focused = next?.focused === true;
   if (wasFocused && next !== null && !focused && !skipFinalTick) tick();
   config = next;
-  if (focused) tick(baseline || !wasFocused);
+  if (focused) tick(baseline || !wasFocused, true);
   if (next && !timer) timer = window.setInterval(checkFocus, POLL_MS);
   if (!next) {
     window.clearInterval(timer);

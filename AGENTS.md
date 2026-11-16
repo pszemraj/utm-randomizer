@@ -14,6 +14,7 @@ Decoy, Silly, Hybrid, and Remove are the four modes.
    exception. Never rewrite existing contents
    merely because Chrome starts, regains focus, navigates, or pastes.
    Polling distinguishes entries by plain text. HTML-only or format-only changes with identical text stay untouched; see the [polling limits](docs/behavior.md#background-watching).
+   Every clipboard read can cost its full length in browser memory, so ordinary polls re-read long text in proportion to its length. Baselines, final ticks, and pending retries are not delayed. Do not add a read that repeats on a timer without that bound.
 2. **Change only the clipboard payload.** URL processing must never change page
    links, the page URL, browser history, or the address bar, or trigger navigation.
 3. **Replacements are stochastic; removal is deterministic.** Decoy, Silly, and

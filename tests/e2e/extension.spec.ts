@@ -199,6 +199,21 @@ test.describe('native clipboard processing', () => {
     await expect.poll(readClipboard).toBe(CLEAN);
   });
 
+  test('cleans a link copied while long unrelated text delays the next poll', async ({
+    writeClipboardExternally,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip' });
+    await waitForWatcher(true);
+    const document = 'A paragraph of document text. '.repeat(400);
+    await writeClipboardExternally(document);
+    expect(await expectStable(readClipboard, 500)).toBe(document);
+    await writeClipboardExternally(ARTICLE);
+    await expect.poll(readClipboard).toBe(CLEAN);
+  });
+
   test('keeps output stable and expires its record after unrelated contents', async ({
     playground,
     writeClipboardExternally,
