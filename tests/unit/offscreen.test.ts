@@ -1,16 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from 'vitest';
 import { isExtensionMessage } from '../../src/lib/messages';
+import { POLL_MS, REREAD_CHARS_PER_MS, rereadPause } from '../../src/lib/timing';
 
 const TRACKED = 'https://example.com/page?utm_source=linkedin';
 const CLEAN = 'https://example.com/page';
 const CONFIG = { mode: 'strip' as const, focused: true };
 const WORKER = { id: 'extension-id' };
-
-/** Time until an ordinary poll looks again at clipboard text of this length, plus the poll that notices. */
-function rereadPause(text: string): number {
-  return text.length / 5 + 200;
-}
 
 /** Clipboard flavors presented by one fake synchronous paste. */
 interface FakeClipboard {
@@ -29,6 +25,50 @@ afterEach(() => {
   Reflect.deleteProperty(document, 'execCommand');
   document.body.innerHTML = '';
 });
+
+/**
+ * Replaces chosen calls of one `document.execCommand` command with a canned result and runs every other call on the harness.
+ *
+ * `when` picks calls by their 1-based count since this spy was installed: a number hides that many calls from the first, a list hides exactly those calls, and a function decides for each call.
+ *
+ * A hidden call never reaches the harness, so it reads or writes nothing, and reports `result` (`false` models a failed command). `calls` counts every call of the command and `hidden` only the replaced ones.
+ */
+function interceptCommand(
+  name: string,
+  when: number | readonly number[] | ((call: number) => boolean) = 1,
+  result = true,
+) {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves every call that is not replaced
+  const command = document.execCommand.bind(document);
+  const replaces =
+    typeof when === 'function'
+      ? when
+      : typeof when === 'number'
+        ? (call: number) => call <= when
+        : (call: number) => when.includes(call);
+  let calls = 0;
+  let hidden = 0;
+  const spy = vi.spyOn(document, 'execCommand').mockImplementation((invoked) => {
+    if (invoked === name) {
+      calls += 1;
+      if (replaces(calls)) {
+        hidden += 1;
+        return result;
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves ordinary reads and writes
+    return command(invoked);
+  });
+  return {
+    spy,
+    get calls() {
+      return calls;
+    },
+    get hidden() {
+      return hidden;
+    },
+  };
+}
 
 /** Starts the actual offscreen coordinator with controllable clipboard flavors and timers. */
 async function start() {
@@ -131,17 +171,7 @@ it('takes an untouched baseline when the worker marks a same-focus regain', asyn
 it('clears a pending retry when the same text becomes a focus-regain baseline', async () => {
   const { clipboard, message, writes } = await start();
   clipboard.text = TRACKED;
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- hides the first rich inspection
-  const command = document.execCommand.bind(document);
-  let unavailable = true;
-  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    if (name === 'paste' && unavailable) {
-      unavailable = false;
-      return true;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves ordinary reads and writes
-    return command(name);
-  });
+  interceptCommand('paste');
   message({ type: 'watch-config', config: CONFIG });
   expect(writes).not.toHaveBeenCalled();
   message({ type: 'watch-config', config: { ...CONFIG, focused: false }, skipFinalTick: true });
@@ -186,7 +216,7 @@ it('checks focus without reading the clipboard while unfocused, then baselines t
   clipboard.types = ['text/plain', 'text/html'];
   await vi.advanceTimersByTimeAsync(1000);
   expect(reads).toHaveBeenCalledTimes(previousReads);
-  expect(requestFocus).toHaveBeenCalledTimes(5);
+  expect(requestFocus).toHaveBeenCalledTimes(1000 / POLL_MS);
   message({ type: 'watch-config', config: CONFIG });
   await vi.advanceTimersByTimeAsync(1000);
   expect(writes).not.toHaveBeenCalled();
@@ -518,14 +548,7 @@ it('keeps a raced new entry eligible after the prior entry exhausts its retry', 
 it('settles an entry after two unavailable pre-write safety reads', async () => {
   const { clipboard, writes } = await start();
   clipboard.text = TRACKED;
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- simulates a synchronous reader that twice returns no data
-  const command = document.execCommand.bind(document);
-  let pasteCount = 0;
-  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    if (name === 'paste' && [2, 4].includes(++pasteCount)) return true;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves all other clipboard reads
-    return command(name);
-  });
+  interceptCommand('paste', [2, 4]);
 
   await vi.advanceTimersByTimeAsync(1000);
   expect(clipboard.text).toBe(TRACKED);
@@ -535,21 +558,11 @@ it('settles an entry after two unavailable pre-write safety reads', async () => 
 it('bounds unavailable initial rich reads and accepts a different text afterward', async () => {
   const { clipboard, reads, writes } = await start();
   clipboard.text = TRACKED;
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- makes only rich inspection unavailable
-  const command = document.execCommand.bind(document);
   let unavailable = true;
-  const richReads = vi.fn();
-  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    if (name === 'paste' && unavailable) {
-      richReads();
-      return true;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves ordinary polling and recovered reads
-    return command(name);
-  });
+  const richReads = interceptCommand('paste', () => unavailable);
   reads.mockClear();
   await vi.advanceTimersByTimeAsync(10_000);
-  expect(richReads).toHaveBeenCalledTimes(2);
+  expect(richReads.hidden).toBe(2);
   expect(writes).not.toHaveBeenCalled();
   unavailable = false;
   clipboard.text = 'https://example.com/newer?utm_source=email';
@@ -565,18 +578,11 @@ it.each([{ failures: [1, 3] }, { failures: [2, 3] }])(
     clipboard.text = TRACKED;
     clipboard.html = `<a href="${TRACKED}">link</a>`;
     clipboard.types = ['text/plain', 'text/html'];
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- fails inspection and safety reads in either order
-    const command = document.execCommand.bind(document);
-    let richReads = 0;
-    vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-      if (name === 'paste' && failures.includes(++richReads)) return true;
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves successful reads and writes
-      return command(name);
-    });
+    const richReads = interceptCommand('paste', failures);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(writes).not.toHaveBeenCalled();
     expect(clipboard.text).toBe(TRACKED);
-    expect(richReads).toBe(3);
+    expect(richReads.calls).toBe(3);
   },
 );
 
@@ -584,17 +590,7 @@ it('keeps a focus-regain baseline pending until the clipboard can be read', asyn
   const { clipboard, message, writes } = await start();
   message({ type: 'watch-config', config: null });
   clipboard.text = TRACKED;
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- makes only the immediate regain baseline unavailable
-  const command = document.execCommand.bind(document);
-  let unavailable = true;
-  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    if (name === 'pasteAndMatchStyle' && unavailable) {
-      unavailable = false;
-      return true;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves the next successful baseline read
-    return command(name);
-  });
+  interceptCommand('pasteAndMatchStyle');
 
   message({ type: 'watch-config', config: CONFIG });
   message({ type: 'watch-config', config: CONFIG });
@@ -651,17 +647,7 @@ it('processes a different tracked URL that wins the pre-write safety read', asyn
 it('retries an unchanged fresh URL after an automatic write fails', async () => {
   const { clipboard, writes } = await start();
   clipboard.text = TRACKED;
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises synchronous copy failure
-  const command = document.execCommand.bind(document);
-  let fail = true;
-  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    if (name === 'copy' && fail) {
-      fail = false;
-      return false;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserve normal reads and subsequent writes
-    return command(name);
-  });
+  interceptCommand('copy', 1, false);
   await vi.advanceTimersByTimeAsync(200);
   expect(clipboard.text).toBe(TRACKED);
   expect(writes).not.toHaveBeenCalled();
@@ -678,17 +664,7 @@ it('does not resurrect an older output suppression after a later write fails', a
   const priorOutput = clipboard.text;
   const later = 'https://example.com/later?utm_source=social';
   clipboard.text = later;
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- exercises synchronous copy failure
-  const command = document.execCommand.bind(document);
-  let fail = true;
-  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    if (name === 'copy' && fail) {
-      fail = false;
-      return false;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserve normal reads and subsequent writes
-    return command(name);
-  });
+  interceptCommand('copy', 1, false);
   await vi.advanceTimersByTimeAsync(200);
   expect(clipboard.text).toBe(later);
   clipboard.text = priorOutput;
@@ -707,17 +683,7 @@ it.each(['baseline', 'output'] as const)(
     const prior = clipboard.text;
     const previousWrites = writes.mock.calls.length;
     clipboard.text = 'https://example.com/newer?utm_source=email';
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- makes the new entry's first rich read unavailable
-    const command = document.execCommand.bind(document);
-    let unavailable = true;
-    vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-      if (name === 'paste' && unavailable) {
-        unavailable = false;
-        return true;
-      }
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves plain polling and subsequent reads
-      return command(name);
-    });
+    interceptCommand('paste');
 
     await vi.advanceTimersByTimeAsync(200);
     expect(writes).toHaveBeenCalledTimes(previousWrites);
@@ -778,13 +744,13 @@ it.each([
   expect(writes).not.toHaveBeenCalled();
 
   clipboard.text = 'different unrelated contents';
-  await vi.advanceTimersByTimeAsync(rereadPause(text));
+  await vi.advanceTimersByTimeAsync(rereadPause(text.length) + POLL_MS);
   expect(classify).toHaveBeenCalledTimes(2);
   clipboard.text = text;
   await vi.advanceTimersByTimeAsync(200);
   expect(classify).toHaveBeenCalledTimes(3);
   clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(rereadPause(text));
+  await vi.advanceTimersByTimeAsync(rereadPause(text.length) + POLL_MS);
   expect(clipboard.text).toBe(CLEAN);
   expect(writes).toHaveBeenCalledOnce();
   expect(classify).toHaveBeenCalledTimes(4);
@@ -805,18 +771,19 @@ it('does not fingerprint oversized clipboard text or block a smaller new link', 
   expect(fingerprint).not.toHaveBeenCalled();
   expect(writes).not.toHaveBeenCalled();
   clipboard.text = TRACKED;
-  await vi.advanceTimersByTimeAsync(rereadPause(oversized));
+  await vi.advanceTimersByTimeAsync(rereadPause(oversized.length) + POLL_MS);
   expect(clipboard.text).toBe(CLEAN);
   expect(writes).toHaveBeenCalledOnce();
 });
 
 it('re-reads long clipboard text in proportion to its length', async () => {
   const { clipboard, reads, writes } = await start();
-  clipboard.text = 'x'.repeat(1000);
+  // The longest text still read on every poll, then text paused for 2000 ms between reads.
+  clipboard.text = 'x'.repeat(POLL_MS * REREAD_CHARS_PER_MS);
   reads.mockClear();
   await vi.advanceTimersByTimeAsync(2000);
-  expect(reads).toHaveBeenCalledTimes(10);
-  clipboard.text = 'x'.repeat(10_000);
+  expect(reads).toHaveBeenCalledTimes(2000 / POLL_MS);
+  clipboard.text = 'x'.repeat(2000 * REREAD_CHARS_PER_MS);
   reads.mockClear();
   await vi.advanceTimersByTimeAsync(10_000);
   expect(reads).toHaveBeenCalledTimes(5);
@@ -825,7 +792,7 @@ it('re-reads long clipboard text in proportion to its length', async () => {
 
 it('cleans a link copied during a long-text pause when the pause ends', async () => {
   const { clipboard, reads, writes } = await start();
-  clipboard.text = 'x'.repeat(10_000);
+  clipboard.text = 'x'.repeat(2000 * REREAD_CHARS_PER_MS);
   await vi.advanceTimersByTimeAsync(200);
   reads.mockClear();
   clipboard.text = TRACKED;
@@ -862,17 +829,7 @@ it('takes final ticks and focus-regain baselines during a long-text pause', asyn
 it('retries a pending long link without waiting out its pause', async () => {
   const { clipboard, writes } = await start();
   const id = 'x'.repeat(5000);
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- hides the first rich inspection
-  const command = document.execCommand.bind(document);
-  let unavailable = true;
-  vi.spyOn(document, 'execCommand').mockImplementation((name) => {
-    if (name === 'paste' && unavailable) {
-      unavailable = false;
-      return true;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preserves ordinary reads and writes
-    return command(name);
-  });
+  interceptCommand('paste');
   clipboard.text = `${TRACKED}&id=${id}`;
   await vi.advanceTimersByTimeAsync(400);
   expect(clipboard.text).toBe(`${CLEAN}?id=${id}`);

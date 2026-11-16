@@ -1,12 +1,16 @@
 // The offscreen document owns every automatic clipboard read, decision, and write.
-import { isExtensionMessage, isWorkerSender, type ClipboardSnapshot, type WatchConfig } from './lib/messages';
+import {
+  addressesCoordinator,
+  isCoordinatorMessage,
+  isWorkerSender,
+  type ClipboardSnapshot,
+  type WatchConfig,
+  type WorkerMessage,
+} from './lib/messages';
 import { MAX_TEXT_LENGTH, rewriteText } from './lib/rewrite';
 import { compactSeed, createSeed } from './lib/prng';
+import { POLL_MS, rereadPause } from './lib/timing';
 
-/** Maximum ordinary polling delay while Chrome is in use. */
-const POLL_MS = 200;
-/** Clipboard text an ordinary poll may re-read per millisecond; longer text waits in proportion to its length. */
-const REREAD_CHARS_PER_MS = 5;
 let config: WatchConfig | null = null;
 let timer = 0;
 let checkingFocus = false;
@@ -19,6 +23,17 @@ let observedText: string | null = null;
 let ineligibleTextHash: string | null = null;
 /** One current entry; `pending` permits one retry and `intended` recognizes a delayed successful write. */
 let entry: { before: string; after?: string; intended?: string; pending?: boolean } | null = null;
+
+/** Sends the worker a message whose delivery failure needs no handling here. */
+function tell(message: WorkerMessage): Promise<unknown> {
+  return chrome.runtime.sendMessage(message).catch(() => undefined);
+}
+
+/** Drops the current entry so the next observed text is classified afresh. */
+function forget(): void {
+  entry = null;
+  observedText = null;
+}
 
 /** Finds the extension-owned clipboard sink. */
 function field(): HTMLTextAreaElement {
@@ -98,15 +113,14 @@ function writeClipboard(snapshot: ClipboardSnapshot, before: string, retrying: b
     if (observed === expected) {
       entry = { before, after: expected };
       observedText = snapshot.text;
-      void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
+      void tell({ type: 'rewrite-complete' });
     } else if (observed === null) {
       recordRetry(before, retrying, expected);
     } else if (observed === before || landed?.text.trim() === snapshot.text) {
       recordRetry(observed, retrying);
     } else {
       // A different external entry is classified afresh instead of retaining unrelated clipboard data.
-      entry = null;
-      observedText = null;
+      forget();
     }
   }
   return ok;
@@ -123,8 +137,8 @@ function tick(baseline = false, ordinary = false): void {
   const plain = readClipboard('pasteAndMatchStyle');
   if (!plain) return;
   // Chrome on Linux/X11 keeps every clipboard transfer from another application, so each re-read costs its length.
-  const pause = plain.text.length / REREAD_CHARS_PER_MS;
-  pollResumesAt = pause > POLL_MS ? performance.now() + pause : 0;
+  const pause = rereadPause(plain.text.length);
+  pollResumesAt = pause ? performance.now() + pause : 0;
   const sameText = plain.text === observedText;
   if (!baselinePending && sameText && !entry?.pending) return;
   const textHash = plain.text.length <= MAX_TEXT_LENGTH ? compactSeed(plain.text) : null;
@@ -134,8 +148,7 @@ function tick(baseline = false, ordinary = false): void {
   const removal = config && !knownIneligible ? rewriteText(plain.text, { mode: 'strip' }) : null;
   const confirming = entry?.intended !== undefined && entry.intended === identity(plainText(plain.text));
   if (!removal && !confirming) {
-    entry = null;
-    observedText = null;
+    forget();
     ineligibleTextHash = textHash;
     baselinePending = false;
     return;
@@ -156,15 +169,14 @@ function tick(baseline = false, ordinary = false): void {
     return;
   }
   if (snapshot.text !== plain.text) {
-    entry = null;
-    observedText = null;
+    forget();
     return;
   }
   observedText = snapshot.text;
   const current = identity(snapshot);
   if (current === entry?.intended) {
     entry = { before: entry.before, after: current };
-    void chrome.runtime.sendMessage({ type: 'rewrite-complete' }).catch(() => undefined);
+    void tell({ type: 'rewrite-complete' });
     return;
   }
   if (!entry?.pending && entry?.after === undefined && current === entry?.before) return;
@@ -180,8 +192,7 @@ function tick(baseline = false, ordinary = false): void {
   }
   const latestIdentity = identity(latest);
   if (latestIdentity !== current) {
-    entry = null;
-    observedText = null;
+    forget();
     return;
   }
   if (!writeClipboard(plainText(result.text), current, retrying)) {
@@ -194,12 +205,9 @@ function tick(baseline = false, ordinary = false): void {
 function checkFocus(): void {
   if (checkingFocus) return;
   checkingFocus = true;
-  void chrome.runtime
-    .sendMessage({ type: 'watch-focus' })
-    .catch(() => undefined)
-    .finally(() => {
-      checkingFocus = false;
-    });
+  void tell({ type: 'watch-focus' }).finally(() => {
+    checkingFocus = false;
+  });
 }
 
 /** Applies queried focus: flush on blur, baseline on regain, and process ordinary focused ticks. */
@@ -209,6 +217,7 @@ function configure(next: WatchConfig | null, baseline = false, skipFinalTick = f
   if (wasFocused && next !== null && !focused && !skipFinalTick) tick();
   config = next;
   if (focused) tick(baseline || !wasFocused, true);
+  // Unfocused checks keep the full rate: a focus event alone noticed a regain up to 0.8 s late in native tests.
   if (next && !timer) timer = window.setInterval(checkFocus, POLL_MS);
   if (!next) {
     window.clearInterval(timer);
@@ -217,14 +226,8 @@ function configure(next: WatchConfig | null, baseline = false, skipFinalTick = f
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (response: { ok: boolean }) => void) => {
-  if (!(
-    typeof message === 'object' &&
-    message !== null &&
-    'type' in message &&
-    ['watch-config', 'watch-flush'].includes(String(message.type))
-  ))
-    return false;
-  if (!isExtensionMessage(message) || !isWorkerSender(sender)) {
+  if (!addressesCoordinator(message)) return false;
+  if (!isCoordinatorMessage(message) || !isWorkerSender(sender)) {
     sendResponse({ ok: false });
     return false;
   }

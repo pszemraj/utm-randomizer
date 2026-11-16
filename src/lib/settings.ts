@@ -40,11 +40,14 @@ export async function saveSettings(changes: Partial<Settings>): Promise<void> {
   await chrome.storage.local.set(changes);
 }
 
+/** Whether a storage change event touches any setting. */
+export function isSettingsChange(changes: Record<string, unknown>, area: string): boolean {
+  return area === 'local' && SETTING_KEYS.some((key) => key in changes);
+}
+
 /** Calls `listener` with the full settings whenever local settings change during the page's lifetime. */
 export function watchSettings(listener: (settings: Settings) => void): void {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && SETTING_KEYS.some((key) => key in changes)) {
-      void loadSettings().then(listener);
-    }
+    if (isSettingsChange(changes, area)) void loadSettings().then(listener);
   });
 }

@@ -81,6 +81,7 @@ Routine CI remains one static-check job for pull requests and `main`; release pa
 - `src/lib/values.ts`, `prng.ts`: Decoy, Silly, and Hybrid replacement values, seeded per copy.
 - `src/lib/messages.ts`: runtime message contracts and sender checks.
 - `src/lib/settings.ts`: defaults, shared mode validation, and local settings subscriptions.
+- `src/lib/timing.ts`: poll interval, re-read pacing, badge duration, and stall-detection waits shared with the tests.
 - `tests/unit/`: rules, rewriting, values, settings, and clipboard coordination, using Vitest.
 - `tests/e2e/`: Playwright tests with the extension loaded.
 - `tests/fixtures/playground.html`: manual and end-to-end test page.

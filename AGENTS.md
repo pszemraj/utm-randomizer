@@ -98,6 +98,7 @@ page fields and synthetic events cannot stand in for those controls.
    files, and custom non-text formats.
 7. **Keep feedback inside Chrome.** Use browser feedback only while Chrome is
    focused. Never add system notifications or the notifications permission.
+   The one exception to the focus rule is the stall badge, which stays until the clipboard document answers again because a blocked read cannot be recovered without restarting the browser.
 8. **Messages need payload and sender checks.** Keep message contracts in
    `src/lib/messages.ts`. Validate known payloads and enforce worker/offscreen
    direction before changing clipboard configuration, contents, or feedback. Register
