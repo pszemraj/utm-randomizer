@@ -1,5 +1,6 @@
 /** Messages exchanged between the worker and offscreen clipboard coordinator. */
 import type { Mode } from './rewrite';
+import { isMode } from './settings';
 
 /** Clipboard text and detectable accompanying formats from one native paste. */
 export interface ClipboardSnapshot {
@@ -28,6 +29,15 @@ export type ExtensionMessage =
   | { type: 'watch-focus' }
   | { type: 'rewrite-complete' };
 
+/** Message types addressed to the clipboard coordinator; every other type is addressed to the worker. */
+const COORDINATOR_TYPES: readonly unknown[] = ['watch-config', 'watch-flush'] satisfies ExtensionMessage['type'][];
+
+/** Messages the worker sends to the clipboard coordinator. */
+export type CoordinatorMessage = Extract<ExtensionMessage, { type: 'watch-config' | 'watch-flush' }>;
+
+/** Messages the clipboard coordinator sends to the worker. */
+export type WorkerMessage = Exclude<ExtensionMessage, CoordinatorMessage>;
+
 /** Whether a value has named payload fields. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -35,12 +45,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Validates the mode supplied to the coordinator. */
 function isWatchConfig(value: unknown): value is WatchConfig {
-  return (
-    isRecord(value) &&
-    typeof value.focused === 'boolean' &&
-    typeof value.mode === 'string' &&
-    ['decoy', 'silly', 'hybrid', 'strip'].includes(value.mode)
-  );
+  return isRecord(value) && typeof value.focused === 'boolean' && isMode(value.mode);
 }
 
 /** Validates every known runtime payload before its receiver acts. */
@@ -60,6 +65,21 @@ export function isExtensionMessage(value: unknown): value is ExtensionMessage {
     default:
       return false;
   }
+}
+
+/** Whether a payload names a coordinator operation, valid or not, so the coordinator answers it and ignores the rest. */
+export function addressesCoordinator(value: unknown): boolean {
+  return isRecord(value) && COORDINATOR_TYPES.includes(value.type);
+}
+
+/** Validates a payload the coordinator may act on. */
+export function isCoordinatorMessage(value: unknown): value is CoordinatorMessage {
+  return isExtensionMessage(value) && addressesCoordinator(value);
+}
+
+/** Validates a payload the worker may act on. */
+export function isWorkerMessage(value: unknown): value is WorkerMessage {
+  return isExtensionMessage(value) && !addressesCoordinator(value);
 }
 
 /** Only this extension's clipboard document may request a browser-focus check. */

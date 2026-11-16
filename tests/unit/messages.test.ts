@@ -26,7 +26,7 @@ describe('runtime message payloads', () => {
     { type: 'watch-config', config: false },
     { type: 'watch-config', config: { mode: 'strip' } },
     { type: 'watch-config', config: { mode: 'strip', focused: 'true' } },
-    { type: 'watch-config', config: { mode: 'invalid' } },
+    { type: 'watch-config', config: { mode: 'invalid', focused: true } },
     { type: 'watch-config', config, baseline: 'true' },
     { type: 'watch-config', config, skipFinalTick: 1 },
     { type: 'copy-clipboard', text: 'obsolete action' },

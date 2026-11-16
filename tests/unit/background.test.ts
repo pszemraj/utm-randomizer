@@ -1,6 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { ExtensionMessage } from '../../src/lib/messages';
 import { DEFAULT_SETTINGS, loadSettings, type Settings } from '../../src/lib/settings';
+import { CONFIRMATION_MS, POLL_MS, STALL_CONFIRM_MS, STALL_MS } from '../../src/lib/timing';
+
+/** Real timers the worker under test started, cleared after each test so none fires into a later one. */
+const workerTimers: ReturnType<typeof setTimeout>[] = [];
 
 vi.mock('../../src/lib/settings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/settings')>()),
@@ -15,6 +19,12 @@ async function startBackground(
   initialSettings?: Promise<Settings>,
 ) {
   let exists = false;
+  const startTimer = globalThis.setTimeout;
+  vi.spyOn(globalThis, 'setTimeout').mockImplementation((...args: Parameters<typeof setTimeout>) => {
+    const id = startTimer(...args);
+    workerTimers.push(id);
+    return id;
+  });
   let currentSettings = { ...DEFAULT_SETTINGS, enabled: false, ...settings };
   const getContexts = vi.fn(() => Promise.resolve(exists ? [{}] : []));
   const createDocument = vi.fn(() => {
@@ -116,9 +126,79 @@ async function startBackground(
 }
 
 afterEach(() => {
+  for (const id of workerTimers.splice(0)) clearTimeout(id);
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   vi.resetModules();
+});
+
+it('preserves a queued badge clear when cleaning is disabled after blur', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  let release!: () => void;
+  worker.setBadgeText.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  worker.send({ type: 'rewrite-complete' });
+  await vi.waitFor(() => expect(release).toBeDefined());
+  worker.changeFocus(false);
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: false },
+      skipFinalTick: true,
+    }),
+  );
+  worker.changeSettings({ enabled: false });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-config', config: null }));
+  release();
+  await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '' }));
+  expect(worker.setTitle).toHaveBeenLastCalledWith({ title: 'UTM Randomizer' });
+});
+
+it('preserves a newer regain baseline when an earlier acknowledgement is delayed', async () => {
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.changeFocus(false);
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: false },
+      skipFinalTick: true,
+    }),
+  );
+  worker.sendMessage.mockClear();
+  let release!: () => void;
+  worker.sendMessage.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve({ ok: true });
+      }),
+  );
+  worker.changeFocus(true);
+  await vi.waitFor(() => expect(release).toBeDefined());
+  expect(worker.sendMessage).toHaveBeenCalledWith({
+    type: 'watch-config',
+    config: { mode: 'hybrid', focused: true },
+    baseline: true,
+  });
+  worker.changeFocus(false, 1, true);
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalledWith({ type: 'watch-flush' }));
+  worker.changeFocus(true);
+  release();
+  await vi.waitFor(() =>
+    expect(worker.sendMessage).toHaveBeenLastCalledWith({
+      type: 'watch-config',
+      config: { mode: 'hybrid', focused: true },
+      baseline: true,
+    }),
+  );
 });
 
 it('applies mode changes, disables polling, and resumes without creating a second document', async () => {
@@ -457,6 +537,67 @@ it('shows an exact Chrome-only success confirmation while focused', async () => 
   await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenCalledWith({ text: '✓' }));
   expect(worker.setBadgeBackgroundColor).toHaveBeenCalledWith({ color: '#2e7d32' });
   expect(worker.setTitle).toHaveBeenCalledWith({ title: 'Your link was randomized.' });
+});
+
+it('clears the success confirmation after its display time', async () => {
+  vi.useFakeTimers();
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.send({ type: 'rewrite-complete' });
+  await vi.waitFor(() => expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '✓' }));
+  await vi.advanceTimersByTimeAsync(CONFIRMATION_MS);
+  expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '' });
+});
+
+it('reports a silent clipboard document and withdraws the report when it answers again', async () => {
+  vi.useFakeTimers();
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.sendMessage).toHaveBeenCalled());
+  worker.requestFocus();
+  await vi.advanceTimersByTimeAsync(STALL_MS + STALL_CONFIRM_MS - 1);
+  expect(worker.setBadgeText).not.toHaveBeenCalledWith({ text: '!' });
+  await vi.advanceTimersByTimeAsync(1);
+  expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '!' });
+  expect(worker.setBadgeBackgroundColor).toHaveBeenLastCalledWith({ color: '#b3261e' });
+  expect(worker.createDocument).toHaveBeenCalledOnce();
+
+  // Losing focus clears only the success indicator.
+  worker.changeFocus(false);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '!' });
+  worker.requestFocus();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '' });
+});
+
+it('stays quiet while the clipboard document keeps checking focus', async () => {
+  vi.useFakeTimers();
+  const worker = await startBackground({ enabled: true });
+  for (let elapsed = 0; elapsed < 3 * (STALL_MS + STALL_CONFIRM_MS); elapsed += POLL_MS) {
+    worker.requestFocus();
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+  }
+  expect(worker.setBadgeText).not.toHaveBeenCalledWith({ text: '!' });
+});
+
+it('recreates a clipboard document that disappeared instead of reporting it', async () => {
+  vi.useFakeTimers();
+  const worker = await startBackground({ enabled: true });
+  await vi.waitFor(() => expect(worker.createDocument).toHaveBeenCalledOnce());
+  worker.removeOffscreen();
+  await vi.advanceTimersByTimeAsync(STALL_MS + STALL_CONFIRM_MS);
+  expect(worker.createDocument).toHaveBeenCalledTimes(2);
+  expect(worker.setBadgeText).not.toHaveBeenCalledWith({ text: '!' });
+});
+
+it('withdraws a stall report and stops watching when cleaning is turned off', async () => {
+  vi.useFakeTimers();
+  const worker = await startBackground({ enabled: true });
+  await vi.advanceTimersByTimeAsync(STALL_MS + STALL_CONFIRM_MS);
+  expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '!' });
+  worker.changeSettings({ enabled: false });
+  await vi.advanceTimersByTimeAsync(2 * (STALL_MS + STALL_CONFIRM_MS));
+  expect(worker.setBadgeText).toHaveBeenLastCalledWith({ text: '' });
 });
 
 it('resets Chrome-owned confirmation state whenever the worker starts', async () => {

@@ -2,9 +2,9 @@
 
 ## Usage
 
-A new clipboard entry containing a URL or compact share text is processed while Chrome is focused, regardless of which application or page wrote it. The extension replaces supported tracking values using the selected mode, or deletes them in Remove mode. It changes only clipboard contents: page links, addresses, history, and navigation stay unchanged.
+Use [Extension options](../README.md#usage) to choose a [replacement mode](#replacement-values) or pause cleaning. The extension changes only clipboard contents: page links, addresses, history, and navigation stay unchanged.
 
-The only settings are on/off and replacement mode, available through [Chrome's extension options](../README.md#usage). Turning cleaning off stops clipboard checks. On focus loss, automatic cleaning takes one final clipboard reading and then stops. Returning to Chrome establishes a new untouched baseline. After a successful rewrite, a green check briefly appears on the extension icon with the title **Your link was randomized.** It is shown only while Chrome is focused. The extension has no system notifications, toolbar popup, keyboard shortcut, custom copy actions, Undo, or counters.
+There are no custom copy actions, Undo, or counters.
 
 ## Replacement values
 
@@ -14,23 +14,23 @@ The only settings are on/off and replacement mode, available through [Chrome's e
 - campaign names, search terms, and ad placements composed the way marketers write them (`retargeting_2024`, `black_friday_uk_2025`, `best+standing+desk`, `video_15s`);
 - click IDs rewritten character by character, keeping their exact length, alphabet, issuer prefix, separators, and percent-encoding (`IwAR3xYz...` stays a plausible `IwAR...` value, a 32-character hex `msclkid` stays 32 hex characters, and mixed-case hex keeps each letter's case).
 
-Each new copy draws a fresh random seed; copying the same original again draws new values. Random draws can repeat a previous result. Word values and identifiers with replaceable characters get a different value, including when the original is already plausible. Empty values and literal identifier punctuation, including malformed percent sequences such as `%of`, retain their format. A value's presence in the replacement vocabulary does not identify it as previously processed.
+Replacement modes draw a fresh random seed for each new entry; copying the same original again draws new values. Random draws can repeat a previous result. Word values and identifiers with replaceable characters get a different value, including when the original is already plausible. Empty values stay unchanged in replacement modes. Decoy preserves literal identifier punctuation, including malformed percent sequences such as `%of`.
 
 **Silly** uses obvious nonsense (`utm_source=carrier-pigeon`, click IDs as word salad). **Hybrid** picks a decoy or nonsense separately for each value, so one link can carry a believable click ID next to a joke source. **Remove** deletes the tracking parameters.
 
-Unrecognized fields in supported campaign namespaces draw a word from the combined existing Decoy or Silly vocabulary; Hybrid chooses between those pools. For example, `utm_penis=chode` gets another word regardless of its original value. There is no inference of a field's meaning or data type. Known fields retain their category-specific replacements.
+For unrecognized fields in [supported campaign namespaces](#what-gets-rewritten), Decoy and Silly replace nonempty values with words from their pooled vocabularies; Hybrid chooses between the two pools. For example, `utm_custom=launch` gets another word. There is no inference of a field's meaning or data type. Known fields retain their category-specific replacements.
 
 ## What gets rewritten
 
 A copied whole URL is eligible, and surrounding whitespace is stripped when it is rewritten. Compact share text is also eligible: the extension rewrites each supported absolute `http://` or `https://` URL while preserving captions, punctuation, Markdown wrappers, and other surrounding text byte-for-byte.
 
-Embedded URL spans containing raw non-ASCII characters, a raw apostrophe anywhere in the query, or ambiguous raw prose punctuation or opening wrapper delimiters in a tracked query segment stay untouched because adjacent prose cannot reliably be separated from the URL. Periods joining ASCII alphanumeric characters to lowercase letters or digits remain eligible so ordinary dotted sources, hosts, and versions work. Other eligible spans in the same payload can still be rewritten. Percent-encoded characters remain eligible; standalone URLs retain their documented non-Latin replacement support.
+Embedded links target English-language share text with ASCII or percent-encoded URL bytes. Spans containing raw non-ASCII characters, a raw apostrophe anywhere in the query, or ambiguous raw prose punctuation or opening wrapper delimiters in a tracked query segment stay untouched because adjacent prose cannot reliably be separated from the URL. Periods joining ASCII alphanumeric characters to lowercase letters or digits remain eligible so ordinary dotted sources, hosts, and versions work. Other eligible spans in the same payload can still be rewritten. Standalone URLs support non-Latin word values.
 
-The supported product scope is English-language share text and URLs expressed with ASCII or percent-encoded bytes. Raw-Unicode embedded URL parsing is not a compatibility target; ambiguous spans are skipped instead of accumulating language-specific boundary rules.
+Up to eight URLs are inspected in a share payload. Text is eligible when it has at most 280 non-whitespace characters outside unambiguous URL spans, or when those URL characters are at least as numerous as the remaining non-whitespace characters. Ambiguous spans count as prose. This covers ordinary share captions and link-heavy lists. Longer prose-dominated copies, such as an article where links are a minority, stay untouched. A payload exceeding the URL-count boundary stays untouched rather than being partially rewritten.
 
-The compact-share boundary is deliberately explicit. Up to eight URLs are inspected. Text is eligible when it has at most 280 non-whitespace characters outside its URLs, or when URL characters are at least as numerous as the remaining non-whitespace characters. This covers ordinary share captions and link-heavy lists. Longer prose-dominated copies—such as a README, article, or document where links are a minority—stay entirely untouched. If a payload exceeds the URL-count boundary, it also stays untouched rather than being partially rewritten.
-
-Only absolute web URLs are recognized inside a wrapper. Scheme-less links such as `www.example.com/page?utm_source=x` and protocol-relative links are supported only when the entire trimmed clipboard text is that link. Path-relative forms such as `/page?utm_source=x`, `./page?utm_source=x`, and bare paths without a dotted hostname stay unchanged. A copied hyperlink whose text contains no URL stays unchanged; use **Copy link address** to copy its destination.
+- Embedded links must be absolute web URLs. Scheme-less links such as `www.example.com/page?utm_source=x` and protocol-relative links are supported only when the entire trimmed clipboard text is that link. Trailing punctuation remains part of a standalone URL.
+- A dotted scheme-less host, including an ambiguous form such as `index.php?utm_source=x`, is treated as a hostname. Path-relative forms such as `/page?utm_source=x`, `./page?utm_source=x`, and bare paths without a dotted hostname stay unchanged because clipboard text does not identify the source page.
+- A copied hyperlink whose text contains no URL stays unchanged; use **Copy link address** to copy its destination.
 
 Recognition is case-insensitive and applies on every website:
 
@@ -40,7 +40,7 @@ Recognition is case-insensitive and applies on every website:
 
 Other parameters stay untouched, including YouTube and Spotify's `si`, X's `s` and `t`, Amazon's `ref` and `qid`, and email and affiliate markers such as `mc_eid` and `irclickid`. Supported campaign fields and click IDs are still rewritten on those sites. Unseen suffixes are recognized by this extension's policy; that does not mean vendors consume every possible field. There are no site-specific rules. Exact aliases, categories, and vendor references are in [`src/lib/params.ts`](../src/lib/params.ts).
 
-Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact. Scheme-less standalone links such as `www.example.com/page?utm_source=x` are supported. Text that looks like a dotted scheme-less host, including an ambiguous form such as `index.php?utm_source=x`, is treated as one; other path-relative URLs stay unchanged because clipboard text does not identify the page they came from. Trailing punctuation remains part of a standalone URL.
+Unselected query segments, their order and encoding, fragments, and link forms stay byte-for-byte intact.
 
 Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchanged because changing query bytes can invalidate their signatures. Inputs longer than 100,000 characters are not rewritten. A larger previous clipboard value does not prevent cleaning a smaller new copy.
 
@@ -48,26 +48,26 @@ Recognized signed CloudFront, AWS, Google Cloud, and Azure links are left unchan
 
 A rewritten URL is written as plain text. If its copy also included HTML, a URI list, or hidden web-added data, those accompanying formats are discarded. Detectable images, files, and custom non-text formats leave the entire copy unchanged.
 
-These rules apply only when the copied text is an eligible URL or compact share payload. Copying a long prose-dominated document, image, or ordinary text does not authorize rewriting its URLs or changing its formats.
-
 ## How it works
-
-### Page copies
-
-The extension does not inject scripts into web pages or intercept copy/cut events. Native page copying, site copy buttons, and browser copies all use the same background clipboard watcher. Copying or cutting keeps the page's normal behavior.
 
 ### Clipboard coordination
 
-The offscreen document reads, checks, and writes each eligible clipboard entry synchronously in one tick. Settings start and stop its focus checks; the service worker supplies the queried Chrome-window focus state. Losing focus triggers a final clipboard tick, then suspends clipboard reads while focus checks continue. Clipboard operations are not atomic with arbitrary external apps.
+The offscreen document uses text-only reads for ordinary polling and startup or focus-regain baselines, avoiding repeated loading of clipboard images and HTML, and [re-reads long text less often](#background-watching). A new eligible entry receives a rich-format inspection, another format check immediately before writing, and a read-back after the write. Each tick is synchronous, but clipboard operations are not atomic with arbitrary external apps.
 
-The coordinator retains the current entry's full text, HTML when present, and format names in memory as a serialized snapshot, including entries that contain no URL. A successful rewrite also retains the intended output snapshot and leaves repeated observations of that output alone. An inconclusive read or write permits one retry of the same observation and then settles it, preventing persistent clipboard interference from causing an unbounded write loop. A different entry observed during the pre-write safety read remains eligible for the next tick. The success indicator appears only after exact read-back. The original URL is not a suppression rule: copying it again draws fresh replacements. Different observed contents replace the current record. Closing the coordinator releases the record; its first read after restarting establishes a baseline. There is no clipboard history or timer that reprocesses unchanged contents.
+The [current-entry record](../PRIVACY.md#what-the-extension-stores) leaves repeated observations of verified output alone; replacement vocabulary does not identify completed processing. The success indicator appears only after exact read-back. Different observed text replaces or clears the record. Changing mode applies to new entries, including when the current entry has empty tracking values that replacement modes leave unchanged. There is no timer that reprocesses unchanged contents.
+
+An unavailable text-only read waits for a later poll. Once eligible text is observed, failed rich inspections, pre-write safety reads, and write checks share one retry for that entry, then settle it. A different entry observed during a safety read remains eligible for the next tick.
 
 ### Background watching
 
-The background watcher queries Chrome's window focus every 0.2 seconds and checks the clipboard while focused. It handles new clipboard entries from any source. Starting it or returning to Chrome records existing clipboard contents as an untouched baseline; focusing Chrome, pasting, or loading a page does not authorize rewriting that baseline.
+While cleaning is enabled, the offscreen watcher asks the service worker for Chrome's window focus every 0.2 seconds and checks the clipboard while focused. It handles new clipboard entries from any source, including native page copies, site copy buttons, and browser controls. Page copying and cutting keep their normal behavior. Starting the watcher or returning to Chrome records existing clipboard contents as an untouched baseline; focusing Chrome, pasting, or loading a page does not authorize rewriting that baseline. Turning cleaning off stops the watcher.
 
-Subsequent changed clipboard entries containing eligible URL text are processed on the next check. Reads and writes happen inside the extension and do not require a focused web page: browser controls, an HTTP page, or the address bar can retain focus. Losing Chrome focus triggers a final tick and then stops clipboard reads; focus checks continue to detect its return. Native menus do not stop cleaning when Chrome's window remains focused. The address bar itself is never changed.
+Subsequent changed clipboard entries containing eligible URL text are processed on the next check. Reads and writes happen inside the extension and do not require a focused web page: browser controls, an HTTP page, or the address bar can retain focus. Losing Chrome focus triggers a final tick and then stops clipboard reads; focus checks continue to detect its return. Native menus do not stop cleaning when Chrome's window remains focused.
 
-Polling observes contents, not native copy events. Recopying identical contents without an intervening clipboard change cannot be distinguished from leaving the clipboard unchanged, so it does not trigger another rewrite.
+Polling observes plain text, not native copy events. Recopying identical text without an intervening text change cannot be distinguished from leaving the clipboard unchanged, so it does not trigger another rewrite. HTML-only or format-only changes with identical text do not trigger cleaning.
+
+Clipboard text longer than 200 characters is re-read less often. After each read, the next ordinary check waits one second per 1,000 characters: 2,000 characters are checked every 2 seconds, 10,000 every 10 seconds, and 1 MB of text about every 17 minutes. A link copied during that wait is cleaned when the wait ends, or at once when Chrome loses focus; returning to Chrome still records its baseline immediately. The wait exists because Chrome on Linux/X11 keeps a copy of every clipboard transfer it fetches from another application. Checking 1 MB of another application's text five times a second grew the browser process by about 1 MiB per read, and text copied inside Chrome did not.
 
 Polling and delivery of Chrome's focus state have a short delay. The final tick may therefore observe an entry written just after focus changed but before the extension received that change. It cannot determine which application wrote the entry.
+
+On Linux/X11, Chrome's clipboard read can block indefinitely on very large contents owned by another application. This was observed on the first read of 20 MB of text, and with a 13 MB PNG written by `xclip` while a clipboard manager fetched it and Chrome was focused. The read is synchronous, so the extension cannot time it out, and closing the offscreen document or reloading the extension did not recover it: cleaning stops until Chrome is restarted. The worker reports this with a red `!` badge and a tooltip once the clipboard document has been silent for about 7 seconds, and withdraws the badge if the document answers again; a clipboard document that has disappeared is recreated instead. Text of 5 MB, a small `xclip` image, the same 13 MB image offered by a GTK application, and the same image without a clipboard manager did not cause the hang.

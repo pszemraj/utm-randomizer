@@ -1,3 +1,4 @@
+import type { Worker } from '@playwright/test';
 import { expect, test } from './fixtures';
 
 const ARTICLE =
@@ -199,6 +200,22 @@ test.describe('native clipboard processing', () => {
     await expect.poll(readClipboard).toBe(CLEAN);
   });
 
+  test('cleans a link copied while long unrelated text delays the next poll', async ({
+    writeClipboardExternally,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ mode: 'strip' });
+    await waitForWatcher(true);
+    // 3,000 characters delay the next ordinary poll by about 3 seconds.
+    const document = 'A paragraph of document text. '.repeat(100);
+    await writeClipboardExternally(document);
+    expect(await expectStable(readClipboard, 500)).toBe(document);
+    await writeClipboardExternally(ARTICLE);
+    await expect.poll(readClipboard).toBe(CLEAN);
+  });
+
   test('keeps output stable and expires its record after unrelated contents', async ({
     playground,
     writeClipboardExternally,
@@ -236,6 +253,26 @@ test.describe('native clipboard processing', () => {
     const copied = await waitForClipboard(readClipboard, (text) => text !== original);
     expect(copied).toMatch(/^https:\/\/example\.com\/\?msclkid=(?:%[0-9a-fA-F]{2}){32}&keep=%2F$/);
     expect(new URL(copied).searchParams.get('msclkid')).not.toBe(id);
+  });
+
+  test('preserves an empty-valued tracking baseline when changing modes', async ({
+    writeClipboardExternally,
+    readClipboard,
+    setSettings,
+    waitForWatcher,
+  }) => {
+    await setSettings({ enabled: false, mode: 'hybrid' });
+    await waitForWatcher(false);
+    const original = 'https://example.com/page?utm_source=';
+    await writeClipboardExternally(original);
+    await setSettings({ enabled: true });
+    await waitForWatcher(true);
+    expect(await expectStable(readClipboard, 500)).toBe(original);
+    await setSettings({ mode: 'strip' });
+    expect(await expectStable(readClipboard, 500)).toBe(original);
+
+    await writeClipboardExternally(`${original}&id=42`);
+    await expect.poll(readClipboard).toBe('https://example.com/page?id=42');
   });
 
   test('does nothing while paused and baselines existing contents on resume', async ({
@@ -374,24 +411,19 @@ test.describe('focus and navigation', () => {
       (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe = true;
     });
     await session.send('Target.closeTarget', { targetId: original.targetId });
-    await expect
-      .poll(async () =>
-        (await session.send('Target.getTargets')).targetInfos.some((target) => target.targetId === original.targetId),
-      )
-      .toBe(false);
     // A settings change wakes the worker through storage.onChanged.
     await options.locator('#mode').selectOption('hybrid');
+    // Reset globals prove execution restarted even when Chrome immediately reuses the target ID.
     await expect
-      .poll(async () =>
-        (await session.send('Target.getTargets')).targetInfos.some(
-          (target) => target.type === 'service_worker' && target.url === workerUrl,
-        ),
-      )
-      .toBe(true);
-    // Chrome reuses the target ID; reset worker globals prove that execution really restarted.
-    expect(
-      await serviceWorker.evaluate(() => (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe),
-    ).toBeUndefined();
+      .poll(async () => {
+        const restarted = context.serviceWorkers().find((worker) => worker.url() === workerUrl);
+        return restarted
+          ? restarted
+              .evaluate(() => (globalThis as typeof globalThis & { restartProbe?: boolean }).restartProbe)
+              .catch(() => true)
+          : true;
+      })
+      .toBeUndefined();
     expect(await expectStable(readClipboard, 1200)).toBe(before);
     await options.close();
     await session.detach();
@@ -413,6 +445,63 @@ test.describe('focus and navigation', () => {
     }
     await playground.getByTestId('push-tracked').click();
     expect(playground.url()).toBe(`${server.origin}/?page=2&utm_source=homepage&utm_content=promo_tile`);
+  });
+});
+
+test.describe('watcher health', () => {
+  /** Reads the action badge through the worker. */
+  const badgeText = (worker: Worker) => worker.evaluate(() => chrome.action.getBadgeText({}));
+
+  test('reports a blocked clipboard document on the badge and withdraws it when the document answers', async ({
+    context,
+    extensionId,
+    playground,
+    serviceWorker,
+    waitForWatcher,
+  }) => {
+    test.setTimeout(45_000);
+    await waitForWatcher(true);
+    const session = await context.newCDPSession(playground);
+    const { targetInfos } = await session.send('Target.getTargets');
+    const offscreen = targetInfos.find((target) => target.url === `chrome-extension://${extensionId}/offscreen.html`);
+    if (!offscreen) throw new Error('Missing offscreen document target');
+    const { sessionId } = await session.send('Target.attachToTarget', { targetId: offscreen.targetId, flatten: false });
+    // A busy loop stands in for a synchronous clipboard read that does not return.
+    await session.send('Target.sendMessageToTarget', {
+      sessionId,
+      message: JSON.stringify({
+        id: 1,
+        method: 'Runtime.evaluate',
+        params: { expression: 'const end = Date.now() + 12000; while (Date.now() < end);' },
+      }),
+    });
+    await expect.poll(() => badgeText(serviceWorker), { timeout: 12_000 }).toBe('!');
+    await expect.poll(() => badgeText(serviceWorker), { timeout: 12_000 }).toBe('');
+  });
+
+  test('recreates a closed clipboard document without a focus change and keeps cleaning', async ({
+    readClipboard,
+    serviceWorker,
+    setSettings,
+    waitForWatcher,
+    writeClipboardExternally,
+  }) => {
+    test.setTimeout(45_000);
+    await setSettings({ mode: 'strip' });
+    await waitForWatcher(true);
+    const documents = () =>
+      serviceWorker.evaluate(async () => {
+        const contexts = await chrome.runtime.getContexts({
+          contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+        });
+        return contexts.length;
+      });
+    await serviceWorker.evaluate(() => chrome.offscreen.closeDocument());
+    expect(await documents()).toBe(0);
+    await expect.poll(documents, { timeout: 15_000 }).toBe(1);
+    expect(await badgeText(serviceWorker)).toBe('');
+    await writeClipboardExternally(ARTICLE);
+    await expect.poll(readClipboard).toBe(CLEAN);
   });
 });
 

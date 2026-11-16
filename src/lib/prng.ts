@@ -1,7 +1,7 @@
 /**
  * Deterministic pseudo-random numbers seeded from a string.
  *
- * Each copy gets a fresh seed, shared by its text and HTML so matching links agree within that copy.
+ * Each clipboard entry gets a fresh seed for its URL replacements.
  * Writers record completed changes to avoid processing their own output. This is not cryptography.
  */
 
@@ -32,7 +32,7 @@ function hash128(input: string): [number, number, number, number] {
   return [h1 >>> 0, h2 >>> 0, h3 >>> 0, h4 >>> 0];
 }
 
-/** Compacts a link invariant once, before deriving the seeds for its individual parameters. */
+/** Compacts text into a fingerprint or a link invariant into a seed for its individual parameters. */
 export function compactSeed(input: string): string {
   return hash128(input)
     .map((word) => word.toString(16).padStart(8, '0'))
@@ -72,7 +72,7 @@ export function pick<T>(random: Random, items: readonly T[]): T {
   return item;
 }
 
-/** A fresh random seed for one clipboard copy, shared across its formats. */
+/** A fresh random seed for one clipboard entry. */
 export function createSeed(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   return btoa(String.fromCharCode(...bytes))

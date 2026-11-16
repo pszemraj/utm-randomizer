@@ -13,6 +13,8 @@ Decoy, Silly, Hybrid, and Remove are the four modes.
    Every focus regain establishes an untouched baseline, with no short-gap
    exception. Never rewrite existing contents
    merely because Chrome starts, regains focus, navigates, or pastes.
+   Polling distinguishes entries by plain text. HTML-only or format-only changes with identical text stay untouched; see the [polling limits](docs/behavior.md#background-watching).
+   Every clipboard read can cost its full length in browser memory, so ordinary polls re-read long text in proportion to its length. Baselines, final ticks, and pending retries are not delayed. Do not add a read that repeats on a timer without that bound.
 2. **Change only the clipboard payload.** URL processing must never change page
    links, the page URL, browser history, or the address bar, or trigger navigation.
 3. **Replacements are stochastic; removal is deterministic.** Decoy, Silly, and
@@ -20,6 +22,7 @@ Decoy, Silly, Hybrid, and Remove are the four modes.
    with a different value where its format
    permits. Remove deletes the supported tracking parameters. Never use a fixed
    mapping across copies or infer completed processing from replacement vocabulary.
+4. **Cleaning is automatic or it is worthless.** A link copied in Chrome is cleaned with no extra step from the user. Do not add or propose a manual clean action (menu item, shortcut, toolbar click) as a feature, a fallback, or a workaround for a platform limit; nobody will use it.
 
 ## Working rules
 
@@ -79,14 +82,14 @@ page fields and synthetic events cannot stand in for those controls.
    Follow the [parameter rules and required control tests](CONTRIBUTING.md#adding-a-tracking-parameter).
 3. **Track the current clipboard entry.** Preserve the [replacement behavior](docs/behavior.md#replacement-values).
    The current successful before-and-after write record suppresses repeated
-   processing. Release it after observing different text, HTML, or formats; do not
+   processing. Release it after observing different text; do not
    accumulate clipboard history or use expiry to rewrite unchanged contents.
 4. **Use one clipboard pipeline.** The offscreen document owns all clipboard
    reads and writes. Do not restore content scripts, webpage clipboard readers,
    host permissions, or page event authorization.
 5. **Track observed contents, not provenance.** Skip only the read-back of our own
    output. Never suppress the original URL, add a revert guard, retain history,
-   or re-randomize unchanged contents. Different observed contents discard the
+   or re-randomize unchanged contents. Different observed text discards the
    current before-and-after record.
 6. **Rewrite whole URLs and bounded compact share text.** Normalize surrounding
    whitespace for a lone URL; preserve accepted share captions and wrappers
@@ -96,6 +99,7 @@ page fields and synthetic events cannot stand in for those controls.
    files, and custom non-text formats.
 7. **Keep feedback inside Chrome.** Use browser feedback only while Chrome is
    focused. Never add system notifications or the notifications permission.
+   The one exception to the focus rule is the stall badge, which stays until the clipboard document answers again because a blocked read cannot be recovered without restarting the browser.
 8. **Messages need payload and sender checks.** Keep message contracts in
    `src/lib/messages.ts`. Validate known payloads and enforce worker/offscreen
    direction before changing clipboard configuration, contents, or feedback. Register

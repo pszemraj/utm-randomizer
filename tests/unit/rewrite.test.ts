@@ -751,6 +751,29 @@ describe('rewriteText', () => {
     }
   });
 
+  it.each([',then', '(archived)', '--then', '.Then'])(
+    'preserves ambiguous punctuation in a valued tracking key (%s)',
+    (suffix) => {
+      const text = `Read https://example.com/?utm_source${suffix}=foo more`;
+      for (const mode of ['decoy', 'silly', 'hybrid', 'strip'] as const) {
+        expect(rewriteText(text, { mode, key: 'test-key' })).toBeNull();
+      }
+    },
+  );
+
+  it('preserves a punctuated tracking key while cleaning another embedded URL', () => {
+    const text = 'Read https://example.com/?utm_source,then=foo and https://example.com/b?utm_source=email';
+    expect(rewriteText(text, strip)?.text).toBe(
+      'Read https://example.com/?utm_source,then=foo and https://example.com/b',
+    );
+  });
+
+  it('keeps percent-encoded punctuation in tracking keys eligible', () => {
+    expect(rewriteText('Read https://example.com/?utm_source%2Cthen=foo&id=42 more', strip)?.text).toBe(
+      'Read https://example.com/?id=42 more',
+    );
+  });
+
   it.each([',and', ';then', ':read', '!wow', '?next'])(
     'does not consume a caption attached to a valueless tracking key (%s)',
     (suffix) => {

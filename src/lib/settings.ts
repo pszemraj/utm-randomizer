@@ -17,11 +17,16 @@ export const DEFAULT_SETTINGS: Settings = {
 const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
 const MODES: readonly Mode[] = ['decoy', 'silly', 'hybrid', 'strip'];
 
+/** Whether a value is one of the supported replacement modes. */
+export function isMode(value: unknown): value is Mode {
+  return MODES.some((mode) => mode === value);
+}
+
 /** Fills in defaults for missing or malformed stored values. */
 function normalize(stored: Record<string, unknown>): Settings {
   return {
     enabled: typeof stored.enabled === 'boolean' ? stored.enabled : DEFAULT_SETTINGS.enabled,
-    mode: MODES.find((mode) => mode === stored.mode) ?? DEFAULT_SETTINGS.mode,
+    mode: isMode(stored.mode) ? stored.mode : DEFAULT_SETTINGS.mode,
   };
 }
 
@@ -35,22 +40,14 @@ export async function saveSettings(changes: Partial<Settings>): Promise<void> {
   await chrome.storage.local.set(changes);
 }
 
-/** Subscribes to local storage changes and returns an unsubscribe function. */
-function watchLocalChanges(listener: (changes: Record<string, chrome.storage.StorageChange>) => void): () => void {
-  const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'local') {
-      listener(changes);
-    }
-  };
-  chrome.storage.onChanged.addListener(onChanged);
-  return () => chrome.storage.onChanged.removeListener(onChanged);
+/** Whether a storage change event touches any setting. */
+export function isSettingsChange(changes: Record<string, unknown>, area: string): boolean {
+  return area === 'local' && SETTING_KEYS.some((key) => key in changes);
 }
 
-/** Calls `listener` with the full settings whenever any of them change. Returns an unsubscribe function. */
-export function watchSettings(listener: (settings: Settings) => void): () => void {
-  return watchLocalChanges((changes) => {
-    if (SETTING_KEYS.some((key) => key in changes)) {
-      void loadSettings().then(listener);
-    }
+/** Calls `listener` with the full settings whenever local settings change during the page's lifetime. */
+export function watchSettings(listener: (settings: Settings) => void): void {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (isSettingsChange(changes, area)) void loadSettings().then(listener);
   });
 }

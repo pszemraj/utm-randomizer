@@ -1,17 +1,30 @@
-import { isExtensionMessage, isOffscreenSender, type ExtensionMessage } from './lib/messages';
-import { DEFAULT_SETTINGS, loadSettings, type Settings } from './lib/settings';
+import { isOffscreenSender, isWorkerMessage, type CoordinatorMessage } from './lib/messages';
+import { isSettingsChange, loadSettings, type Settings } from './lib/settings';
+import { CONFIRMATION_MS, STALL_CONFIRM_MS, STALL_MS } from './lib/timing';
 
 const WINDOW_TYPES: `${chrome.windows.WindowType}`[] = ['normal', 'popup', 'devtools'];
-const DEFAULT_ACTION_TITLE = 'UTM Randomizer';
-const SUCCESS_ACTION_TITLE = 'Your link was randomized.';
-const CONFIRMATION_MS = 1800;
+/** Action-button states; `none` restores the default appearance. */
+const BADGES = {
+  none: { text: '', title: 'UTM Randomizer', color: null },
+  success: { text: '✓', title: 'Your link was randomized.', color: '#2e7d32' },
+  stalled: {
+    text: '!',
+    title: 'UTM Randomizer is not cleaning: the clipboard is not responding. If this stays, restart the browser.',
+    color: '#b3261e',
+  },
+} as const;
+/** Name of an action-button state. */
+type Badge = keyof typeof BADGES;
 const LEGACY_LOCAL_KEYS = ['totalCount', 'sessionCount'];
 let offscreenQueue: Promise<unknown> = Promise.resolve();
 let confirmationTimer: ReturnType<typeof setTimeout> | undefined;
-let confirmationRevision = 0;
-/** Chrome-owned badge state can outlive this worker, so startup must conservatively clear it. */
-let confirmationVisible = true;
-let confirmationQueue: Promise<unknown> = Promise.resolve();
+/** Chrome-owned badge state can outlive this worker, so startup assumes a leftover badge and clears it. */
+let badge: Badge = 'success';
+let badgeRevision = 0;
+let badgeQueue: Promise<unknown> = Promise.resolve();
+let stallTimer: ReturnType<typeof setTimeout> | undefined;
+/** Counts messages from the clipboard document, so a stall report overtaken by one is dropped. */
+let watcherHeardCount = 0;
 /** Invalidates queued watcher configuration when persisted settings change. */
 let settingsRevision = 0;
 /** Orders real focus events and prevents a delayed blur from erasing a later regain baseline. */
@@ -47,42 +60,77 @@ async function ensureOffscreen(): Promise<void> {
 }
 
 /** Requires an acknowledgement from the clipboard coordinator. */
-async function tellOffscreen(message: ExtensionMessage): Promise<void> {
+async function tellOffscreen(message: CoordinatorMessage): Promise<void> {
   const response: unknown = await chrome.runtime.sendMessage(message);
   if (!(typeof response === 'object' && response !== null && 'ok' in response && response.ok === true)) {
     throw new Error(`Offscreen document rejected ${message.type}`);
   }
 }
 
-/** Serializes badge changes so a late success write cannot survive a newer blur. */
-function updateConfirmation(visible: boolean, revision: number): Promise<void> {
-  const result = confirmationQueue.then(async () => {
-    if (revision !== confirmationRevision || visible !== confirmationVisible) return;
-    if (visible) {
-      await Promise.all([
-        chrome.action.setBadgeBackgroundColor({ color: '#2e7d32' }),
-        chrome.action.setBadgeText({ text: '✓' }),
-        chrome.action.setTitle({ title: SUCCESS_ACTION_TITLE }),
-      ]);
-    } else {
-      await Promise.all([
-        chrome.action.setBadgeText({ text: '' }),
-        chrome.action.setTitle({ title: DEFAULT_ACTION_TITLE }),
-      ]);
-    }
+/** Serializes badge changes so a late write cannot survive a newer state. */
+function setBadge(next: Badge): Promise<void> {
+  const revision = ++badgeRevision;
+  badge = next;
+  const { text, title, color } = BADGES[next];
+  const result = badgeQueue.then(async () => {
+    if (revision !== badgeRevision) return;
+    await Promise.all([
+      ...(color ? [chrome.action.setBadgeBackgroundColor({ color })] : []),
+      chrome.action.setBadgeText({ text }),
+      chrome.action.setTitle({ title }),
+    ]);
   });
-  confirmationQueue = result.catch(() => undefined);
+  badgeQueue = result.catch(() => undefined);
   return result;
 }
 
-/** Clears the transient Chrome-only success indicator. */
+/** Clears the transient Chrome-only success indicator; a stall report stays until the watcher is heard again. */
 async function clearConfirmation(): Promise<void> {
-  const revision = ++confirmationRevision;
   clearTimeout(confirmationTimer);
   confirmationTimer = undefined;
-  if (!confirmationVisible) return;
-  confirmationVisible = false;
-  await updateConfirmation(false, revision);
+  if (badge !== 'success') return;
+  await setBadge('none');
+}
+
+/** Restarts the wait for the clipboard document's next message while cleaning is enabled. */
+function expectWatcher(): void {
+  clearTimeout(stallTimer);
+  stallTimer = setTimeout(() => {
+    // A resumed system can fire this before the document's next check, so wait once more before reporting.
+    stallTimer = setTimeout(() => void reportStall().catch(() => undefined), STALL_CONFIRM_MS);
+  }, STALL_MS);
+}
+
+/** Records a message from the clipboard document and withdraws any stall report. */
+function watcherHeard(): void {
+  watcherHeardCount += 1;
+  expectWatcher();
+  if (badge === 'stalled') void setBadge('none').catch(() => undefined);
+}
+
+/** Stops expecting the clipboard document while cleaning is off. */
+function releaseWatcher(): void {
+  clearTimeout(stallTimer);
+  stallTimer = undefined;
+  if (badge === 'stalled') void setBadge('none').catch(() => undefined);
+}
+
+/** Handles a silent clipboard document: recreates a lost one, or reports one whose synchronous read is blocked. */
+async function reportStall(): Promise<void> {
+  const expectedSettingsRevision = settingsRevision;
+  const expectedHeardCount = watcherHeardCount;
+  const settings = await settingsReady;
+  const exists = await hasOffscreen();
+  if (!settings.enabled || expectedSettingsRevision !== settingsRevision || expectedHeardCount !== watcherHeardCount)
+    return;
+  if (!exists) {
+    void syncWatcher();
+    return;
+  }
+  // A blocked read cannot be interrupted, and closing or reloading does not release it.
+  clearTimeout(confirmationTimer);
+  confirmationTimer = undefined;
+  await setBadge('stalled');
 }
 
 /** Shows a brief success indicator only when a Chrome window is still focused. */
@@ -94,13 +142,13 @@ async function showConfirmation(): Promise<void> {
     return;
   const focused = await browserFocused();
   if (!focused || expectedSettingsRevision !== settingsRevision || expectedFocusRevision !== focusRevision) return;
-  const revision = ++confirmationRevision;
   clearTimeout(confirmationTimer);
-  confirmationVisible = true;
-  await updateConfirmation(true, revision);
-  if (revision !== confirmationRevision) return;
+  const shown = setBadge('success');
+  const revision = badgeRevision;
+  await shown;
+  if (revision !== badgeRevision) return;
   confirmationTimer = setTimeout(() => {
-    if (revision === confirmationRevision) void clearConfirmation().catch(() => undefined);
+    if (revision === badgeRevision) void clearConfirmation().catch(() => undefined);
   }, CONFIRMATION_MS);
 }
 
@@ -162,7 +210,7 @@ function refreshFocus(recover = true): Promise<void> {
       throw error;
     }
     if (potentialBlur?.revision === expectedFocusRevision) potentialBlur = null;
-    if (baseline) baselineRequired = false;
+    if (baseline && expectedFocusRevision === focusRevision) baselineRequired = false;
   });
   focusDelivery = result.catch(() => undefined);
   return result;
@@ -175,10 +223,12 @@ function syncWatcher(): Promise<void> {
     const settings = await settingsReady;
     if (revision !== settingsRevision) return;
     if (settings.enabled) {
+      expectWatcher();
       await ensureOffscreen();
       if (revision !== settingsRevision) return;
       await refreshFocus(false);
     } else {
+      releaseWatcher();
       await clearConfirmation();
       if (revision !== settingsRevision) return;
       const exists = await hasOffscreen();
@@ -195,7 +245,7 @@ chrome.runtime.onInstalled.addListener((details) => {
     .catch((error: unknown) => console.debug('UTM Randomizer: could not remove legacy counters', error));
 });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) return;
+  if (!isSettingsChange(changes, area)) return;
   settingsRevision += 1;
   // Publish the pending read immediately so a poll cannot pair the new revision with old settings.
   settingsReady = loadSettings();
@@ -219,10 +269,11 @@ chrome.windows.onFocusChanged.addListener(
 );
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (response: { ok: boolean }) => void) => {
   if (!(typeof message === 'object' && message !== null && 'type' in message)) return false;
-  if (!isExtensionMessage(message) || !isOffscreenSender(sender)) {
+  if (!isWorkerMessage(message) || !isOffscreenSender(sender)) {
     sendResponse({ ok: false });
     return false;
   }
+  watcherHeard();
   switch (message.type) {
     case 'watch-focus':
       void refreshFocus().then(
@@ -235,10 +286,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r
       void showConfirmation().catch((error: unknown) =>
         console.debug('UTM Randomizer: could not show rewrite confirmation', error),
       );
-      return false;
-    case 'watch-flush':
-    case 'watch-config':
-      sendResponse({ ok: false });
       return false;
   }
 });
